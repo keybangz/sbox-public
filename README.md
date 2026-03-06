@@ -13,13 +13,64 @@ cd game && ./sbox
 
 ### Code Changes Summary
 
-| Fix | Description | Files |
-|-----|-------------|-------|
-| **GC Transition** | Disabled `[SuppressGCTransition]` on Linux (causes crashes) | `InteropGen/Writer/ManagerWriter*.cs` |
-| **Native Library Paths** | Use absolute paths for native library loading on Linux | `Sandbox.Engine/Core/Interop/NetCore.cs` |
-| **PreJIT Fix** | Skip `[UnmanagedCallersOnly]` methods during PreJIT | `Sandbox.Reflection/Utility.cs` |
-| **Steam Audio Bypass** | Disabled Steam Audio binaural effects on Linux | `Sandbox.Engine/Systems/Audio/SteamAudio/BinauralEffect.cs` |
-| **Linux Path Handling** | Fixed path separator handling for Linux | `Sandbox.AppSystem/ToolAppSystem.cs` |
+#### Core Interop & Native Loading
+| File | Change |
+|------|--------|
+| `InteropGen/Writer/ManagerWriter.cs` | Use delegate-based function pointers instead of `UnmanagedCallersOnly` for Linux |
+| `InteropGen/Writer/ManagerWriter.Imports.cs` | Disabled `[SuppressGCTransition]` (causes GC mode issues on Linux) |
+| `InteropGen/Writer/ManagerWriter.Exports.cs` | Added delegate storage to prevent GC collection, Linux-compatible exports |
+| `Sandbox.Engine/Core/Interop/NetCore.cs` | Use absolute paths for native library loading on Linux/macOS |
+| `Sandbox.Engine/Core/Interop/CreateInterface.cs` | Added fallback path resolution for Linux native libraries |
+| `Sandbox.NetCore/NetCore.cs` | Changed entry point to use delegates instead of `UnmanagedCallersOnly` |
+| `Sandbox.Reflection/Utility.cs` | Skip `[UnmanagedCallersOnly]` methods during PreJIT (crashes on Linux) |
+
+#### Physics & Ray Tracing
+| File | Change |
+|------|--------|
+| `Sandbox.Engine/Systems/Physics/PhysicsTraceBuilder.cs` | Replaced `[UnmanagedCallersOnly]` with delegate-based callbacks |
+| `Sandbox.Engine/Utility/RayTrace/MeshTraceRequest.cs` | Replaced `[UnmanagedCallersOnly]` with delegate-based callbacks |
+
+#### Rendering & Shaders
+| File | Change |
+|------|--------|
+| `Sandbox.Engine/Systems/Render/ShaderCompile/ShaderCompile.cs` | Load Linux `.so` libraries, added debug logging |
+| `Sandbox.Engine/Systems/Render/Multimedia/LinuxCursorCapture.cs` | **New file**: Linux cursor capture using SDL3 |
+
+#### Font & Text Rendering
+| File | Change |
+|------|--------|
+| `Sandbox.Engine/Systems/Render/TextRendering/FontManager.cs` | Added null checks, debug logging for font loading |
+| `Sandbox.Engine/Systems/UI/Engine/TextBlock.cs` | Linux font fallbacks (Poppins → Liberation Sans → DejaVu, etc.) |
+| `ThirdParty/RichTextKit/FontMapper.cs` | Windows → Linux font mapping (Arial → Liberation Sans, etc.) |
+| `ThirdParty/RichTextKit/FontFallback/FontFallback.cs` | Null typeface handling to prevent crashes |
+| `ThirdParty/RichTextKit/FontFallback/DefaultCharacterMatcher.cs` | Added Linux fallback font families |
+| `ThirdParty/RichTextKit/TextBlock.cs` | Debug logging for BuildFontRuns |
+
+#### Audio
+| File | Change |
+|------|--------|
+| `Sandbox.Engine/Systems/Audio/SteamAudio/BinauralEffect.cs` | Disabled Steam Audio on Linux (context creation fails) |
+
+#### Menu & UI
+| File | Change |
+|------|--------|
+| `Sandbox.Menu/MenuDll.cs` | Added debug logging for menu initialization |
+| `game/addons/menu/.../Footer.razor` | Initialize `ActiveFriends` to prevent null reference |
+
+#### Build System & Tools
+| File | Change |
+|------|--------|
+| `Sandbox.AppSystem/ToolAppSystem.cs` | Handle both `/` and `\` path separators |
+| `Tools/SboxBuild/Steps/BuildContent.cs` | Support Linux `contentbuilder` path |
+| `Tools/InteropGen/Program.cs` | Added `Main()` entry point |
+| `Tools/InteropGen/Arguments/ArgDefinedStruct.cs` | Fixed struct pointer passing |
+| `Sandbox.Tools/Utility/VoiceRecording.cs` | Stub implementation for Linux |
+| `Launcher/StandaloneTest/Launcher.cs` | Skip Windows-only code on Linux |
+
+#### Runtime Configuration
+| File | Change |
+|------|--------|
+| `game/*.runtimeconfig.json` | Updated for Linux runtime compatibility |
 
 ### DXC Shader Compiler Wrapper
 
