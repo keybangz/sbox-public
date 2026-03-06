@@ -46,6 +46,11 @@
 !*.sh
 !*.py
 
+# Linux native client files
+!linux/**
+!*.c
+!*.so
+
 #
 # Some junk
 #
