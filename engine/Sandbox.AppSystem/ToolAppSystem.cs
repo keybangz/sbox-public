@@ -93,31 +93,53 @@ public class ToolAppSystem : AppSystem, IDisposable
 		var exePath = Environment.GetCommandLineArgs()[0];
 		exePath = System.IO.Path.GetDirectoryName( exePath );
 
+		// Check for both Windows and Linux path separators
+		bool isInManagedFolder = exePath.EndsWith( "bin\\managed", StringComparison.OrdinalIgnoreCase ) ||
+		                         exePath.EndsWith( "bin/managed", StringComparison.OrdinalIgnoreCase );
+
 		// we're in the managed folder, we can set this shit up
-		if ( exePath.EndsWith( "bin\\managed", StringComparison.OrdinalIgnoreCase ) )
+		if ( isInManagedFolder )
 		{
 			var dirInfo = new DirectoryInfo( exePath );
 
 			var gameRoot = dirInfo.Parent.Parent;
 
 			Environment.CurrentDirectory = gameRoot.FullName;
-			var nativeDllPath = $"{gameRoot.FullName}\\bin\\win64";
 
-			//
-			// If we don't load sentry specifically from this directly, it'll
-			// try to load the one from the managed folder
-			//
-			NativeLibrary.TryLoad( $"{nativeDllPath}\\sentry.dll", out _ );
-			//NativeLibrary.TryLoad( $"{nativeDllPath}\\tier0.dll", out _ );
-			//NativeLibrary.TryLoad( $"{nativeDllPath}\\engine2.dll", out _ );
+			// Use platform-appropriate paths
+			bool isLinux = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(
+				System.Runtime.InteropServices.OSPlatform.Linux );
 
-			//
-			// Put our native dll path first so that when looking up native dlls we'll
-			// always use the ones from our folder first
-			//
-			var path = System.Environment.GetEnvironmentVariable( "PATH" );
-			path = $"{nativeDllPath};{path}";
-			System.Environment.SetEnvironmentVariable( "PATH", path );
+			string nativeDllPath;
+			if ( isLinux )
+			{
+				nativeDllPath = System.IO.Path.Combine( gameRoot.FullName, "bin", "linuxsteamrt64" );
+
+				// Set LD_LIBRARY_PATH for Linux
+				var ldPath = System.Environment.GetEnvironmentVariable( "LD_LIBRARY_PATH" ) ?? "";
+				ldPath = $"{nativeDllPath}:{ldPath}";
+				System.Environment.SetEnvironmentVariable( "LD_LIBRARY_PATH", ldPath );
+			}
+			else
+			{
+				nativeDllPath = $"{gameRoot.FullName}\\bin\\win64";
+
+				//
+				// If we don't load sentry specifically from this directly, it'll
+				// try to load the one from the managed folder
+				//
+				NativeLibrary.TryLoad( $"{nativeDllPath}\\sentry.dll", out _ );
+				//NativeLibrary.TryLoad( $"{nativeDllPath}\\tier0.dll", out _ );
+				//NativeLibrary.TryLoad( $"{nativeDllPath}\\engine2.dll", out _ );
+
+				//
+				// Put our native dll path first so that when looking up native dlls we'll
+				// always use the ones from our folder first
+				//
+				var path = System.Environment.GetEnvironmentVariable( "PATH" );
+				path = $"{nativeDllPath};{path}";
+				System.Environment.SetEnvironmentVariable( "PATH", path );
+			}
 
 			return;
 		}

@@ -248,11 +248,15 @@ internal partial class ManagerWriter
 						IEnumerable<string> managedArgs = c.SelfArg( false, f.Static ).Concat( f.Parameters ).Where( x => x.IsRealArgument ).Select( x => $"{x.GetManagedDelegateType( false )}" ).Concat( new[] { f.Return.GetManagedDelegateType( true ) } );
 						string managedArgss = $"{string.Join( ", ", managedArgs )}";
 
+						// Disable SuppressGCTransition for Linux compatibility
+						// On Linux, using SuppressGCTransition can leave the thread in cooperative GC mode,
+						// which breaks subsequent reverse P/Invoke calls (native calling managed)
+						// For now, disable it entirely to test if this is the issue
 						string nogc = "";
-						if ( f.IsNoGC )
-						{
-							nogc = "[SuppressGCTransition]";
-						}
+						// if ( f.IsNoGC )
+						// {
+						// 	nogc = "[SuppressGCTransition]";
+						// }
 
 						WriteLine( $"internal static delegate* unmanaged{nogc}< {managedArgss} > {f.MangledName};" );
 					}
@@ -260,11 +264,20 @@ internal partial class ManagerWriter
 					foreach ( Variable f in c.Variables )
 					{
 						List<string> managedArgs = c.SelfArg( false, f.Static ).Select( x => $"{x.GetManagedDelegateType( true )}" ).ToList();
-						managedArgs.Add( f.Return.GetManagedDelegateType( true ) );
-						string managedArgss = $"{string.Join( ", ", managedArgs )}";
+						// For getter: the return type (what we receive from native) - use incoming=true
+						string getterReturnType = f.Return.GetManagedDelegateType( true );
+						// For setter: the parameter (what we send to native) - use incoming=false for pointer
+						string setterParamType = f.Return.GetManagedDelegateType( false );
 
-						WriteLine( $"internal static delegate* unmanaged[SuppressGCTransition]<{managedArgss}> Get__{f.MangledName};\n" );
-						WriteLine( $"internal static delegate* unmanaged[SuppressGCTransition]<{managedArgss}, void> Set__{f.MangledName};\n" );
+						string getterArgs = $"{string.Join( ", ", managedArgs )}, {getterReturnType}";
+
+						List<string> setterArgsList = new List<string>( managedArgs );
+						setterArgsList.Add( setterParamType );
+						string setterArgs = $"{string.Join( ", ", setterArgsList )}";
+
+						// Removed [SuppressGCTransition] for Linux compatibility
+						WriteLine( $"internal static delegate* unmanaged<{getterArgs}> Get__{f.MangledName};\n" );
+						WriteLine( $"internal static delegate* unmanaged<{setterArgs}, void> Set__{f.MangledName};\n" );
 					}
 				}
 				EndBlock();

@@ -46,6 +46,9 @@ internal static class ReflectionUtility
 				if ( method.DeclaringType?.BaseType == typeof( MulticastDelegate ) ) continue;
 				if ( method.Name is "BeginInvoke" or "EndInvoke" ) continue; // Skip async delegate methods
 
+				// Skip methods with [UnmanagedCallersOnly] attribute - PrepareMethod crashes on these on Linux
+				if ( HasUnmanagedCallersOnlyAttribute( method ) ) continue;
+
 				try
 				{
 					System.Runtime.CompilerServices.RuntimeHelpers.PrepareMethod( method.MethodHandle );
@@ -73,5 +76,27 @@ internal static class ReflectionUtility
 				}
 			}
 		}
+	}
+
+	/// <summary>
+	/// Check if a method has the [UnmanagedCallersOnly] attribute.
+	/// Methods with this attribute cannot be called from managed code and PrepareMethod fails on them on Linux.
+	/// </summary>
+	private static bool HasUnmanagedCallersOnlyAttribute( MethodInfo method )
+	{
+		try
+		{
+			// Check for UnmanagedCallersOnlyAttribute by name to avoid loading the type if it doesn't exist
+			foreach ( var attr in method.GetCustomAttributesData() )
+			{
+				if ( attr.AttributeType.Name == "UnmanagedCallersOnlyAttribute" )
+					return true;
+			}
+		}
+		catch
+		{
+			// If we can't check attributes, assume it's safe
+		}
+		return false;
 	}
 }

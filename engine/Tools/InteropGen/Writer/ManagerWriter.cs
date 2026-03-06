@@ -124,7 +124,16 @@ internal partial class ManagerWriter : BaseWriter
 						IEnumerable<string> managedArgs = c.SelfArg( false, f.Static ).Concat( f.Parameters ).Concat( new[] { f.Return } ).Where( x => x.IsRealArgument ).Select( x => $"{x.GetManagedDelegateType( true )}" );
 						string managedArgss = $"{string.Join( ", ", managedArgs )}";
 
-						WriteLine( $"(IntPtr) (delegate* unmanaged<{managedArgss}>) &Exports.{f.MangledName}," );
+						if ( UseLinuxCompatibleExports )
+						{
+							// Use delegate-based function pointers (Linux compatible)
+							WriteLine( $"Exports.{f.MangledName}_Ptr," );
+						}
+						else
+						{
+							// Use UnmanagedCallersOnly function pointers (Windows)
+							WriteLine( $"(IntPtr) (delegate* unmanaged[Cdecl]<{managedArgss}>) &Exports.{f.MangledName}," );
+						}
 					}
 					EndBlock( ";" );
 				}
@@ -220,20 +229,26 @@ internal partial class ManagerWriter : BaseWriter
 						IEnumerable<string> managedArgs = c.SelfArg( false, f.Static ).Concat( f.Parameters ).Where( x => x.IsRealArgument ).Select( x => $"{x.GetManagedDelegateType( false )}" ).Concat( new[] { f.Return.GetManagedDelegateType( true ) } );
 						string managedArgss = $"{string.Join( ", ", managedArgs )}";
 
+						// Disable SuppressGCTransition for Linux compatibility
 						string nogc = "";
-
-						if ( f.IsNoGC )
-						{
-							nogc = "[SuppressGCTransition]";
-						}
+						// if ( f.IsNoGC )
+						// {
+						// 	nogc = "[SuppressGCTransition]";
+						// }
 
 						WriteLine( $"{namespc}.{InternalNative}.{f.MangledName} = (delegate* unmanaged{nogc}< {managedArgss} >) nativeFunctions[{i++}];" );
 					}
 
 					foreach ( Variable f in c.Variables )
 					{
-						WriteLine( $"{namespc}.{InternalNative}.Get__{f.MangledName} = (delegate* unmanaged[SuppressGCTransition]<IntPtr, {f.Return.GetManagedDelegateType( true )}>)( nativeFunctions[{i++}] );" );
-						WriteLine( $"{namespc}.{InternalNative}.Set__{f.MangledName} = (delegate* unmanaged[SuppressGCTransition]<IntPtr, {f.Return.GetManagedDelegateType( true )}, void>)( nativeFunctions[{i++}] );" );
+						// For getter: the return type (what we receive from native) - use incoming=true
+						string getterReturnType = f.Return.GetManagedDelegateType( true );
+						// For setter: the parameter (what we send to native) - use incoming=false for pointer
+						string setterParamType = f.Return.GetManagedDelegateType( false );
+
+						// Removed [SuppressGCTransition] for Linux compatibility
+						WriteLine( $"{namespc}.{InternalNative}.Get__{f.MangledName} = (delegate* unmanaged<IntPtr, {getterReturnType}>)( nativeFunctions[{i++}] );" );
+						WriteLine( $"{namespc}.{InternalNative}.Set__{f.MangledName} = (delegate* unmanaged<IntPtr, {setterParamType}, void>)( nativeFunctions[{i++}] );" );
 					}
 				}
 

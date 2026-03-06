@@ -1,9 +1,9 @@
-﻿internal static class NetCore
+internal static class NetCore
 {
 	/// <summary>
 	/// Interop will try to load dlls from this path, e.g bin/win64/
 	/// </summary>
-	internal static string NativeDllPath { get; set; } = "bin/win64/";
+	internal static string NativeDllPath { get; set; } = string.Empty;
 
 	/// <summary>
 	/// From here we'll open the native dlls and inject our function pointers into them,
@@ -16,11 +16,35 @@
 		// where you would expect it to be instead of in the fucking bin folder.
 		System.Environment.CurrentDirectory = gameFolder;
 
+		// Set NativeDllPath if not already set (use absolute paths on Linux/macOS)
+		if ( string.IsNullOrEmpty( NativeDllPath ) )
+		{
+			if ( OperatingSystem.IsWindows() )
+			{
+				NativeDllPath = "bin/win64/";
+			}
+			else if ( OperatingSystem.IsLinux() )
+			{
+				NativeDllPath = $"{gameFolder}/bin/linuxsteamrt64/";
+			}
+			else if ( OperatingSystem.IsMacOS() )
+			{
+				NativeDllPath = $"{gameFolder}/bin/osx64/";
+			}
+			else
+			{
+				throw new System.Exception( "Unsupported platform for interop." );
+			}
+		}
+
 		// engine is always initialized
 		Managed.SandboxEngine.NativeInterop.Initialize();
 
 		// set engine paths etc
-		NativeEngine.EngineGlobal.Plat_SetModuleFilename( $"{gameFolder}\\sbox.exe" );
+		if ( OperatingSystem.IsWindows() )
+			NativeEngine.EngineGlobal.Plat_SetModuleFilename( $"{gameFolder}\\sbox.exe" );
+		else
+			NativeEngine.EngineGlobal.Plat_SetModuleFilename( $"{gameFolder}/sbox" );
 		NativeEngine.EngineGlobal.Plat_SetCurrentDirectory( $"{gameFolder}" );
 	}
 }
