@@ -1,6 +1,7 @@
 # 🐧 s&box Linux Native Client
 
-**Status:** ✅ STABLE
+**Status:** ✅ STABLE, yeah! definitely...
+<img width="1911" height="1072" alt="Screenshot_20260307_015248" src="https://github.com/user-attachments/assets/4411404f-be8a-4b1e-afa4-1f3b7d23f80f" />
 
 This fork contains fixes and modifications to run s&box natively on Linux.
 
