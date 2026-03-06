@@ -161,7 +161,13 @@ internal sealed class MenuDll : IMenuDll
 
 		{
 			using var tx = Sandbox.Engine.Bootstrap.StartupTiming?.ScopeTimer( "Menu - Fonts" );
+			Log.Info( $"[MenuDll] Loading fonts from FileSystem.Mounted: {FileSystem.Mounted}" );
 			FontManager.Instance.LoadAll( FileSystem.Mounted );
+			Log.Info( $"[MenuDll] Fonts loaded. FontManager.LoadedFonts count: {FontManager.LoadedFonts.Count}" );
+			foreach ( var kv in FontManager.LoadedFonts )
+			{
+				Log.Info( $"[MenuDll]   Font: {kv.Value?.FamilyName ?? "(null)"}" );
+			}
 		}
 
 		// We can wait right up until we start the menu scene to want valid account info
@@ -191,10 +197,22 @@ internal sealed class MenuDll : IMenuDll
 			SetupMenuScene();
 		}
 
+		Log.Info( "[MenuDll] Attempting to create MenuSystem via TypeLibrary..." );
+
+		// Debug: List all types that implement IMenuSystem
+		var menuTypes = TypeLibrary.GetTypes<IMenuSystem>();
+		Log.Info( $"[MenuDll] Found {menuTypes.Count()} types implementing IMenuSystem:" );
+		foreach ( var t in menuTypes )
+		{
+			Log.Info( $"[MenuDll]   - {t.FullName}" );
+		}
+
 		IMenuSystem.Current = TypeLibrary.Create<IMenuSystem>( "MenuSystem", true );
+		Log.Info( $"[MenuDll] TypeLibrary.Create returned: {IMenuSystem.Current}" );
 
 		if ( IMenuSystem.Current == null )
 		{
+			Log.Error( "[MenuDll] FAILED to create MenuSystem!" );
 			NativeEngine.EngineGlobal.Plat_MessageBox( "Menu Load Error", "Couldn't create MenuSystem!" );
 			throw new System.Exception( "Menu couldn't load. Can't continue." );
 		}

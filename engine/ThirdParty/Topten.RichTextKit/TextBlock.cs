@@ -1,4 +1,4 @@
-﻿
+﻿#pragma warning disable CA2000
 // RichTextKit
 // Copyright © 2019-2020 Topten Software. All Rights Reserved.
 // 
@@ -1097,13 +1097,34 @@ namespace Topten.RichTextKit
 		void BuildFontRuns()
 		{
 			var originalLength = _codePoints.Length;
+
+			// Debug - write to file since Console.Error might be redirected
 			try
 			{
+				System.IO.File.AppendAllText( "/tmp/textblock_debug.txt",
+					$"[TextBlock] BuildFontRuns() called, codePoints.Length={originalLength}, FontMapper={FontMapper}, styleRuns.Count={_styleRuns?.Count ?? 0}\n" );
+				if ( _styleRuns != null && _styleRuns.Count > 0 )
+				{
+					var firstStyle = _styleRuns[0].Style;
+					System.IO.File.AppendAllText( "/tmp/textblock_debug.txt",
+						$"[TextBlock] First style: FontFamily='{firstStyle?.FontFamily}', FontWeight={firstStyle?.FontWeight}\n" );
+				}
+			}
+			catch { }
+
+			try
+			{
+				System.IO.File.AppendAllText( "/tmp/textblock_debug.txt", $"[TextBlock] Starting try block (codepoints={originalLength})\n" );
+
 				// Clearn unshaped run buffer
 				_unshapedRuns.Clear();
 
+				System.IO.File.AppendAllText( "/tmp/textblock_debug.txt", "[TextBlock] Cleared unshaped runs, calling _bidiData.Init\n" );
+
 				// Break supplied text into directionality runs
 				_bidiData.Init( _codePoints.AsSlice(), (sbyte)_baseDirection );
+
+				System.IO.File.AppendAllText( "/tmp/textblock_debug.txt", "[TextBlock] _bidiData.Init completed\n" );
 
 				// If we have embedded directional overrides then change those
 				// ranges to neutral
@@ -1209,6 +1230,8 @@ namespace Topten.RichTextKit
 			}
 			catch ( Exception x )
 			{
+				System.IO.File.AppendAllText( "/tmp/textblock_debug.txt",
+					$"[TextBlock] EXCEPTION: {x.Message}\n  origLen={originalLength}, nowLen={_codePoints.Length}, styleRuns={_styleRuns.Count}, fontRuns={_fontRuns.Count}\n  Inner: {x.InnerException?.Message}\n" );
 				throw new InvalidOperationException( $"Exception in BuildFontRuns() with original length of {originalLength} now {_codePoints.Length}, style run count {_styleRuns.Count}, font run count {_fontRuns.Count}, direction overrides: {_hasTextDirectionOverrides}", x );
 			}
 		}
@@ -1306,7 +1329,15 @@ namespace Topten.RichTextKit
 		/// <returns>The Skia typeface</returns>
 		SKTypeface TypefaceFromStyle( IStyle style, bool ignoreFontVariants = false )
 		{
-			return (FontMapper ?? FontMapper.Default).TypefaceFromStyle( style, ignoreFontVariants );
+			var typeface = (FontMapper ?? FontMapper.Default).TypefaceFromStyle( style, ignoreFontVariants );
+
+			// Ensure we always return a valid typeface
+			if ( typeface == null )
+			{
+				typeface = SKTypeface.CreateDefault();
+			}
+
+			return typeface;
 		}
 
 
@@ -1339,14 +1370,30 @@ namespace Topten.RichTextKit
 			// Get the typeface
 			var typeface = TypefaceFromStyle( style );
 
+			try
+			{
+				System.IO.File.AppendAllText( "/tmp/textblock_debug.txt",
+					$"[TextBlock] AddDirectionalRun: typeface={typeface?.FamilyName ?? "NULL"}, start={start}, length={length}\n" );
+			}
+			catch { }
+
 			// Get the slice of code points
 			var codePointsSlice = _codePoints.SubSlice( start, length );
 
 			// Split into font fallback runs
+			int fontRunCount = 0;
 			foreach ( var fontRun in FontFallback.GetFontRuns( codePointsSlice, typeface, style.ReplacementCharacter ) )
 			{
+				fontRunCount++;
 				AddFontRun( styleRun, start + fontRun.Start, fontRun.Length, direction, style, fontRun.Typeface, typeface );
 			}
+
+			try
+			{
+				System.IO.File.AppendAllText( "/tmp/textblock_debug.txt",
+					$"[TextBlock] AddDirectionalRun: added {fontRunCount} font runs\n" );
+			}
+			catch { }
 		}
 
 		/// <summary>

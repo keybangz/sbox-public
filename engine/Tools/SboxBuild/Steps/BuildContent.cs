@@ -1,4 +1,4 @@
-﻿using static Facepunch.Constants;
+using static Facepunch.Constants;
 
 namespace Facepunch.Steps;
 
@@ -10,9 +10,26 @@ internal class BuildContent( string name ) : Step( name )
 		{
 			string rootDir = Directory.GetCurrentDirectory();
 			string gameDir = Path.Combine( rootDir, "game" );
-			string contentBuilderPath = Path.Combine( gameDir, "bin", "win64", "contentbuilder.exe" );
 
-			// Verify content builder exists
+			string contentBuilderPath;
+
+			if ( OperatingSystem.IsLinux() )
+			{
+				string linuxContentBuilder = Path.Combine( gameDir, "bin", "linuxsteamrt64", "contentbuilder" );
+				if ( File.Exists( linuxContentBuilder ) )
+				{
+					contentBuilderPath = linuxContentBuilder;
+				}
+				else
+				{
+					contentBuilderPath = Path.Combine( gameDir, "bin", "win64", "contentbuilder.exe" );
+				}
+			}
+			else
+			{
+				contentBuilderPath = Path.Combine( gameDir, "bin", "win64", "contentbuilder.exe" );
+			}
+
 			if ( !File.Exists( contentBuilderPath ) )
 			{
 				Log.Error( $"Error: Content builder executable not found at {contentBuilderPath}" );

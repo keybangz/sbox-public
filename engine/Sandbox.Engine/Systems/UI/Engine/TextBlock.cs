@@ -213,7 +213,21 @@ internal sealed class TextBlock : IDisposable
 
 	public bool UpdateStyles( Styles style )
 	{
-		var fontFamily = style.FontFamily ?? "Arial";
+		// Use Poppins (bundled font) or fallback to common Linux fonts before Arial
+		var fontFamily = style.FontFamily ?? "Poppins";
+		if ( string.IsNullOrEmpty( style.FontFamily ) )
+		{
+			// Try to find a font that exists - Poppins is bundled, but fallback to system fonts
+			var fallbacks = new[] { "Poppins", "Liberation Sans", "DejaVu Sans", "Noto Sans", "Ubuntu", "Arial" };
+			foreach ( var fb in fallbacks )
+			{
+				if ( FontManager.LoadedFonts.Values.Any( f => f.FamilyName.Equals( fb, StringComparison.OrdinalIgnoreCase ) ) )
+				{
+					fontFamily = fb;
+					break;
+				}
+			}
+		}
 		var fontColor = style.FontColor ?? Color.Black;
 		var fontSize = style.FontSize ?? Length.Pixels( 13 ).Value;
 

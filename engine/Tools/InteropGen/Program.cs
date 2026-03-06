@@ -75,4 +75,11 @@ public static class Program
 
 		Task.WaitAll( tasks.ToArray() );
 	}
+
+	public static void Main( string[] args )
+	{
+		string directory = args.Length > 0 ? args[0] : "engine";
+		bool skipNative = args.Contains( "--skip-native" );
+		ProcessManifest( directory, skipNative );
+	}
 }
