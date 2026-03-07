@@ -199,6 +199,26 @@ if [ -d "$BASE_ASSETS" ]; then
     create_case_symlink "$BASE_ASSETS/postprocess" "ObjectHighlight" "objecthighlight"
 fi
 
+# Fix colorgrading shader path - engine looks for colorgrading.shader_c in core root
+if [ -f "$GAME_DIR/core/shaders/colorgrading.shader_c" ] && [ ! -e "$GAME_DIR/core/colorgrading.shader_c" ]; then
+    ln -sf "shaders/colorgrading.shader_c" "$GAME_DIR/core/colorgrading.shader_c"
+    echo "  Created: core/colorgrading.shader_c -> shaders/colorgrading.shader_c"
+fi
+
+# Fix DDGI textures case sensitivity (Indirect Light -> indirect light)
+DDGI_DIR="$GAME_DIR/addons/menu/Assets/scenes/menu-main_scene_data/ddgi"
+if [ -d "$DDGI_DIR" ]; then
+    for f in "$DDGI_DIR/Indirect Light"*; do
+        if [ -f "$f" ]; then
+            lower=$(echo "$(basename "$f")" | tr '[:upper:]' '[:lower:]')
+            if [ ! -e "$DDGI_DIR/$lower" ]; then
+                ln -sf "$(basename "$f")" "$DDGI_DIR/$lower"
+                echo "  Created: ddgi/$lower -> $(basename "$f")"
+            fi
+        fi
+    done
+fi
+
 echo ""
 echo "Creating native engine resource symlinks..."
 
@@ -332,7 +352,12 @@ GAME_DIR="$(dirname "$SCRIPT_DIR")/game"
 BIN_DIR="$GAME_DIR/bin/linuxsteamrt64"
 export LD_LIBRARY_PATH="$BIN_DIR:$GAME_DIR:${LD_LIBRARY_PATH:-}"
 cd "$GAME_DIR"
-exec ./sbox "$@"
+
+# Use dotnet to run the managed launcher instead of the native executable.
+# The native executable takes over the main loop and doesn't return control
+# to managed code for async task processing, causing initialization to hang.
+# Running via dotnet allows managed code to control the main loop properly.
+exec dotnet sbox.dll "$@"
 RUNEOF
 chmod +x "$SCRIPT_DIR/run.sh"
 
