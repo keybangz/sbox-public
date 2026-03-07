@@ -41,12 +41,14 @@ internal static partial class Api
 
 				if ( token != null ) goto gotTicket;
 
-				await Task.Delay( 100 );
+				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+				await Task.Delay( 100 ).ConfigureAwait( false );
 			}
 
 			// we didn't get a ticket - start in offline mode
 			EngineGlue.CancelWebAuthTicket();
-			await Task.Delay( 1000 );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await Task.Delay( 1000 ).ConfigureAwait( false );
 
 			Log.Warning( "Couldn't connect to Steam." );
 
@@ -79,6 +81,7 @@ internal static partial class Api
 
 			sw = Stopwatch.StartNew();
 
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
 			result = await Sandbox.Backend.Account.Login( new
 			{
 				fa = friendList,
@@ -93,7 +96,7 @@ internal static partial class Api
 					Application.VersionDate,
 					System = SystemInfo.AsObject()
 				}
-			} );
+			} ).ConfigureAwait( false );
 
 			if ( sw.Elapsed.TotalSeconds > 2.0f )
 			{
@@ -124,7 +127,8 @@ internal static partial class Api
 		if ( result.Id == 0 )
 		{
 			Log.Warning( "No account information - starting in offline mode.." );
-			await Task.Delay( 1000 );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await Task.Delay( 1000 ).ConfigureAwait( false );
 			return default;
 		}
 

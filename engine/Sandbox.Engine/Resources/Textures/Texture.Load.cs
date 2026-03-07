@@ -241,7 +241,8 @@ public partial class Texture
 
 		while ( !t.IsLoaded )
 		{
-			await Task.Delay( 10 );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await Task.Delay( 10 ).ConfigureAwait( false );
 		}
 
 		return t;

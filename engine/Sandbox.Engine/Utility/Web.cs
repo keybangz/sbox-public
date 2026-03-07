@@ -28,14 +28,15 @@ internal static class Web
 		try
 		{
 			tries++;
-			var response = await client.GetAsync( url, HttpCompletionOption.ResponseContentRead );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			var response = await client.GetAsync( url, HttpCompletionOption.ResponseContentRead ).ConfigureAwait( false );
 
 			if ( !response.IsSuccessStatusCode )
 			{
 				if ( tries < 3 )
 				{
 					Log.Warning( $"Error downloading {url} (status was {response.StatusCode}) - retrying" );
-					await Task.Delay( 500 * tries );
+					await Task.Delay( 500 * tries ).ConfigureAwait( false );
 					goto retry;
 				}
 
@@ -53,7 +54,7 @@ internal static class Web
 			if ( !path.Exists ) path.Create();
 
 			using var fileStream = new FileStream( tempName, FileMode.Create );
-			using var bodyStream = await response.Content.ReadAsStreamAsync( cancelToken );
+			using var bodyStream = await response.Content.ReadAsStreamAsync( cancelToken ).ConfigureAwait( false );
 			using var content = new DataProgress.HttpContentStream( bodyStream );
 
 			if ( progress is not null )
@@ -61,7 +62,7 @@ internal static class Web
 				content.Progress = p => MainThread.Queue( () => progress.Invoke( p ) );
 			}
 
-			await content.CopyToAsync( fileStream, cancelToken );
+			await content.CopyToAsync( fileStream, cancelToken ).ConfigureAwait( false );
 		}
 		catch ( TaskCanceledException )
 		{
@@ -72,7 +73,7 @@ internal static class Web
 			if ( tries <= 3 )
 			{
 				Log.Warning( $"Error downloading {url} ({e.Message}) - retrying" );
-				await Task.Delay( 500 * tries );
+				await Task.Delay( 500 * tries ).ConfigureAwait( false );
 				goto retry;
 			}
 
@@ -85,7 +86,7 @@ internal static class Web
 			if ( tries <= 3 )
 			{
 				Log.Warning( $"Error downloading {url} ({ioe.Message}) - retrying" );
-				await Task.Delay( 500 * tries );
+				await Task.Delay( 500 * tries ).ConfigureAwait( false );
 				goto retry;
 			}
 
@@ -117,7 +118,7 @@ internal static class Web
 				if ( imoveTries > 10 )
 					return false;
 
-				await Task.Delay( 100 * tries );
+				await Task.Delay( 100 * tries ).ConfigureAwait( false );
 			}
 		}
 	}
@@ -129,7 +130,8 @@ internal static class Web
 	{
 		try
 		{
-			using ( var stream = await client.GetStreamAsync( url, cancelToken ) )
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			using ( var stream = await client.GetStreamAsync( url, cancelToken ).ConfigureAwait( false ) )
 			{
 				using ( var fileStream = new MemoryStream() )
 				{
@@ -138,7 +140,7 @@ internal static class Web
 					while ( !t.IsCompleted )
 					{
 						loader?.Invoke( (int)fileStream.Position );
-						await Task.Delay( 16, cancelToken );
+						await Task.Delay( 16, cancelToken ).ConfigureAwait( false );
 						cancelToken.ThrowIfCancellationRequested();
 					}
 
@@ -169,7 +171,8 @@ internal static class Web
 		{
 			try
 			{
-				return await client.GetStringAsync( url, cancelToken );
+				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+				return await client.GetStringAsync( url, cancelToken ).ConfigureAwait( false );
 			}
 			catch ( HttpRequestException e )
 			{
@@ -180,7 +183,7 @@ internal static class Web
 				}
 
 				Log.Warning( e, $"Error downloading string '{url}' ({e.StatusCode}) ({i}/3)" );
-				await Task.Delay( 500 );
+				await Task.Delay( 500 ).ConfigureAwait( false );
 				continue;
 			}
 			catch ( TaskCanceledException )
@@ -202,7 +205,8 @@ internal static class Web
 	/// </summary>
 	public static async Task<T> DownloadJson<T>( string url, CancellationToken cancelToken = default )
 	{
-		var json = await DownloadString( url, cancelToken );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		var json = await DownloadString( url, cancelToken ).ConfigureAwait( false );
 
 		try
 		{
@@ -235,7 +239,8 @@ internal static class Web
 
 		HttpResponseMessage r = default;
 
-		await Task.Run( async () => r = await client.PutAsync( endpoint, content, cancelationToken ), cancelationToken );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		await Task.Run( async () => r = await client.PutAsync( endpoint, content, cancelationToken ).ConfigureAwait( false ), cancelationToken ).ConfigureAwait( false );
 
 		if ( r.StatusCode != System.Net.HttpStatusCode.Created )
 		{

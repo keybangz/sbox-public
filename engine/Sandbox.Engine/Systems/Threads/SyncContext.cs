@@ -63,27 +63,17 @@ internal static partial class SyncContext
 	/// <summary>
 	/// Run an async task in a synchronous blocking manner.
 	/// </summary>
-	private static int _runBlockingLoopCount = 0;
-
 	public static void RunBlocking( Task task )
 	{
 		ThreadSafe.AssertIsMainThread();
 
-		System.IO.File.AppendAllText( "/tmp/runblocking_debug.txt", $"[RunBlocking] Starting, task.IsCompleted={task.IsCompleted}\n" );
-		int loopCount = 0;
 		while ( !task.IsCompleted )
 		{
-			loopCount++;
-			_runBlockingLoopCount++;
-			if ( loopCount <= 3 || loopCount % 1000 == 0 )
-			{
-				System.IO.File.AppendAllText( "/tmp/runblocking_debug.txt", $"[RunBlocking] Loop #{loopCount}, total={_runBlockingLoopCount}\n" );
-			}
 			EngineLoop.RunAsyncTasks();
-			Thread.Yield();
+			// Small sleep to reduce CPU usage while waiting
+			Thread.Sleep( 1 );
 			IToolsDll.Current?.Spin();
 		}
-		System.IO.File.AppendAllText( "/tmp/runblocking_debug.txt", $"[RunBlocking] Task completed after {loopCount} loops\n" );
 
 		if ( task.Exception != null )
 			throw task.Exception;
@@ -99,7 +89,8 @@ internal static partial class SyncContext
 		while ( !task.IsCompleted )
 		{
 			EngineLoop.RunAsyncTasks();
-			Thread.Yield();
+			// Small sleep to reduce CPU usage while waiting
+			Thread.Sleep( 1 );
 		}
 
 		if ( task.Exception != null )

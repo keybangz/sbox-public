@@ -26,7 +26,8 @@ public static partial class Inventory
 
 		while ( result.IsPending() )
 		{
-			await Task.Delay( 10 );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await Task.Delay( 10 ).ConfigureAwait( false );
 		}
 
 		var previousItems = _items.ToArray();
@@ -73,7 +74,8 @@ public static partial class Inventory
 
 		while ( NativeEngine.SteamInventory.IsCheckingOut() )
 		{
-			await Task.Delay( 200 );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await Task.Delay( 200 ).ConfigureAwait( false );
 		}
 
 		if ( !NativeEngine.SteamInventory.WasCheckoutSuccessful() )
@@ -85,9 +87,10 @@ public static partial class Inventory
 
 		while ( true )
 		{
-			await Task.Delay( 500 );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await Task.Delay( 500 ).ConfigureAwait( false );
 
-			var newItems = await Refresh();
+			var newItems = await Refresh().ConfigureAwait( false );
 			if ( newItems.Length > 0 )
 			{
 				foreach ( var item in newItems )

@@ -69,23 +69,26 @@ partial class Compiler
 		try
 		{
 			// Do the expensive archive building on a worker thread
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
 			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[Compiler.BuildAsync] {Name} before Task.Run BuildArchive\n" );
-			var archive = await Task.Run( () => BuildArchive( output ) );
+			var archive = await Task.Run( () => BuildArchive( output ) ).ConfigureAwait( false );
 			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[Compiler.BuildAsync] {Name} after Task.Run BuildArchive\n" );
 
 			// Build a list of references, waiting for other compilers to finish if needed
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
 			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[Compiler.BuildAsync] {Name} before BuildReferencesAsync\n" );
-			var refs = await BuildReferencesAsync( archive );
+			var refs = await BuildReferencesAsync( archive ).ConfigureAwait( false );
 			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[Compiler.BuildAsync] {Name} after BuildReferencesAsync\n" );
 
 			// Actually compile, again on a worker thread since it's expensive
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
 			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[Compiler.BuildAsync] {Name} before Task.Run BuildInternal\n" );
 			await Task.Run( () =>
 			{
 				System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[Compiler.BuildAsync] {Name} INSIDE Task.Run BuildInternal (thread pool)\n" );
 				BuildInternal( refs, output );
 				System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[Compiler.BuildAsync] {Name} BuildInternal completed (thread pool)\n" );
-			} );
+			} ).ConfigureAwait( false );
 			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[Compiler.BuildAsync] {Name} after Task.Run BuildInternal (back on main)\n" );
 		}
 		catch ( System.Exception e )

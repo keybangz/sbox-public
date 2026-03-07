@@ -218,8 +218,8 @@ public sealed partial class Compiler : IDisposable
 				continue;
 
 			// FindReferenceAsync throws if not found
-
-			if ( await Group.FindReferenceAsync( name, this ) is { } mr )
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			if ( await Group.FindReferenceAsync( name, this ).ConfigureAwait( false ) is { } mr )
 			{
 				log.Trace( $"Found reference: {name}" );
 				output.Add( mr );

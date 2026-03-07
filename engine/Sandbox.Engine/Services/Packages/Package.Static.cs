@@ -166,7 +166,8 @@ public partial class Package
 		{
 			var packageIdent = $"{ident.org}.{ident.package}";
 			if ( ident.version is not null ) packageIdent += $"#{ident.version}";
-			var result = await Backend.Package.Get( packageIdent );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			var result = await Backend.Package.Get( packageIdent ).ConfigureAwait( false );
 			if ( result is null ) return null;
 
 
@@ -335,7 +336,8 @@ public partial class Package
 		try
 		{
 			Log.Info( $"[Package.FindAsync] Calling Backend.Package.Find..." );
-			var l = await Backend.Package.Find( query, take, skip );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			var l = await Backend.Package.Find( query, take, skip ).ConfigureAwait( false );
 			var elapsed = (DateTime.Now - startTime).TotalMilliseconds;
 			Log.Info( $"[Package.FindAsync] Backend returned {l?.Packages?.Count ?? 0} packages in {elapsed:F0}ms" );
 			return FindResult.FromDto( l );

@@ -251,13 +251,15 @@ public partial class Project
 		System.IO.File.AppendAllText( "/tmp/compileasync_debug.txt", $"[CompileAsync] Start, IsBuilding={CompileGroup.IsBuilding}\n" );
 		while ( CompileGroup.IsBuilding )
 		{
-			await Task.Delay( 50 );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await Task.Delay( 50 ).ConfigureAwait( false );
 		}
 
 		System.IO.File.AppendAllText( "/tmp/compileasync_debug.txt", $"[CompileAsync] After wait loop, calling BuildAsync\n" );
 		CompileGroup.AllowFastHotload = HotloadManager.hotload_fast;
 
-		var result = await CompileGroup.BuildAsync();
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		var result = await CompileGroup.BuildAsync().ConfigureAwait( false );
 		System.IO.File.AppendAllText( "/tmp/compileasync_debug.txt", $"[CompileAsync] BuildAsync returned: {result}\n" );
 		return result;
 	}

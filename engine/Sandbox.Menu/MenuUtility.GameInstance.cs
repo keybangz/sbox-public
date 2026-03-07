@@ -67,7 +67,8 @@ public static partial class MenuUtility
 		LoadingScreen.Media = null;
 		LoadingScreen.Title = "Loading Game..";
 
-		var package = await Package.FetchAsync( ident, false );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		var package = await Package.FetchAsync( ident, false ).ConfigureAwait( false );
 		if ( package is not null )
 		{
 			LoadingScreen.Title = package.Title;
@@ -77,7 +78,8 @@ public static partial class MenuUtility
 		var flags = GameLoadingFlags.Host | GameLoadingFlags.Reload;
 		if ( Application.IsEditor ) flags |= GameLoadingFlags.Developer; // todo - is the package we're loading a local package
 
-		await IGameInstanceDll.Current.LoadGamePackageAsync( ident, flags, ct );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		await IGameInstanceDll.Current.LoadGamePackageAsync( ident, flags, ct ).ConfigureAwait( false );
 	}
 
 	static bool _isJoiningLobby;
@@ -94,7 +96,8 @@ public static partial class MenuUtility
 		{
 			_isJoiningLobby = true;
 
-			var lobbies = await Networking.QueryLobbies( ident );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			var lobbies = await Networking.QueryLobbies( ident ).ConfigureAwait( false );
 
 			var orderedLobbies = lobbies.OrderBy( lobby => lobby.ContainsFriends )
 				.ThenByDescending( lobby => lobby.Members );
@@ -109,7 +112,8 @@ public static partial class MenuUtility
 				Log.Info( $"Attempting to join available lobby {lobby.LobbyId}" );
 
 				// Try to join this one
-				if ( await Networking.TryConnectSteamId( lobby.LobbyId ) )
+				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+				if ( await Networking.TryConnectSteamId( lobby.LobbyId ).ConfigureAwait( false ) )
 					return true;
 			}
 

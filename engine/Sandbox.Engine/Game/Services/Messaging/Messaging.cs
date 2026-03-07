@@ -36,7 +36,8 @@ public static class Messaging
 		client = new WebPubSubClient( cred, options );
 		client.GroupMessageReceived += MessageClient_GroupMessageReceived;
 		client.ServerMessageReceived += MessageClient_ServerMessageReceived;
-		await client.StartAsync();
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		await client.StartAsync().ConfigureAwait( false );
 	}
 
 	internal static async Task Shutdown()
@@ -44,8 +45,9 @@ public static class Messaging
 		if ( client is null )
 			return;
 
-		await client.StopAsync();
-		await client.DisposeAsync();
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		await client.StopAsync().ConfigureAwait( false );
+		await client.DisposeAsync().ConfigureAwait( false );
 		client = null;
 	}
 

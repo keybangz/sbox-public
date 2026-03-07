@@ -352,10 +352,9 @@ internal class ExpirableSynchronizationContext : SynchronizationContext
 		var data = new Data( d, state, isCancelled ? this : target );
 
 		var writeResult = target.m_queue.Writer.TryWrite( data );
-		if ( _postCount <= 10 )
-		{
-			System.IO.File.AppendAllText( "/tmp/sync_ops_debug.txt", $"[OP#{op}] POST #{_postCount} TryWrite={writeResult} QueueCount={target.m_queue.Reader.Count}\n" );
-		}
+		// Log all posts to help debug Linux freeze issues
+		var threadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
+		System.IO.File.AppendAllText( "/tmp/sync_ops_debug.txt", $"[OP#{op}] POST #{_postCount} TryWrite={writeResult} QueueCount={target.m_queue.Reader.Count} Thread={threadId}\n" );
 	}
 
 	public void Expire( ExpirableSynchronizationContext newInstance )
@@ -394,6 +393,10 @@ internal class ExpirableSynchronizationContext : SynchronizationContext
 	}
 
 	private static int _processQueueCount = 0;
+	private static Stopwatch _callbackStopwatch = new Stopwatch();
+	private static Stopwatch _processQueueStopwatch = new Stopwatch();
+	private const double CallbackThresholdMs = 50;
+	private const double ProcessQueueTimeBudgetMs = 16; // Aim for 60fps frame budget
 
 	public void ProcessQueue()
 	{
@@ -419,6 +422,8 @@ internal class ExpirableSynchronizationContext : SynchronizationContext
 		Interlocked.Increment( ref Frame );
 		Interlocked.Increment( ref _currentlyProcessingThreadCount );
 
+		_processQueueStopwatch.Restart();
+
 		try
 		{
 			_sCurrentProcessingContext = this;
@@ -442,7 +447,14 @@ internal class ExpirableSynchronizationContext : SynchronizationContext
 
 				try
 				{
+					_callbackStopwatch.Restart();
 					data.Callback( data.State );
+					var elapsed = _callbackStopwatch.Elapsed.TotalMilliseconds;
+					if ( elapsed > CallbackThresholdMs )
+					{
+						var name = data.State is Delegate deleg ? deleg.ToSimpleString() : data.State?.GetType()?.Name ?? "unknown";
+						System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] SyncContext callback took {elapsed:F0}ms: {name}\n" );
+					}
 				}
 				catch ( TaskCanceledException )
 				{
@@ -465,6 +477,12 @@ internal class ExpirableSynchronizationContext : SynchronizationContext
 				maxProcess--;
 
 				if ( maxProcess <= 0 )
+					break;
+
+				// Time budget: yield after 16ms to keep UI responsive
+				// Note: This won't help if a single callback takes 30+ seconds,
+				// but it will help with many small callbacks accumulating
+				if ( _processQueueStopwatch.Elapsed.TotalMilliseconds > ProcessQueueTimeBudgetMs )
 					break;
 			}
 		}

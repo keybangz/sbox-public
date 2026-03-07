@@ -91,7 +91,8 @@ public static partial class Cloud
 	/// </summary>
 	public static async Task<T> Load<T>( string ident, bool withCode = false ) where T : Resource
 	{
-		var (package, primaryAsset) = await GetPackageAndPrimaryAsset( ident );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		var (package, primaryAsset) = await GetPackageAndPrimaryAsset( ident ).ConfigureAwait( false );
 
 		if ( string.IsNullOrEmpty( primaryAsset ) )
 		{
@@ -106,14 +107,16 @@ public static partial class Cloud
 		if ( typeof( T ) == typeof( SoundEvent ) && package.TypeName != "sound" ) return default;
 		if ( typeof( T ) == typeof( PrefabFile ) && package.TypeName != "prefab" ) return default;
 
-		var fs = await package.MountAsync( withCode );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		var fs = await package.MountAsync( withCode ).ConfigureAwait( false );
 		if ( fs is null )
 		{
 			Log.Warning( $"Cloud: Package {ident} couldn't be mounted" );
 			return default;
 		}
 
-		return await ResourceLibrary.LoadAsync<T>( primaryAsset );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		return await ResourceLibrary.LoadAsync<T>( primaryAsset ).ConfigureAwait( false );
 	}
 
 	/// <summary>
@@ -132,7 +135,8 @@ public static partial class Cloud
 		if ( IsInstalled( ident ) )
 			return;
 
-		var (package, primaryAsset) = await GetPackageAndPrimaryAsset( ident );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		var (package, primaryAsset) = await GetPackageAndPrimaryAsset( ident ).ConfigureAwait( false );
 
 		if ( string.IsNullOrEmpty( primaryAsset ) )
 		{
@@ -150,7 +154,8 @@ public static partial class Cloud
 			withCode = false;
 		}
 
-		var fs = await package.MountAsync( withCode );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		var fs = await package.MountAsync( withCode ).ConfigureAwait( false );
 		if ( fs is null )
 		{
 			Log.Warning( $"Cloud: Package {ident} couldn't be mounted" );
@@ -172,7 +177,8 @@ public static partial class Cloud
 
 	static async Task<(Package, string)> GetPackageAndPrimaryAsset( string ident )
 	{
-		var package = await Package.FetchAsync( ident, false );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		var package = await Package.FetchAsync( ident, false ).ConfigureAwait( false );
 		if ( package == null || package.Revision == null )
 		{
 			// Package was not found

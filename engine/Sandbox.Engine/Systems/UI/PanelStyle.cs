@@ -279,12 +279,38 @@ public sealed class PanelStyle : Styles
 
 	public void SetBackgroundImage( string image )
 	{
-		SetBackgroundImage( Texture.Load( image ) );
+		// Use async loading to prevent blocking the main thread
+		// This is especially important for URL-based images
+		_ = SetBackgroundImageInternalAsync( image );
+	}
+
+	private async Task SetBackgroundImageInternalAsync( string image )
+	{
+		try
+		{
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			var texture = await Texture.LoadAsync( image ).ConfigureAwait( false );
+
+			// Check if panel is still valid before setting
+			if ( panel != null && panel.IsValid )
+			{
+				SetBackgroundImage( texture );
+			}
+		}
+		catch ( System.Exception )
+		{
+			// Panel may have been deleted during async load, ignore
+		}
 	}
 
 	public async Task SetBackgroundImageAsync( string image )
 	{
-		SetBackgroundImage( await Texture.LoadAsync( image ) );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		var texture = await Texture.LoadAsync( image ).ConfigureAwait( false );
+		if ( panel != null && panel.IsValid )
+		{
+			SetBackgroundImage( texture );
+		}
 	}
 
 	public void SetRect( Rect rect )

@@ -49,15 +49,15 @@ internal static class ImageUrl
 		try
 		{
 			// I'd love to retry this multiple times, if it's a weird error that seems recoverable
-
-			var bytes = await Http.RequestBytesAsync( url );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			var bytes = await Http.RequestBytesAsync( url ).ConfigureAwait( false );
 			Texture texture = null;
 			// decode in a thread
 			await Task.Run( () =>
 			{
 				using var ms = new MemoryStream( bytes );
 				texture = Image.Load( ms, url );
-			} );
+			} ).ConfigureAwait( false );
 
 			return texture;
 		}

@@ -59,6 +59,14 @@ setup_dxc_wrapper() {
     echo "  DXC wrapper setup complete"
 }
 
+# Force rebuild by removing bin/obj directories for key projects
+echo "Cleaning previous build artifacts..."
+rm -rf ./engine/Sandbox.Engine/bin ./engine/Sandbox.Engine/obj
+rm -rf ./engine/Sandbox.Menu/bin ./engine/Sandbox.Menu/obj
+rm -rf ./engine/Sandbox.Compiling/bin ./engine/Sandbox.Compiling/obj
+rm -rf ./engine/Sandbox.Services/bin ./engine/Sandbox.Services/obj
+
+echo "Building..."
 dotnet run --project ./engine/Tools/SboxBuild/SboxBuild.csproj -- build --config Developer
 dotnet run --project ./engine/Tools/SboxBuild/SboxBuild.csproj -- build-shaders
 

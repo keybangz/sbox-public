@@ -80,6 +80,9 @@ internal class UISystem
 		}
 	}
 
+	private static System.Diagnostics.Stopwatch _simPhaseStopwatch = new System.Diagnostics.Stopwatch();
+	private const double SimPhaseThresholdMs = 50;
+
 	internal void Simulate( bool allowMouseInput )
 	{
 		using ( Performance.Scope( "Update Screen Size" ) )
@@ -87,30 +90,45 @@ internal class UISystem
 			Screen.UpdateFromEngine();
 		}
 
+		// Process queued texture loads incrementally to avoid frame freezes
+		using ( Performance.Scope( "Process Texture Queue" ) )
+		{
+			TextureLoadQueue.ProcessQueue();
+		}
+
+		_simPhaseStopwatch.Restart();
 		using ( Performance.Scope( "Tick Panels" ) )
 		{
 			TickPanels();
 		}
+		if ( _simPhaseStopwatch.Elapsed.TotalMilliseconds > SimPhaseThresholdMs )
+			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] UI.TickPanels took {_simPhaseStopwatch.Elapsed.TotalMilliseconds:F0}ms\n" );
 
 		using ( Performance.Scope( "Tick Input" ) )
 		{
 			TickInput( allowMouseInput );
 		}
 
+		_simPhaseStopwatch.Restart();
 		using ( Performance.Scope( "Pre Layout" ) )
 		{
 			PreLayout();
 		}
+		if ( _simPhaseStopwatch.Elapsed.TotalMilliseconds > SimPhaseThresholdMs )
+			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] UI.PreLayout took {_simPhaseStopwatch.Elapsed.TotalMilliseconds:F0}ms\n" );
 
 		using ( Performance.Scope( "Deferred Deletion" ) )
 		{
 			RunDeferredDeletion();
 		}
 
+		_simPhaseStopwatch.Restart();
 		using ( Performance.Scope( "Layout" ) )
 		{
 			Layout();
 		}
+		if ( _simPhaseStopwatch.Elapsed.TotalMilliseconds > SimPhaseThresholdMs )
+			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] UI.Layout took {_simPhaseStopwatch.Elapsed.TotalMilliseconds:F0}ms\n" );
 
 		using ( Performance.Scope( "Post Layout" ) )
 		{
@@ -122,10 +140,13 @@ internal class UISystem
 			RunDeferredDeletion();
 		}
 
+		_simPhaseStopwatch.Restart();
 		using ( Performance.Scope( "Build Command Lists" ) )
 		{
 			BuildCommandLists();
 		}
+		if ( _simPhaseStopwatch.Elapsed.TotalMilliseconds > SimPhaseThresholdMs )
+			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] UI.BuildCommandLists took {_simPhaseStopwatch.Elapsed.TotalMilliseconds:F0}ms\n" );
 
 		using ( Performance.Scope( "Gather Command Lists" ) )
 		{
@@ -151,12 +172,17 @@ internal class UISystem
 	{
 		RootPanels.RemoveAll( x => x == null );
 
+		// Reset time budget for panel ticking
+		Panel.ResetTickTimeBudget();
+
 		for ( int i = 0; i < RootPanels.Count(); i++ )
 		{
 			if ( !RootPanels[i].IsValid ) continue;
 			RootPanels[i].TickInternal();
 		}
 	}
+
+	private static System.Diagnostics.Stopwatch _preLayoutStopwatch = new System.Diagnostics.Stopwatch();
 
 	internal void PreLayout()
 	{
@@ -168,7 +194,10 @@ internal class UISystem
 		for ( int i = 0; i < RootPanels.Count(); i++ )
 		{
 			if ( !RootPanels[i].IsValid ) continue;
+			_preLayoutStopwatch.Restart();
 			RootPanels[i].PreLayout( screenRect );
+			if ( _preLayoutStopwatch.Elapsed.TotalMilliseconds > SimPhaseThresholdMs )
+				System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] RootPanel[{i}].PreLayout took {_preLayoutStopwatch.Elapsed.TotalMilliseconds:F0}ms (Name={RootPanels[i].GetType().Name})\n" );
 		}
 	}
 

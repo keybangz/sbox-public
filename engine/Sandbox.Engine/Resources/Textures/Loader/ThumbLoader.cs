@@ -71,10 +71,12 @@ internal static class ThumbLoader
 			//
 			if ( filename.Count( x => x == '/' || x == '\\' ) == 0 && filename.Count( '.' ) == 1 && Package.TryParseIdent( filename, out var ident ) )
 			{
-				var packageInfo = await Package.FetchAsync( $"{ident.org}.{ident.package}", true );
+				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+				var packageInfo = await Package.FetchAsync( $"{ident.org}.{ident.package}", true ).ConfigureAwait( false );
 				if ( packageInfo == null ) return;
 
-				var thumb = await ImageUrl.LoadFromUrl( packageInfo.Thumb );
+				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+				var thumb = await ImageUrl.LoadFromUrl( packageInfo.Thumb ).ConfigureAwait( false );
 				if ( thumb == null ) return;
 
 				placeholder.CopyFrom( thumb );
@@ -92,7 +94,8 @@ internal static class ThumbLoader
 
 					if ( FileSystem.Mounted.FileExists( imageFile ) )
 					{
-						using var bitmap = Bitmap.CreateFromBytes( await FileSystem.Mounted.ReadAllBytesAsync( imageFile ) );
+						// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+						using var bitmap = Bitmap.CreateFromBytes( await FileSystem.Mounted.ReadAllBytesAsync( imageFile ).ConfigureAwait( false ) );
 						using var texture = bitmap.ToTexture();
 						placeholder.CopyFrom( texture );
 						return;
@@ -112,7 +115,8 @@ internal static class ThumbLoader
 
 				// last resort - generate it!
 				{
-					using var bitmap = await ResourceLibrary.GetThumbnail( filename, 512, 512 );
+					// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+					using var bitmap = await ResourceLibrary.GetThumbnail( filename, 512, 512 ).ConfigureAwait( false );
 					if ( bitmap != null )
 					{
 						using var downscaled = bitmap.Resize( 256, 256, true );

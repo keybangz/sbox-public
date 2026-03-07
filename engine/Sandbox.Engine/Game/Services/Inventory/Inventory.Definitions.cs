@@ -29,7 +29,8 @@ public static partial class Inventory
 	{
 		while ( !gotDefinitions )
 		{
-			await Task.Delay( 100 );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await Task.Delay( 100 ).ConfigureAwait( false );
 
 			if ( token.IsCancellationRequested )
 				return;
@@ -53,12 +54,14 @@ public static partial class Inventory
 		gotDefinitions = true;
 
 		// update our actual inventory
-		await Refresh( default );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		await Refresh( default ).ConfigureAwait( false );
 
-		// wait for the prices to come 
+		// wait for the prices to come
 		while ( !NativeEngine.SteamInventory.HasPrices() )
 		{
-			await Task.Delay( 10 );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await Task.Delay( 10 ).ConfigureAwait( false );
 		}
 
 		// apply prices to all the definitions

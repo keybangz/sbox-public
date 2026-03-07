@@ -288,8 +288,8 @@ public class CompileGroup : IDisposable
 
 			System.IO.File.AppendAllText( "/tmp/buildasync_debug.txt", $"[BuildAsync] Starting Task.WhenAll\n" );
 			// Do the actual build, let compilers wait for each other as needed
-
-			await Task.WhenAll( toCompile.Select( x => x.BuildAsync() ) );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await Task.WhenAll( toCompile.Select( x => x.BuildAsync() ) ).ConfigureAwait( false );
 			System.IO.File.AppendAllText( "/tmp/buildasync_debug.txt", $"[BuildAsync] Task.WhenAll completed\n" );
 
 			//
@@ -381,7 +381,8 @@ public class CompileGroup : IDisposable
 
 			const double timeoutSeconds = 60d;
 
-			var output = await compiler.GetCompileOutputAsync().WaitAsync( TimeSpan.FromSeconds( timeoutSeconds ) );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			var output = await compiler.GetCompileOutputAsync().WaitAsync( TimeSpan.FromSeconds( timeoutSeconds ) ).ConfigureAwait( false );
 
 			if ( !output.Successful )
 				throw new System.Exception( $"Broken Reference: {reference} (the compiler failed)" );
@@ -427,7 +428,8 @@ public class CompileGroup : IDisposable
 	{
 		while ( NeedsBuild || IsBuilding )
 		{
-			await Task.Delay( 10 );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await Task.Delay( 10 ).ConfigureAwait( false );
 
 			if ( token.IsCancellationRequested )
 				return;

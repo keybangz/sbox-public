@@ -53,11 +53,18 @@ class CallbackBatch : System.IDisposable
 				{
 					using var scope = action.Scene is not null ? new ScenePushScope( action.Scene ) : default;
 
+					var start = System.Environment.TickCount64;
 					switch ( action.Target )
 					{
 						case Component c: c.InvokeCallback( action.Callback ); break;
 						case GameObject go: go.InvokeCallback( action.Callback ); break;
 						default: action.FallbackAction?.Invoke(); break;
+					}
+					var elapsed = System.Environment.TickCount64 - start;
+					if ( elapsed > 100 )
+					{
+						var targetName = action.Target?.GetType()?.FullName ?? "unknown";
+						System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[CALLBACK] {action.Callback} on {targetName} took {elapsed}ms\n" );
 					}
 				}
 				catch ( System.Exception e )

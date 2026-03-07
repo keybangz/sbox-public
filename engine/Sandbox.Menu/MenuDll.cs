@@ -148,8 +148,35 @@ internal sealed class MenuDll : IMenuDll
 		// start listening to backend messages
 		Sandbox.Services.Messaging.OnMessage += OnMessageFromBackend;
 
-		// We shouldn't actually have anything to compile on retail
-		await Project.CompileAsync();
+		// Start compilation in background (shouldn't actually have anything to compile on retail)
+		var initStartTime = System.Environment.TickCount64;
+		var compileTask = Project.CompileAsync();
+
+		// Load fonts while compilation is happening
+		{
+			using var tx = Sandbox.Engine.Bootstrap.StartupTiming?.ScopeTimer( "Menu - Fonts" );
+			var fontStart = System.Environment.TickCount64;
+			FontManager.Instance.LoadAll( FileSystem.Mounted );
+			var fontElapsed = System.Environment.TickCount64 - fontStart;
+			if ( fontElapsed > 100 )
+				System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[INIT] FontManager.LoadAll took {fontElapsed}ms\n" );
+		}
+
+		// Wait for both compilation and account update in parallel
+		// NOTE: Cannot use ConfigureAwait(false) here because SetupMenuScene() below must run on main thread
+		var tasksToWait = new List<Task> { compileTask };
+		if ( AccountUpdateTask != null )
+		{
+			tasksToWait.Add( AccountUpdateTask );
+		}
+
+		using ( Sandbox.Engine.Bootstrap.StartupTiming?.ScopeTimer( "Menu - Compile & Account" ) )
+		{
+			var waitStart = System.Environment.TickCount64;
+			await Task.WhenAll( tasksToWait );
+			var waitElapsed = System.Environment.TickCount64 - waitStart;
+			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[INIT] Compile & Account wait took {waitElapsed}ms\n" );
+		}
 
 		Enroller.LoadPackage( "local.menu#local" );
 
@@ -157,22 +184,6 @@ internal sealed class MenuDll : IMenuDll
 		{
 			Log.Info( "Aready inited?" );
 			return;
-		}
-
-		{
-			using var tx = Sandbox.Engine.Bootstrap.StartupTiming?.ScopeTimer( "Menu - Fonts" );
-			FontManager.Instance.LoadAll( FileSystem.Mounted );
-		}
-
-		// We can wait right up until we start the menu scene to want valid account info
-		if ( AccountUpdateTask != null )
-		{
-			//
-			// TODO - handle not logged in, api down etc
-			//
-
-			using var tx = Sandbox.Engine.Bootstrap.StartupTiming?.ScopeTimer( "Menu - Account Update Task" );
-			await AccountUpdateTask;
 		}
 
 		// If the avatar was found on the backend, replace the cookie one
@@ -185,10 +196,18 @@ internal sealed class MenuDll : IMenuDll
 		{
 			using ( Sandbox.Engine.Bootstrap.StartupTiming?.ScopeTimer( "Menu - Resources" ) )
 			{
+				var resStart = System.Environment.TickCount64;
 				LoadResources();
+				var resElapsed = System.Environment.TickCount64 - resStart;
+				if ( resElapsed > 100 )
+					System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[INIT] LoadResources took {resElapsed}ms\n" );
 			}
 
+			var sceneStart = System.Environment.TickCount64;
 			SetupMenuScene();
+			var sceneElapsed = System.Environment.TickCount64 - sceneStart;
+			if ( sceneElapsed > 100 )
+				System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[INIT] SetupMenuScene took {sceneElapsed}ms\n" );
 		}
 
 		IMenuSystem.Current = TypeLibrary.Create<IMenuSystem>( "MenuSystem", true );
@@ -334,9 +353,14 @@ internal sealed class MenuDll : IMenuDll
 		} );
 	}
 
+	// Time budget for MenuDll.Tick to prevent frame freezes
+	private const int TickTimeBudgetMs = 16;
+	private static System.Diagnostics.Stopwatch _tickStopwatch = new System.Diagnostics.Stopwatch();
+
 	public void Tick()
 	{
 		using var _ = PushScope();
+		_tickStopwatch.Restart();
 
 		try
 		{
@@ -345,6 +369,13 @@ internal sealed class MenuDll : IMenuDll
 		catch ( System.Exception e )
 		{
 			Log.Error( e, "Error in MenuSystem tick" );
+		}
+
+		// Check time budget after each major operation
+		if ( _tickStopwatch.ElapsedMilliseconds > TickTimeBudgetMs * 10 )
+		{
+			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[MENU_TICK] MenuSystem.Tick took {_tickStopwatch.ElapsedMilliseconds}ms, skipping rest\n" );
+			return;
 		}
 
 		try
@@ -356,6 +387,12 @@ internal sealed class MenuDll : IMenuDll
 			Log.Error( e, "Error in PackageLoader tick" );
 		}
 
+		if ( _tickStopwatch.ElapsedMilliseconds > TickTimeBudgetMs * 10 )
+		{
+			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[MENU_TICK] Loader.Tick caused timeout at {_tickStopwatch.ElapsedMilliseconds}ms\n" );
+			return;
+		}
+
 		try
 		{
 			MenuScene.Tick();
@@ -363,6 +400,12 @@ internal sealed class MenuDll : IMenuDll
 		catch ( System.Exception e )
 		{
 			Log.Error( e, "Error in MenuScene tick" );
+		}
+
+		if ( _tickStopwatch.ElapsedMilliseconds > TickTimeBudgetMs * 10 )
+		{
+			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[MENU_TICK] MenuScene.Tick caused timeout at {_tickStopwatch.ElapsedMilliseconds}ms\n" );
+			return;
 		}
 
 		MenuUtility.Tick?.Invoke();

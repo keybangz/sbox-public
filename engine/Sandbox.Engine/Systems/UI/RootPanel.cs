@@ -1,4 +1,5 @@
-﻿using Sandbox.Engine;
+﻿using System.Linq;
+using Sandbox.Engine;
 using Sandbox.Rendering;
 
 namespace Sandbox.UI;
@@ -155,6 +156,8 @@ public partial class RootPanel : Panel
 		PreLayout();
 	}
 
+	private static System.Diagnostics.Stopwatch _preLayoutPhaseStopwatch = new System.Diagnostics.Stopwatch();
+
 	internal void PreLayout()
 	{
 		var cascade = new LayoutCascade
@@ -178,11 +181,20 @@ public partial class RootPanel : Panel
 			cascade.SelectorChanged = true;
 		}
 
+		_preLayoutPhaseStopwatch.Restart();
 		BuildStyleRules();
+		if ( _preLayoutPhaseStopwatch.Elapsed.TotalMilliseconds > 50 )
+			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] RootPanel.BuildStyleRules took {_preLayoutPhaseStopwatch.Elapsed.TotalMilliseconds:F0}ms\n" );
 
 		PushRootValues();
 
+		// Reset the time budget for this frame's PreLayout cascade
+		Panel.ResetPreLayoutTimeBudget();
+
+		_preLayoutPhaseStopwatch.Restart();
 		PreLayout( cascade );
+		if ( _preLayoutPhaseStopwatch.Elapsed.TotalMilliseconds > 50 )
+			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] RootPanel.PreLayout(cascade) took {_preLayoutPhaseStopwatch.Elapsed.TotalMilliseconds:F0}ms\n" );
 	}
 
 	internal void CalculateLayout()
@@ -276,6 +288,11 @@ public partial class RootPanel : Panel
 		styleRuleUpdates.Add( panel );
 	}
 
+	// Global frame budget tracking for BuildStyleRules across ALL RootPanels
+	private static long _lastFrameTime = 0;
+	private static int _panelsProcessedThisFrame = 0;
+	private const int MaxPanelsPerFrame = 512;
+
 	/// <summary>
 	/// Run through all panels that are pending a re-check on their style rules.
 	/// Only properly invalidate them if their rules actually change.
@@ -285,20 +302,56 @@ public partial class RootPanel : Panel
 		if ( styleRuleUpdates.Count == 0 )
 			return;
 
+		// Reset per-frame counter when we enter a new frame (use TickCount as frame indicator)
+		var currentTime = System.Environment.TickCount64 / 10; // ~10ms granularity
+		if ( _lastFrameTime != currentTime )
+		{
+			_lastFrameTime = currentTime;
+			_panelsProcessedThisFrame = 0;
+		}
+
+		// Check if we've already hit our frame budget
+		if ( _panelsProcessedThisFrame >= MaxPanelsPerFrame )
+		{
+			// Skip processing this frame, panels will be processed next frame
+			return;
+		}
+
 		var timer = FastTimer.StartNew();
 		int count = styleRuleUpdates.Count;
-		int locks = 0;
 
+		// Calculate how many panels we can still process this frame
+		int remainingBudget = MaxPanelsPerFrame - _panelsProcessedThisFrame;
+		int panelsToTake = Math.Min( count, remainingBudget );
+
+		int locks = 0;
 		var l = new object();
+
+		// Take only up to budget panels to process this frame
+		List<Panel> panelsToProcess;
+		if ( panelsToTake < count )
+		{
+			panelsToProcess = styleRuleUpdates.Take( panelsToTake ).ToList();
+			// Remove processed panels from the HashSet
+			foreach ( var p in panelsToProcess )
+				styleRuleUpdates.Remove( p );
+		}
+		else
+		{
+			panelsToProcess = styleRuleUpdates.ToList();
+			styleRuleUpdates.Clear();
+		}
+
+		_panelsProcessedThisFrame += panelsToProcess.Count;
 
 		//
 		// Anything in BuildRules should be thread safe
 		//
 #if true
 		{
-			Parallel.ForEach( styleRuleUpdates, panel =>
+			Parallel.ForEach( panelsToProcess, panel =>
 			{
-				if ( !panel.IsValid )
+				if ( panel == null || !panel.IsValid )
 					return;
 
 				if ( panel.Style.BuildRulesInThread() )
@@ -317,7 +370,7 @@ public partial class RootPanel : Panel
 		}
 #else
 		{
-			foreach ( var panel in styleRuleUpdates )
+			foreach ( var panel in panelsToProcess )
 			{
 				if ( !panel.IsValid )
 					return;
@@ -334,11 +387,9 @@ public partial class RootPanel : Panel
 		}
 #endif
 
-		styleRuleUpdates.Clear();
-
 		if ( timer.ElapsedMilliSeconds > 0.5 )
 		{
-			Log.Trace( $"BuildStyleRules {count:n0} ({locks}) took {timer.ElapsedMilliSeconds}ms" );
+			Log.Trace( $"BuildStyleRules {panelsToProcess.Count:n0}/{count:n0} ({locks}) took {timer.ElapsedMilliSeconds}ms" );
 		}
 	}
 }

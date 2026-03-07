@@ -136,13 +136,79 @@ public partial class Panel
 		Parent?.SetNeedsPreLayout();
 	}
 
+	private static int _preLayoutProcessedCount = 0;
+	private static int _preLayoutSkippedCount = 0;
+	private static int _slowBuildFinalCount = 0;
+	private static long _slowBuildFinalTotalMs = 0;
+
+	// Time budget for PreLayout to prevent long freezes
+	private static long _preLayoutFrameStartTime = 0;
+	private static bool _preLayoutTimeBudgetExceeded = false;
+	private const long PreLayoutTimeBudgetMs = 50; // Max 50ms per frame for PreLayout
+	private static int _timeBudgetCheckCount = 0;
+
+	// Flag to defer all PreLayout during scene loading
+	internal static bool DeferPreLayout = false;
+
+	internal static void ResetPreLayoutTimeBudget()
+	{
+		_preLayoutFrameStartTime = System.Environment.TickCount64;
+		_preLayoutTimeBudgetExceeded = false;
+		_preLayoutProcessedCount = 0;
+		_preLayoutSkippedCount = 0;
+		_timeBudgetCheckCount = 0;
+	}
+
 	internal virtual void PreLayout( LayoutCascade cascade )
 	{
 		if ( YogaNode == null )
 			return;
 
-		if ( !needsPreLayout && !cascade.SelectorChanged && !cascade.ParentChanged )
+		// Defer all PreLayout during scene loading for performance
+		if ( DeferPreLayout )
+		{
+			needsPreLayout = true; // Ensure we process after loading
 			return;
+		}
+
+		// Check time budget FIRST - if exceeded, skip and mark for next frame
+		if ( _preLayoutTimeBudgetExceeded )
+		{
+			needsPreLayout = true; // Ensure we process next frame
+			return;
+		}
+
+		// Check if we've exceeded our time budget (check every 50 panels)
+		if ( _preLayoutProcessedCount > 0 && (_preLayoutProcessedCount % 50) == 0 )
+		{
+			_timeBudgetCheckCount++;
+			var elapsed = System.Environment.TickCount64 - _preLayoutFrameStartTime;
+			if ( elapsed > PreLayoutTimeBudgetMs )
+			{
+				_preLayoutTimeBudgetExceeded = true;
+				needsPreLayout = true; // Ensure we process next frame
+				// Log panel details if budget greatly exceeded (potential sync blocker)
+				if ( elapsed > 1000 )
+				{
+					var panelInfo = GetType().FullName;
+					if ( !string.IsNullOrEmpty( ElementName ) )
+						panelInfo += $"#{ElementName}";
+					if ( Class?.Any() == true )
+						panelInfo += $".{string.Join( ".", Class )}";
+					System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[TIME_BUDGET] SLOW: {elapsed}ms after {_preLayoutProcessedCount} panels, panel: {panelInfo}\n" );
+				}
+				return;
+			}
+		}
+
+		// Skip if no work needed (but time budget check is more important)
+		if ( !needsPreLayout && !cascade.SelectorChanged && !cascade.ParentChanged )
+		{
+			_preLayoutSkippedCount++;
+			return;
+		}
+
+		_preLayoutProcessedCount++;
 
 		needsPreLayout = false;
 
@@ -151,8 +217,16 @@ public partial class Panel
 			UpdateChildrenIndexes();
 		}
 
-
+		// Track slow BuildFinal calls
+		var buildFinalStart = System.Environment.TickCount64;
 		ComputedStyle = Style.BuildFinal( ref cascade, out bool changed );
+		var buildFinalTime = System.Environment.TickCount64 - buildFinalStart;
+		if ( buildFinalTime > 5 ) // Log if > 5ms
+		{
+			_slowBuildFinalCount++;
+			_slowBuildFinalTotalMs += buildFinalTime;
+		}
+
 		cascade.ParentStyles = ComputedStyle;
 
 		PushLengthValues();
@@ -199,9 +273,10 @@ public partial class Panel
 				|| !ComputedStyle.IsDefault( "filter-tint" )
 				|| !ComputedStyle.IsDefault( "filter-border-width" );
 
+			// Use HasXxxSet to avoid triggering lazy texture loading during layout
 			HasBackground = ComputedStyle.BackgroundColor.Value.a > 0f
-				|| ComputedStyle.BorderImageSource is not null
-				|| (ComputedStyle.BackgroundImage is not null && ComputedStyle.BackgroundImage != Texture.Invalid)
+				|| ComputedStyle.HasBorderImageSourceSet
+				|| ComputedStyle.HasBackgroundImageSet
 				|| (ComputedStyle.BorderLeftColor.Value.a > 0f && ComputedStyle.BorderLeftWidth.Value.GetPixels( 1.0f ) > 0f)
 				|| (ComputedStyle.BorderTopColor.Value.a > 0f && ComputedStyle.BorderTopWidth.Value.GetPixels( 1.0f ) > 0f)
 				|| (ComputedStyle.BorderRightColor.Value.a > 0f && ComputedStyle.BorderRightWidth.Value.GetPixels( 1.0f ) > 0f)
@@ -226,7 +301,22 @@ public partial class Panel
 
 		for ( int i = 0; i < _children.Count; i++ )
 		{
-			_children[i].PreLayout( cascade );
+			var child = _children[i];
+			if ( child == null ) continue;
+
+			// Check time budget before processing each child
+			if ( _preLayoutTimeBudgetExceeded )
+			{
+				// Mark remaining children for next frame
+				for ( int j = i; j < _children.Count; j++ )
+				{
+					var remainingChild = _children[j];
+					if ( remainingChild != null )
+						remainingChild.needsPreLayout = true;
+				}
+				break;
+			}
+			child.PreLayout( cascade );
 		}
 
 		//

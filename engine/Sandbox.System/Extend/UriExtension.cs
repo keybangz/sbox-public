@@ -1,20 +1,75 @@
 ﻿using System.Net.Sockets;
 using System.Net;
+using System.Collections.Concurrent;
 
 namespace Sandbox;
 
 public static partial class SandboxSystemExtensions
 {
+	// Cache DNS results to avoid repeated slow lookups
+	private static readonly ConcurrentDictionary<string, (bool IsPrivate, DateTime CacheTime)> _dnsCache = new();
+	private static readonly TimeSpan _dnsCacheExpiry = TimeSpan.FromMinutes( 5 );
+
+	// Known public domains that don't need DNS checks (Facepunch CDN, Steam, etc.)
+	private static readonly HashSet<string> _knownPublicDomains = new( StringComparer.OrdinalIgnoreCase )
+	{
+		"facepunch.com",
+		"sbox.facepunch.com",
+		"asset.party",
+		"files.facepunch.com",
+		"steamcommunity.com",
+		"steamstatic.com",
+		"steampowered.com",
+		"cloudflare.com",
+		"githubusercontent.com",
+		"github.com",
+		"s3.amazonaws.com",
+	};
+
 	/// <summary>
 	/// Does this Uri resolve to a private range IP address?
+	/// Uses caching to avoid slow repeated DNS lookups on Linux.
 	/// </summary>
 	internal static bool IsPrivate( this Uri uri )
 	{
-		// don't allow any domains that resolve to private or loopback ip addresses
-		if ( Dns.GetHostEntry( uri.DnsSafeHost ).AddressList.Any( x => x.IsPrivate() ) )
-			return true;
+		var host = uri.DnsSafeHost;
 
-		return false;
+		// Fast path: skip DNS for known public domains
+		foreach ( var domain in _knownPublicDomains )
+		{
+			if ( host.EndsWith( domain, StringComparison.OrdinalIgnoreCase ) )
+				return false;
+		}
+
+		// Check cache first
+		if ( _dnsCache.TryGetValue( host, out var cached ) &&
+		     DateTime.UtcNow - cached.CacheTime < _dnsCacheExpiry )
+		{
+			return cached.IsPrivate;
+		}
+
+		// Perform DNS lookup with timeout
+		try
+		{
+			var task = Dns.GetHostEntryAsync( host );
+			if ( !task.Wait( TimeSpan.FromSeconds( 2 ) ) )
+			{
+				// DNS lookup timed out - assume not private and cache
+				_dnsCache[host] = (false, DateTime.UtcNow);
+				return false;
+			}
+
+			var entry = task.Result;
+			var isPrivate = entry.AddressList.Any( x => x.IsPrivate() );
+			_dnsCache[host] = (isPrivate, DateTime.UtcNow);
+			return isPrivate;
+		}
+		catch
+		{
+			// DNS lookup failed - cache as not private
+			_dnsCache[host] = (false, DateTime.UtcNow);
+			return false;
+		}
 	}
 
 	/// <summary>

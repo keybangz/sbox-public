@@ -36,7 +36,8 @@ internal static partial class Api
 				return;
 
 			// one at a time
-			await ForceFlushSemaphore.WaitAsync();
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await ForceFlushSemaphore.WaitAsync().ConfigureAwait( false );
 
 			try
 			{
@@ -46,7 +47,8 @@ internal static partial class Api
 
 				// minimum period between
 				if ( TimeSinceForceFlushed < 30 )
-					await Task.Delay( TimeSpan.FromSeconds( 30 - TimeSinceForceFlushed.Relative ) );
+					// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+					await Task.Delay( TimeSpan.FromSeconds( 30 - TimeSinceForceFlushed.Relative ) ).ConfigureAwait( false );
 
 				var guid = Guid.NewGuid().ToString();
 
@@ -57,7 +59,8 @@ internal static partial class Api
 				}
 
 				// force flush it
-				await ForceFlushAsync();
+				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+				await ForceFlushAsync().ConfigureAwait( false );
 
 				if ( !useBookmark )
 					return;
@@ -65,7 +68,8 @@ internal static partial class Api
 				if ( token.IsCancellationRequested )
 					return;
 
-				await Task.Delay( 1000 );
+				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+				await Task.Delay( 1000 ).ConfigureAwait( false );
 
 				for ( int i = 0; i < 10; i++ )
 				{
@@ -74,7 +78,8 @@ internal static partial class Api
 
 					try
 					{
-						var r = await Sandbox.Backend.Stats.GetBookmark( guid );
+						// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+						var r = await Sandbox.Backend.Stats.GetBookmark( guid ).ConfigureAwait( false );
 						if ( r == "found" ) break;
 					}
 					catch ( System.Exception e )
@@ -82,7 +87,8 @@ internal static partial class Api
 						Log.Warning( e, $"Error when waiting for ingestion" );
 					}
 
-					await Task.Delay( 1000 + 500 * i );
+					// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+					await Task.Delay( 1000 + 500 * i ).ConfigureAwait( false );
 				}
 			}
 			finally
@@ -105,7 +111,8 @@ internal static partial class Api
 		internal static async Task Shutdown()
 		{
 			if ( Pending.Count == 0 ) return;
-			await FlushStats();
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await FlushStats().ConfigureAwait( false );
 		}
 
 		/// <summary>
@@ -116,7 +123,8 @@ internal static partial class Api
 			TimeSincePosted = 0;
 			if ( Pending.Count == 0 ) return;
 
-			await FlushStats();
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await FlushStats().ConfigureAwait( false );
 		}
 
 		/// <summary>
@@ -136,7 +144,8 @@ internal static partial class Api
 			if ( Pending.Count == 0 )
 				return;
 
-			await FlushSemaphore.WaitAsync();
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await FlushSemaphore.WaitAsync().ConfigureAwait( false );
 
 			// Take the records locally to clear the queue
 			var records = Pending.ToArray();
@@ -144,7 +153,8 @@ internal static partial class Api
 
 			try
 			{
-				await PostStatsAsync( records );
+				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+				await PostStatsAsync( records ).ConfigureAwait( false );
 				TimeSinceFlushed = 0;
 			}
 			catch ( System.Exception e )
@@ -178,7 +188,8 @@ internal static partial class Api
 				Launch = LaunchGuid
 			};
 
-			await Sandbox.Backend.Stats.Submit( values );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await Sandbox.Backend.Stats.Submit( values ).ConfigureAwait( false );
 		}
 
 		static bool IsAppropriateName( string name )

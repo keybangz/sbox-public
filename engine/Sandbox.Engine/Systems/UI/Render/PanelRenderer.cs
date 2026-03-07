@@ -31,7 +31,30 @@ internal sealed partial class PanelRenderer
 
 		InitScissor( Screen );
 
+		// Reset time budget for this frame's BuildCommandLists
+		ResetBuildCLTimeBudget();
+
 		BuildCommandLists( (Panel)panel, new RenderState { X = Screen.Left, Y = Screen.Top, Width = Screen.Width, Height = Screen.Height, RenderOpacity = opacity } );
+	}
+
+	private static int _buildCLPanelCount = 0;
+	private static long _buildCLStartTime = 0;
+	private static bool _buildCLTimeBudgetExceeded = false;
+	private const long BuildCLTimeBudgetMs = 50;
+
+	internal static void ResetBuildCLTimeBudget()
+	{
+		// Log if previous frame had a long build time
+		if ( _buildCLPanelCount > 500 )
+		{
+			var totalTime = System.Environment.TickCount64 - _buildCLStartTime;
+			if ( totalTime > 100 )
+				System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BUILDCL_RESET] Previous: {_buildCLPanelCount} panels in {totalTime}ms, exceeded={_buildCLTimeBudgetExceeded}\n" );
+		}
+
+		_buildCLStartTime = System.Environment.TickCount64;
+		_buildCLTimeBudgetExceeded = false;
+		_buildCLPanelCount = 0;
 	}
 
 	/// <summary>
@@ -44,6 +67,31 @@ internal sealed partial class PanelRenderer
 
 		if ( !panel.IsVisible )
 			return;
+
+		// Check time budget FIRST - if exceeded from previous processing, bail out immediately
+		if ( _buildCLTimeBudgetExceeded )
+		{
+			panel.IsRenderDirty = true;
+			return;
+		}
+
+		// Time budget check every 10 panels to catch overruns quickly
+		_buildCLPanelCount++;
+		if ( _buildCLPanelCount % 10 == 0 )
+		{
+			var elapsed = System.Environment.TickCount64 - _buildCLStartTime;
+			if ( elapsed > BuildCLTimeBudgetMs )
+			{
+				_buildCLTimeBudgetExceeded = true;
+				// Log when we exceed budget significantly
+				if ( elapsed > 1000 )
+				{
+					System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[TIME_BUDGET] BuildCL exceeded: {elapsed}ms after {_buildCLPanelCount} panels\n" );
+				}
+				panel.IsRenderDirty = true;
+				return;
+			}
+		}
 
 		// Build transform command list (sets GlobalMatrix and TransformMat attribute)
 		BuildTransformCommandList( panel );
@@ -61,21 +109,46 @@ internal sealed partial class PanelRenderer
 		var renderMode = PushRenderMode( panel );
 
 		// Update layer (creates render target if needed for filters/masks)
+		var updateLayerStart = System.Environment.TickCount64;
 		panel.UpdateLayer( panel.ComputedStyle );
+		var updateLayerElapsed = System.Environment.TickCount64 - updateLayerStart;
+		if ( updateLayerElapsed > 500 )
+		{
+			var panelInfo = panel.GetType().FullName;
+			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[UPDATELAYER] {panelInfo} took {updateLayerElapsed}ms\n" );
+		}
 
-		if ( panel.ComputedStyle?.BackgroundImage is { IsDirty: true } )
-			panel.IsRenderDirty = true;
+		// NOTE: We intentionally do NOT check BackgroundImage.IsDirty here anymore
+		// because accessing .BackgroundImage triggers lazy Texture.Load() which can block
+		// for 10+ seconds. The texture will be loaded when actually rendered.
+		// This is a tradeoff: slightly delayed dirty detection vs. 10+ second freezes.
 
 		if ( panel.IsRenderDirty || panel.HasPanelLayer )
 		{
+			var buildCLStart = System.Environment.TickCount64;
 			BuildCommandList( panel, ref state );
+			var buildCLElapsed = System.Environment.TickCount64 - buildCLStart;
+			if ( buildCLElapsed > 500 )
+			{
+				var panelInfo = panel.GetType().FullName;
+				System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BUILDCL_SINGLE] {panelInfo} took {buildCLElapsed}ms\n" );
+			}
 
 			// Add Content = Text, Image (not children)
 			if ( panel.HasContent )
 			{
 				try
 				{
+					var drawStart = System.Environment.TickCount64;
 					panel.DrawContent( panel.CommandList, this, ref state );
+					var drawElapsed = System.Environment.TickCount64 - drawStart;
+					if ( drawElapsed > 500 )
+					{
+						var panelInfo = panel.GetType().FullName;
+						if ( !string.IsNullOrEmpty( panel.ElementName ) )
+							panelInfo += $"#{panel.ElementName}";
+						System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[DRAWCONTENT] {panelInfo} took {drawElapsed}ms\n" );
+					}
 				}
 				catch ( Exception e )
 				{

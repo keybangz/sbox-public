@@ -57,7 +57,8 @@ internal class AccountInformation
 	{
 		if ( updateTask != null )
 		{
-			await updateTask;
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await updateTask.ConfigureAwait( false );
 			return;
 		}
 
@@ -66,7 +67,8 @@ internal class AccountInformation
 			Session = null;
 			updateTask = Api.GetAccountInformation();
 
-			var login = await updateTask;
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			var login = await updateTask.ConfigureAwait( false );
 
 			if ( login.Id == 0 )
 			{

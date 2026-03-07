@@ -50,10 +50,13 @@ partial class PanelRenderer
 			attributes.Set( "BorderColorB", style.BorderBottomColor.Value.WithAlphaMultiplied( opacity ) );
 		}
 
-		// We have a border image
-		if ( style.BorderImageSource != null )
+		// We have a border image - use non-blocking accessor to avoid triggering lazy loads
+		// If the texture isn't loaded yet, skip the border image for this frame
+		// Pass panel reference so it gets marked dirty when texture loads
+		var borderImage = style.GetBorderImageSourceIfLoaded( panel );
+		if ( borderImage != null )
 		{
-			attributes.Set( "BorderImageTexture", style.BorderImageSource );
+			attributes.Set( "BorderImageTexture", borderImage );
 			attributes.Set( "BorderImageSlice", new Vector4(
 				style.BorderImageWidthLeft.Value.GetPixels( size ),
 				style.BorderImageWidthTop.Value.GetPixels( size ),
@@ -62,7 +65,6 @@ partial class PanelRenderer
 			);
 			attributes.SetCombo( "D_BORDER_IMAGE", (byte)(style.BorderImageRepeat == BorderImageRepeat.Stretch ? 2 : 1) );
 			attributes.Set( "HasBorderImageFill", (byte)(style.BorderImageFill == BorderImageFill.Filled ? 1 : 0) );
-
 			attributes.Set( "BorderImageTint", style.BorderImageTint.Value.WithAlphaMultiplied( opacity ) );
 		}
 		else
@@ -70,7 +72,9 @@ partial class PanelRenderer
 			attributes.SetCombo( "D_BORDER_IMAGE", 0 );
 		}
 
-		var texture = style.BackgroundImage;
+		// Use non-blocking accessor - if texture isn't loaded yet, we skip it for this frame
+		// Pass panel reference so it gets marked dirty when texture loads
+		var texture = style.GetBackgroundImageIfLoaded( panel );
 		var backgroundRepeat = style.BackgroundRepeat ?? BackgroundRepeat.Repeat;
 		if ( texture is not null && texture != Texture.Invalid )
 		{
@@ -152,27 +156,28 @@ partial class PanelRenderer
 
 			UpdateRenderAttributes( attributes, panel );
 
+			// Get background image using non-blocking accessor to avoid triggering lazy texture loads
+			// Pass panel reference so it gets marked dirty when texture loads
+			var bgTexture = panel.ComputedStyle.GetBackgroundImageIfLoaded( panel );
+
 			// Texture has just loaded, rect needs to be recalculated
+			if ( bgTexture is not null && bgTexture.IsDirty )
 			{
-				var texture = panel.ComputedStyle.BackgroundImage;
-				if ( texture is not null && texture.IsDirty )
+				var imageCalc = ImageRect.Calculate( new ImageRect.Input
 				{
-					var imageCalc = ImageRect.Calculate( new ImageRect.Input
-					{
-						ScaleToScreen = panel.ScaleToScreen,
-						Image = texture,
-						PanelRect = panel.Box.Rect,
-						DefaultSize = Length.Auto,
-						ImagePositionX = panel.ComputedStyle.BackgroundPositionX,
-						ImagePositionY = panel.ComputedStyle.BackgroundPositionY,
-						ImageSizeX = panel.ComputedStyle.BackgroundSizeX,
-						ImageSizeY = panel.ComputedStyle.BackgroundSizeY,
-					} );
+					ScaleToScreen = panel.ScaleToScreen,
+					Image = bgTexture,
+					PanelRect = panel.Box.Rect,
+					DefaultSize = Length.Auto,
+					ImagePositionX = panel.ComputedStyle.BackgroundPositionX,
+					ImagePositionY = panel.ComputedStyle.BackgroundPositionY,
+					ImageSizeX = panel.ComputedStyle.BackgroundSizeX,
+					ImageSizeY = panel.ComputedStyle.BackgroundSizeY,
+				} );
 
-					attributes.Set( "BgPos", imageCalc.Rect );
+				attributes.Set( "BgPos", imageCalc.Rect );
 
-					texture.IsDirty = false;
-				}
+				bgTexture.IsDirty = false;
 			}
 
 			var color = panel.ComputedStyle.BackgroundColor.Value;
@@ -196,10 +201,11 @@ partial class PanelRenderer
 				attributes.Set( "BoxSize", new Vector2( rect.Width, rect.Height ) );
 			}
 
-			if ( panel.BackgroundBlendMode == BlendMode.Normal || panel.ComputedStyle.BackgroundImage == null )
+			// Use bgTexture from earlier non-blocking load (may be null if not loaded yet)
+			if ( panel.BackgroundBlendMode == BlendMode.Normal || bgTexture == null )
 			{
 				attributes.SetCombo( "D_BLENDMODE", OverrideBlendMode );
-				attributes.Set( "Texture", panel.ComputedStyle.BackgroundImage );
+				attributes.Set( "Texture", bgTexture );
 				commandList.DrawQuad( rect, Material.UI.Box, color );
 			}
 			else
@@ -211,7 +217,7 @@ partial class PanelRenderer
 
 				// Draw background image with specified background-blend-mode
 				attributes.SetCombo( "D_BLENDMODE", panel.BackgroundBlendMode );
-				attributes.Set( "Texture", panel.ComputedStyle.BackgroundImage );
+				attributes.Set( "Texture", bgTexture );
 				commandList.DrawQuad( rect, Material.UI.Box, color );
 			}
 		}

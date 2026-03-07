@@ -290,10 +290,38 @@ public partial class Panel : IPanel, IValid, IComponent
 		return false;
 	}
 
+	// Time budget for panel ticking
+	[ThreadStatic] private static long _tickStartTime;
+	[ThreadStatic] private static int _tickPanelCount;
+	[ThreadStatic] private static bool _tickTimeBudgetExceeded;
+	private const int TickTimeBudgetMs = 50;
+
+	internal static void ResetTickTimeBudget()
+	{
+		_tickStartTime = System.Environment.TickCount64;
+		_tickPanelCount = 0;
+		_tickTimeBudgetExceeded = false;
+	}
+
 	internal void TickInternal()
 	{
 		if ( Application.IsHeadless )
 			return;
+
+		// Check time budget
+		if ( _tickTimeBudgetExceeded )
+			return;
+
+		_tickPanelCount++;
+		if ( _tickPanelCount % 50 == 0 )
+		{
+			var elapsed = System.Environment.TickCount64 - _tickStartTime;
+			if ( elapsed > TickTimeBudgetMs )
+			{
+				_tickTimeBudgetExceeded = true;
+				return;
+			}
+		}
 
 		if ( IsDeleting )
 		{

@@ -88,7 +88,8 @@ class LoggingHandler : DelegatingHandler
 
 		if ( request.Content != null )
 		{
-			var requestBody = await request.Content.ReadAsStringAsync( cancellationToken );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			var requestBody = await request.Content.ReadAsStringAsync( cancellationToken ).ConfigureAwait( false );
 			Console.WriteLine( $"Request Body: {requestBody}" );
 
 			foreach ( var h in request.Content.Headers )
@@ -98,13 +99,14 @@ class LoggingHandler : DelegatingHandler
 		}
 
 		// Call the inner handler
-		var response = await base.SendAsync( request, cancellationToken );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		var response = await base.SendAsync( request, cancellationToken ).ConfigureAwait( false );
 
 		// Log response details
 		Console.WriteLine( $"Response: {(int)response.StatusCode} {response.ReasonPhrase}" );
 		if ( response.Content != null )
 		{
-			var responseBody = await response.Content.ReadAsStringAsync( cancellationToken );
+			var responseBody = await response.Content.ReadAsStringAsync( cancellationToken ).ConfigureAwait( false );
 			Console.WriteLine( $"Response Body: {responseBody}" );
 		}
 

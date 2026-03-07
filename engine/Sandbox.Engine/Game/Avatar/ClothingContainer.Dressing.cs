@@ -69,7 +69,8 @@ public partial class ClothingContainer
 					CancellationToken = token
 				};
 
-				var activePackage = await PackageManager.InstallAsync( o );
+				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+				var activePackage = await PackageManager.InstallAsync( o ).ConfigureAwait( false );
 				if ( activePackage == null )
 				{
 					Log.Warning( $"Error installing clothing package {def.PackageIdent}" );
@@ -100,7 +101,8 @@ public partial class ClothingContainer
 					continue;
 				}
 
-				clothing = await Cloud.Load<Clothing>( def.PackageIdent );
+				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+					clothing = await Cloud.Load<Clothing>( def.PackageIdent ).ConfigureAwait( false );
 			}
 
 			if ( clothing is null )

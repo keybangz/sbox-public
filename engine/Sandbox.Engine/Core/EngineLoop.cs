@@ -22,10 +22,21 @@ internal static class EngineLoop
 	static Superluminal _frameEnd = new Superluminal( "FrameEnd", "#2c3541" );
 
 	private static int _runFrameCount = 0;
+	private static System.Diagnostics.Stopwatch _frameStopwatch = System.Diagnostics.Stopwatch.StartNew();
+	private static double _lastHeartbeat = 0;
 
 	internal static void RunFrame( CMaterialSystem2AppSystemDict appDict, out bool wantsQuit )
 	{
 		_runFrameCount++;
+
+		// Log periodic heartbeat every ~2 seconds to detect freezes
+		var elapsed = _frameStopwatch.Elapsed.TotalSeconds;
+		if ( elapsed - _lastHeartbeat >= 2.0 )
+		{
+			_lastHeartbeat = elapsed;
+			System.IO.File.AppendAllText( "/tmp/heartbeat_debug.txt", $"[HEARTBEAT] Frame={_runFrameCount} Time={elapsed:F1}s\n" );
+		}
+
 		if ( _runFrameCount <= 3 )
 		{
 			Log.Info( $"[EngineLoop] RunFrame #{_runFrameCount} called!" );
@@ -155,6 +166,9 @@ internal static class EngineLoop
 #endif
 	}
 
+	private static System.Diagnostics.Stopwatch _frameStartStopwatch = new System.Diagnostics.Stopwatch();
+	private const double BlockThresholdMs = 100; // Log if any operation takes > 100ms
+
 	internal static void FrameStart()
 	{
 		ThreadSafe.AssertIsMainThread();
@@ -205,9 +219,16 @@ internal static class EngineLoop
 		//
 		// Let the context's tick
 		//
-
+		_frameStartStopwatch.Restart();
 		IMenuDll.Current?.Tick();
+		if ( _frameStartStopwatch.Elapsed.TotalMilliseconds > BlockThresholdMs )
+			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] IMenuDll.Tick took {_frameStartStopwatch.Elapsed.TotalMilliseconds:F0}ms\n" );
+
+		_frameStartStopwatch.Restart();
 		IGameInstanceDll.Current?.Tick();
+		if ( _frameStartStopwatch.Elapsed.TotalMilliseconds > BlockThresholdMs )
+			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] IGameInstanceDll.Tick took {_frameStartStopwatch.Elapsed.TotalMilliseconds:F0}ms\n" );
+
 		IMenuDll.Current?.LateTick();
 		IToolsDll.Current?.Tick();
 
@@ -243,10 +264,13 @@ internal static class EngineLoop
 
 		// Simulate UI last. This works out all the styles and shit, so we want
 		// that to be reflected right BEFORE the frame is rendered.
+		_frameStartStopwatch.Restart();
 		using ( PerformanceStats.Timings.Ui.Scope() )
 		{
 			SimulateUI();
 		}
+		if ( _frameStartStopwatch.Elapsed.TotalMilliseconds > BlockThresholdMs )
+			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] SimulateUI took {_frameStartStopwatch.Elapsed.TotalMilliseconds:F0}ms\n" );
 
 		// Give each sound handle an opportunity to for a frame think
 		using ( PerformanceStats.Timings.Audio.Scope() )
@@ -270,6 +294,7 @@ internal static class EngineLoop
 	}
 
 	private static int _runAsyncTasksCount = 0;
+	private static System.Diagnostics.Stopwatch _asyncTasksStopwatch = new System.Diagnostics.Stopwatch();
 
 	public static void RunAsyncTasks()
 	{
@@ -282,8 +307,16 @@ internal static class EngineLoop
 			using var sceneScope = IGameInstanceDll.Current?.PushScope();
 
 			ThreadSafe.AssertIsMainThread();
+
+			_asyncTasksStopwatch.Restart();
 			MainThread.RunQueues();
+			if ( _asyncTasksStopwatch.Elapsed.TotalMilliseconds > BlockThresholdMs )
+				System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] MainThread.RunQueues took {_asyncTasksStopwatch.Elapsed.TotalMilliseconds:F0}ms\n" );
+
+			_asyncTasksStopwatch.Restart();
 			SyncContext.MainThread?.ProcessQueue();
+			if ( _asyncTasksStopwatch.Elapsed.TotalMilliseconds > BlockThresholdMs )
+				System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] SyncContext.ProcessQueue took {_asyncTasksStopwatch.Elapsed.TotalMilliseconds:F0}ms\n" );
 		}
 	}
 
@@ -344,6 +377,7 @@ internal static class EngineLoop
 
 	static Superluminal _simulateUiGame = new Superluminal( "Simulate GameUI", "#2c3541" );
 	static Superluminal _simulateUiMenu = new Superluminal( "Simulate GameUI", "#2c3541" );
+	private static System.Diagnostics.Stopwatch _uiStopwatch = new System.Diagnostics.Stopwatch();
 
 	private static void SimulateUI()
 	{
@@ -352,15 +386,21 @@ internal static class EngineLoop
 		TooltipSystem.Frame();
 		PanelRealTime.Update();
 
+		_uiStopwatch.Restart();
 		using ( _simulateUiGame.Start() )
 		{
 			IGameInstanceDll.Current?.SimulateUI();
 		}
+		if ( _uiStopwatch.Elapsed.TotalMilliseconds > BlockThresholdMs )
+			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] GameUI.SimulateUI took {_uiStopwatch.Elapsed.TotalMilliseconds:F0}ms\n" );
 
+		_uiStopwatch.Restart();
 		using ( _simulateUiMenu.Start() )
 		{
 			IMenuDll.Current?.SimulateUI();
 		}
+		if ( _uiStopwatch.Elapsed.TotalMilliseconds > BlockThresholdMs )
+			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] MenuUI.SimulateUI took {_uiStopwatch.Elapsed.TotalMilliseconds:F0}ms\n" );
 	}
 
 	private static Logger nativeLogger = Logging.GetLogger( "Native" );

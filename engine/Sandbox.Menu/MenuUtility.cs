@@ -48,7 +48,7 @@ public static partial class MenuUtility
 	/// </summary>
 	public static async Task<bool> ConnectStream( StreamService service )
 	{
-		return await Sandbox.Engine.Streamer.Init( service );
+		return await Sandbox.Engine.Streamer.Init( service ).ConfigureAwait( false );
 	}
 
 	/// <summary>
@@ -245,8 +245,8 @@ public static partial class MenuUtility
 	/// </summary>
 	public static async Task DeleteAvatars()
 	{
-		await Backend.Storage.Drop( (long)Utility.Steam.SteamId, "facepunch.avatar", "avatar" );
-		await Backend.Storage.Drop( (long)Utility.Steam.SteamId, "facepunch.avatar", "avatar.active" );
+		await Backend.Storage.Drop( (long)Utility.Steam.SteamId, "facepunch.avatar", "avatar" ).ConfigureAwait( false );
+		await Backend.Storage.Drop( (long)Utility.Steam.SteamId, "facepunch.avatar", "avatar.active" ).ConfigureAwait( false );
 	}
 
 	/// <summary>
@@ -318,7 +318,7 @@ public class StoragePublish
 		}
 		else
 		{
-			item = await Sandbox.Services.Ugc.CreateCommunityItem();
+			item = await Sandbox.Services.Ugc.CreateCommunityItem().ConfigureAwait( false );
 		}
 
 		string _imagePath = null;
@@ -374,7 +374,7 @@ public class StoragePublish
 		item.SetKeyValue( "package", Game.Ident ); // TODO - walk the stack to determine what called it?
 		item.SetKeyValue( "version", Application.Version );
 
-		await item.Submit();
+		await item.Submit().ConfigureAwait( false );
 
 		if ( _imagePath != null ) System.IO.File.Delete( _imagePath );
 		if ( _dataPath != null ) System.IO.Directory.Delete( _dataPath, true );
