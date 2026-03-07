@@ -8,8 +8,15 @@ internal partial class RenderPipeline
 	static ConcurrentQueue<RenderPipeline> Pool = new();
 	static ConcurrentDictionary<IntPtr, RenderPipeline> ActivePipelines = new();
 
+	private static int _internalAddCount = 0;
+
 	internal static void InternalAddLayersToView( ISceneView view, RenderViewport viewport, SceneViewRenderTargetHandle rtColor, SceneViewRenderTargetHandle rtDepth, RenderMultisampleType nMSAA, CRenderAttributes pipelineAttrs, RenderViewport screenSize )
 	{
+		_internalAddCount++;
+		if ( _internalAddCount <= 3 )
+		{
+			System.IO.File.AppendAllText( "/tmp/renderpipeline_debug.txt", $"[RenderPipeline.InternalAddLayersToView] #{_internalAddCount} called\n" );
+		}
 		// Grab a pooled RenderPipeline, it just needs to be a unique one per render view
 		if ( !Pool.TryDequeue( out var renderPipeline ) )
 			renderPipeline = new();

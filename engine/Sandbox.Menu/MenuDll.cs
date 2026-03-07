@@ -351,8 +351,16 @@ internal sealed class MenuDll : IMenuDll
 		} );
 	}
 
+	private static int _tickCount = 0;
+
 	public void Tick()
 	{
+		_tickCount++;
+		if ( _tickCount <= 3 )
+		{
+			System.IO.File.AppendAllText( "/tmp/menudll_tick_debug.txt", $"[MenuDll.Tick] #{_tickCount} called\n" );
+		}
+
 		using var _ = PushScope();
 
 		try

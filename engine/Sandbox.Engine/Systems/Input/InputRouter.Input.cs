@@ -6,11 +6,30 @@ internal static partial class InputRouter
 {
 	static RealTimeSince timeSinceWindowActive;
 
+	private static int _mouseButtonCallCount = 0;
+
 	internal static void OnMouseButton( ButtonCode button, bool down, int ikeymods )
 	{
+		// Debug logging for Linux input issues - always log first 5 calls
+		_mouseButtonCallCount++;
+		if ( _mouseButtonCallCount <= 5 )
+		{
+			Log.Info( $"[InputRouter] OnMouseButton #{_mouseButtonCallCount}: button={button}, down={down}, keymods={ikeymods}" );
+			try
+			{
+				System.IO.File.AppendAllText( "/tmp/input_debug.txt", $"[{DateTime.Now}] OnMouseButton #{_mouseButtonCallCount}: button={button}, down={down}\n" );
+			}
+			catch { }
+		}
+
 		SetButtonState( button, down );
 
 		var mouse = Contexts.FirstOrDefault( x => x.MouseState != InputContext.InputState.Ignore );
+
+		if ( Environment.GetEnvironmentVariable( "SBOX_INPUT_DEBUG" ) == "1" )
+		{
+			Log.Info( $"[InputRouter] Mouse context: {mouse?.Name ?? "null"}, MouseState={mouse?.MouseState}" );
+		}
 
 		// if this was likely the click that made the window active - and we're not in UI mode
 		// then ignore it.. because we don't want people shooting guns every time they re-activate
@@ -18,14 +37,28 @@ internal static partial class InputRouter
 		if ( down && timeSinceWindowActive < 0.1f )
 		{
 			if ( mouse is null || mouse.MouseState != InputContext.InputState.UI )
+			{
+				if ( Environment.GetEnvironmentVariable( "SBOX_INPUT_DEBUG" ) == "1" )
+				{
+					Log.Info( $"[InputRouter] Ignoring click due to window activation (timeSinceWindowActive={timeSinceWindowActive})" );
+				}
 				return;
+			}
 		}
 
 		var modifiers = GetCurrentModifiers();
 
 		if ( mouse is not null )
 		{
+			if ( Environment.GetEnvironmentVariable( "SBOX_INPUT_DEBUG" ) == "1" )
+			{
+				Log.Info( $"[InputRouter] Sending button to context: {mouse.Name}" );
+			}
 			mouse.IN_Button( down, button, false, modifiers );
+		}
+		else if ( Environment.GetEnvironmentVariable( "SBOX_INPUT_DEBUG" ) == "1" )
+		{
+			Log.Info( $"[InputRouter] No mouse context found, button not sent!" );
 		}
 
 		//
@@ -63,11 +96,20 @@ internal static partial class InputRouter
 		}
 	}
 
+	private static int _mouseMotionCallCount = 0;
+	private static int _mousePosCallCount = 0;
+
 	/// <summary>
 	/// Cursor is hidden and restricted to window (game mode) but the mouse has been moved
 	/// </summary>
 	internal static void OnMouseMotion( float dx, float dy )
 	{
+		_mouseMotionCallCount++;
+		if ( _mouseMotionCallCount <= 3 )
+		{
+			Log.Info( $"[InputRouter] OnMouseMotion #{_mouseMotionCallCount}: dx={dx}, dy={dy}" );
+		}
+
 		var delta = new Vector2( dx, dy );
 
 		MouseCursorDelta += delta;
@@ -87,6 +129,12 @@ internal static partial class InputRouter
 	/// </summary>
 	internal static void OnMousePositionChange( float x, float y, float dx, float dy )
 	{
+		_mousePosCallCount++;
+		if ( _mousePosCallCount <= 3 )
+		{
+			Log.Info( $"[InputRouter] OnMousePositionChange #{_mousePosCallCount}: x={x}, y={y}, dx={dx}, dy={dy}" );
+		}
+
 		var delta = new Vector2( 0, 0 );
 
 		// if we're not in relative mode - take the delta from this

@@ -8,8 +8,15 @@ public static partial class Graphics
 	/// Called by the engine during pipeline. This could be rendering the scene from any camera.
 	/// That means you can't assume this is the game view. This might be a tools view, or another view
 	/// </summary>
+	private static int _onLayerCount = 0;
+
 	internal static void OnLayer( int stageenum, ManagedRenderSetup_t setup )
 	{
+		_onLayerCount++;
+		if ( _onLayerCount <= 3 )
+		{
+			System.IO.File.AppendAllText( "/tmp/onlayer_debug.txt", $"[Graphics.OnLayer] #{_onLayerCount} stage={stageenum}\n" );
+		}
 		//
 		// Special circumstances for the game UI
 		//

@@ -90,10 +90,32 @@ internal static partial class InputRouter
 		}
 	}
 
+	private static bool _debugLoggedOnce = false;
+	private static int _frameCount = 0;
+
 	public static void Frame()
 	{
+		_frameCount++;
+
+		// Debug logging for Linux input issues - log first frame always
+		if ( Environment.GetEnvironmentVariable( "SBOX_INPUT_DEBUG" ) == "1" && _frameCount == 1 )
+		{
+			Log.Info( $"[InputRouter.Frame] First frame called!" );
+		}
+
 		var activeMouse = Contexts.Where( x => x.MouseState != InputContext.InputState.Ignore ).FirstOrDefault();
 		var activeKeyboard = Contexts.Where( x => x.KeyboardState != InputContext.InputState.Ignore ).FirstOrDefault();
+
+		// Debug logging for Linux input issues
+		if ( Environment.GetEnvironmentVariable( "SBOX_INPUT_DEBUG" ) == "1" && !_debugLoggedOnce )
+		{
+			Log.Info( $"[InputRouter.Frame] IMenuDll.Current: {IMenuDll.Current?.GetType().Name ?? "null"}" );
+			Log.Info( $"[InputRouter.Frame] IMenuDll.Current.InputContext: {IMenuDll.Current?.InputContext?.Name ?? "null"}" );
+			Log.Info( $"[InputRouter.Frame] activeMouse: {activeMouse?.Name ?? "null"}, MouseState: {activeMouse?.MouseState}" );
+			Log.Info( $"[InputRouter.Frame] activeKeyboard: {activeKeyboard?.Name ?? "null"}" );
+			Log.Info( $"[InputRouter.Frame] Contexts count: {Contexts.Count()}" );
+			_debugLoggedOnce = true;
+		}
 
 		// Capture mode could either come from being in game (in which case input is sent to the game)
 		// or from a Panel.CaptureMode - in which case input is sent to the panel/ui

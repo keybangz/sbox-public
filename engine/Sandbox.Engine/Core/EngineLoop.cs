@@ -21,8 +21,21 @@ internal static class EngineLoop
 	static Superluminal _frameStart = new Superluminal( "FrameStart", "#2c3541" );
 	static Superluminal _frameEnd = new Superluminal( "FrameEnd", "#2c3541" );
 
+	private static int _runFrameCount = 0;
+
 	internal static void RunFrame( CMaterialSystem2AppSystemDict appDict, out bool wantsQuit )
 	{
+		_runFrameCount++;
+		if ( _runFrameCount <= 3 )
+		{
+			Log.Info( $"[EngineLoop] RunFrame #{_runFrameCount} called!" );
+			try
+			{
+				System.IO.File.AppendAllText( "/tmp/runframe_debug.txt", $"[{DateTime.Now}] RunFrame #{_runFrameCount} called\n" );
+			}
+			catch { }
+		}
+
 		if ( Application.WantsExit )
 		{
 			g_pEngineServiceMgr.ExitMainLoop();
@@ -400,8 +413,21 @@ internal static class EngineLoop
 		convar.Run( args );
 	}
 
+	private static int _clientOutputCount = 0;
+
 	internal static void OnClientOutput()
 	{
+		_clientOutputCount++;
+		if ( _clientOutputCount <= 3 )
+		{
+			Log.Info( $"[EngineLoop] OnClientOutput #{_clientOutputCount} called!" );
+			try
+			{
+				System.IO.File.AppendAllText( "/tmp/onclientoutput_debug.txt", $"[{DateTime.Now}] OnClientOutput #{_clientOutputCount} called\n" );
+			}
+			catch { }
+		}
+
 		// The editor renders it's own game scene
 		if ( Application.IsEditor )
 		{

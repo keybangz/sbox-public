@@ -90,24 +90,30 @@ public class AppSystem
 	{
 		try
 		{
+			System.IO.File.AppendAllText( "/tmp/appsystem_debug.txt", "[AppSystem.Run] Starting Run()\n" );
 			SetupEnvironment();
 
 			Application.TryLoadVersionInfo( Environment.CurrentDirectory );
 
 			//
-			// Putting ErrorReporter.Initialize(); before Init here causes engine2.dll 
+			// Putting ErrorReporter.Initialize(); before Init here causes engine2.dll
 			// to be unable to load. I dont know wtf and I spent too much time looking into it.
 			// It's finding the assemblies still, The last dll it loads is tier0.dll.
 			//
 
+			System.IO.File.AppendAllText( "/tmp/appsystem_debug.txt", "[AppSystem.Run] Calling Init()\n" );
 			Init();
+			System.IO.File.AppendAllText( "/tmp/appsystem_debug.txt", "[AppSystem.Run] Init() returned!\n" );
 
 			NativeEngine.EngineGlobal.Plat_SetCurrentFrame( 0 );
 
+			System.IO.File.AppendAllText( "/tmp/appsystem_debug.txt", "[AppSystem.Run] Entering main loop\n" );
 			while ( RunFrame() )
 			{
+				System.IO.File.AppendAllText( "/tmp/appsystem_debug.txt", "[AppSystem.Run] RunFrame returned true\n" );
 				BlockingLoopPumper.Run( () => RunFrame() );
 			}
+			System.IO.File.AppendAllText( "/tmp/appsystem_debug.txt", "[AppSystem.Run] Exited main loop\n" );
 
 			Shutdown();
 		}
@@ -252,6 +258,7 @@ public class AppSystem
 
 	protected void InitGame( AppSystemCreateInfo createInfo, string commandLine = null )
 	{
+		System.IO.File.AppendAllText( "/tmp/initgame_debug.txt", "[InitGame] Starting\n" );
 		commandLine ??= System.Environment.CommandLine;
 		commandLine = commandLine.Replace( ".dll", ".exe" ); // uck
 
@@ -279,24 +286,30 @@ public class AppSystem
 
 		_appSystem.SetSteamAppId( (uint)Application.AppId );
 
+		System.IO.File.AppendAllText( "/tmp/initgame_debug.txt", "[InitGame] Calling SourceEnginePreInit\n" );
 		if ( !NativeEngine.EngineGlobal.SourceEnginePreInit( commandLine, _appSystem ) )
 		{
 			throw new System.Exception( "SourceEnginePreInit failed" );
 		}
+		System.IO.File.AppendAllText( "/tmp/initgame_debug.txt", "[InitGame] SourceEnginePreInit returned\n" );
 
 		Bootstrap.PreInit( _appSystem );
+		System.IO.File.AppendAllText( "/tmp/initgame_debug.txt", "[InitGame] Bootstrap.PreInit returned\n" );
 
 		if ( createInfo.Flags.HasFlag( AppSystemFlags.IsStandaloneGame ) )
 		{
 			Standalone.Init();
 		}
 
+		System.IO.File.AppendAllText( "/tmp/initgame_debug.txt", "[InitGame] Calling SourceEngineInit\n" );
 		if ( !NativeEngine.EngineGlobal.SourceEngineInit( _appSystem ) )
 		{
 			throw new System.Exception( "SourceEngineInit returned false" );
 		}
+		System.IO.File.AppendAllText( "/tmp/initgame_debug.txt", "[InitGame] SourceEngineInit returned\n" );
 
 		Bootstrap.Init();
+		System.IO.File.AppendAllText( "/tmp/initgame_debug.txt", "[InitGame] Done\n" );
 	}
 
 	protected void SetWindowTitle( string title )
