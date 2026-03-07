@@ -132,34 +132,26 @@ internal sealed class MenuDll : IMenuDll
 
 	public async Task Initialize()
 	{
-		var currentSyncCtx = System.Threading.SynchronizationContext.Current;
-		System.IO.File.AppendAllText( "/tmp/menudll_init_debug.txt", $"[MenuDll.Initialize] Starting, SyncContext={currentSyncCtx?.GetType()?.FullName ?? "NULL"}\n" );
 		using var _ = PushScope();
 
 		//
 		// LoopEvent.Init
 		//
 		{
-			System.IO.File.AppendAllText( "/tmp/menudll_init_debug.txt", "[MenuDll.Initialize] InitStyleSheets\n" );
 			StyleSheet.InitStyleSheets();
 			GlobalContext.Current.Reset();
 		}
 
 		Game.Cookies = new CookieContainer( "menu" );
-		System.IO.File.AppendAllText( "/tmp/menudll_init_debug.txt", "[MenuDll.Initialize] InitSteamCallbacks\n" );
 		SteamCallbacks.InitSteamCallbacks();
 
 		// start listening to backend messages
 		Sandbox.Services.Messaging.OnMessage += OnMessageFromBackend;
 
 		// We shouldn't actually have anything to compile on retail
-		System.IO.File.AppendAllText( "/tmp/menudll_init_debug.txt", "[MenuDll.Initialize] Before CompileAsync\n" );
 		await Project.CompileAsync();
-		System.IO.File.AppendAllText( "/tmp/menudll_init_debug.txt", "[MenuDll.Initialize] After CompileAsync\n" );
 
-		System.IO.File.AppendAllText( "/tmp/menudll_init_debug.txt", "[MenuDll.Initialize] LoadPackage start\n" );
 		Enroller.LoadPackage( "local.menu#local" );
-		System.IO.File.AppendAllText( "/tmp/menudll_init_debug.txt", "[MenuDll.Initialize] LoadPackage done\n" );
 
 		if ( IMenuSystem.Current != null )
 		{
@@ -167,18 +159,10 @@ internal sealed class MenuDll : IMenuDll
 			return;
 		}
 
-		System.IO.File.AppendAllText( "/tmp/menudll_init_debug.txt", "[MenuDll.Initialize] Loading fonts\n" );
 		{
 			using var tx = Sandbox.Engine.Bootstrap.StartupTiming?.ScopeTimer( "Menu - Fonts" );
-			Log.Info( $"[MenuDll] Loading fonts from FileSystem.Mounted: {FileSystem.Mounted}" );
 			FontManager.Instance.LoadAll( FileSystem.Mounted );
-			Log.Info( $"[MenuDll] Fonts loaded. FontManager.LoadedFonts count: {FontManager.LoadedFonts.Count}" );
-			foreach ( var kv in FontManager.LoadedFonts )
-			{
-				Log.Info( $"[MenuDll]   Font: {kv.Value?.FamilyName ?? "(null)"}" );
-			}
 		}
-		System.IO.File.AppendAllText( "/tmp/menudll_init_debug.txt", "[MenuDll.Initialize] Fonts loaded\n" );
 
 		// We can wait right up until we start the menu scene to want valid account info
 		if ( AccountUpdateTask != null )
@@ -187,10 +171,8 @@ internal sealed class MenuDll : IMenuDll
 			// TODO - handle not logged in, api down etc
 			//
 
-			System.IO.File.AppendAllText( "/tmp/menudll_init_debug.txt", "[MenuDll.Initialize] Await AccountUpdateTask start\n" );
 			using var tx = Sandbox.Engine.Bootstrap.StartupTiming?.ScopeTimer( "Menu - Account Update Task" );
 			await AccountUpdateTask;
-			System.IO.File.AppendAllText( "/tmp/menudll_init_debug.txt", "[MenuDll.Initialize] Await AccountUpdateTask done\n" );
 		}
 
 		// If the avatar was found on the backend, replace the cookie one
@@ -201,31 +183,15 @@ internal sealed class MenuDll : IMenuDll
 
 		if ( !Application.IsEditor )
 		{
-			System.IO.File.AppendAllText( "/tmp/menudll_init_debug.txt", "[MenuDll.Initialize] LoadResources start\n" );
 			using ( Sandbox.Engine.Bootstrap.StartupTiming?.ScopeTimer( "Menu - Resources" ) )
 			{
 				LoadResources();
 			}
-			System.IO.File.AppendAllText( "/tmp/menudll_init_debug.txt", "[MenuDll.Initialize] LoadResources done\n" );
 
-			System.IO.File.AppendAllText( "/tmp/menudll_init_debug.txt", "[MenuDll.Initialize] SetupMenuScene start\n" );
 			SetupMenuScene();
-			System.IO.File.AppendAllText( "/tmp/menudll_init_debug.txt", "[MenuDll.Initialize] SetupMenuScene done\n" );
-		}
-
-		System.IO.File.AppendAllText( "/tmp/menudll_init_debug.txt", "[MenuDll.Initialize] Creating MenuSystem\n" );
-		Log.Info( "[MenuDll] Attempting to create MenuSystem via TypeLibrary..." );
-
-		// Debug: List all types that implement IMenuSystem
-		var menuTypes = TypeLibrary.GetTypes<IMenuSystem>();
-		Log.Info( $"[MenuDll] Found {menuTypes.Count()} types implementing IMenuSystem:" );
-		foreach ( var t in menuTypes )
-		{
-			Log.Info( $"[MenuDll]   - {t.FullName}" );
 		}
 
 		IMenuSystem.Current = TypeLibrary.Create<IMenuSystem>( "MenuSystem", true );
-		Log.Info( $"[MenuDll] TypeLibrary.Create returned: {IMenuSystem.Current}" );
 
 		if ( IMenuSystem.Current == null )
 		{
@@ -368,16 +334,8 @@ internal sealed class MenuDll : IMenuDll
 		} );
 	}
 
-	private static int _tickCount = 0;
-
 	public void Tick()
 	{
-		_tickCount++;
-		if ( _tickCount <= 3 )
-		{
-			System.IO.File.AppendAllText( "/tmp/menudll_tick_debug.txt", $"[MenuDll.Tick] #{_tickCount} called\n" );
-		}
-
 		using var _ = PushScope();
 
 		try

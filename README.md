@@ -29,8 +29,10 @@ This update significantly reduces manual setup requirements:
 - **Case-insensitive filesystem layer** - Handles `Code` vs `code`, `Assets` vs `assets` automatically
 - **Cross-platform native library loading** - Automatic resolution of `steam_api64` → `libsteam_api.so`, etc.
 - **Automated setup script** - `linux/setup.sh` creates all required symlinks automatically
-- **X11 input polling** - Native mouse position and button state using X11 instead of SDL (fixes input issues)
+- **X11 input polling** - Native mouse position and button state using X11 (no SDL3 dependency)
 - **Shader/texture loading fixes** - Proper colorgrading shader and DDGI texture initialization
+- **DXC wrapper auto-setup** - `bootstrap.sh` automatically compiles and installs the DXC shader compiler wrapper
+- **Deprecated Steam API cleanup** - Removed Stadia-related P/Invoke calls that caused PreJIT warnings
 
 ### Code Changes Summary
 
@@ -55,7 +57,7 @@ This update significantly reduces manual setup requirements:
 | File | Change |
 |------|--------|
 | `Sandbox.Engine/Systems/Render/ShaderCompile/ShaderCompile.cs` | Load Linux `.so` libraries, added debug logging |
-| `Sandbox.Engine/Systems/Render/Multimedia/LinuxCursorCapture.cs` | **New file**: Linux cursor capture using SDL3 |
+| `Sandbox.Engine/Systems/Render/Multimedia/LinuxCursorCapture.cs` | **New file**: Linux cursor/input capture using X11 (stub implementations for cursor, X11 polling for input) |
 
 #### Font & Text Rendering
 | File | Change |
@@ -99,7 +101,7 @@ This update significantly reduces manual setup requirements:
 | `Sandbox.Filesystem/CaseInsensitivePhysicalFileSystem.cs` | **New file**: Case-insensitive path resolution for Linux |
 | `Sandbox.Filesystem/LocalFileSystem.cs` | Use case-insensitive filesystem on Linux |
 | `Sandbox.Filesystem/BaseFileSystem.cs` | Case-insensitive SubFileSystem path resolution |
-| `Sandbox.Engine/Core/Interop/NativeLibraryResolver.cs` | **New file**: Cross-platform native library loading |
+| `Sandbox.Engine/Core/Interop/NativeLibraryResolver.cs` | **New file**: Cross-platform native library loading with `steam_api64` → `libsteam_api.so` mapping |
 | `Sandbox.Engine/Systems/Project/Project/Project.cs` | Case-insensitive Code/Assets/Editor path lookup |
 | `Sandbox.Engine/Systems/Filesystem/EngineFileSystem.cs` | Native search path initialization for Linux |
 | `Sandbox.Engine/Core/Bootstrap.cs` | Initialize native search paths after engine init |
@@ -138,14 +140,21 @@ This update significantly reduces manual setup requirements:
 | File | Change |
 |------|--------|
 | `Launcher/Sbox/Launcher.cs` | Launch via `dotnet sbox.dll` instead of native executable on Linux |
-| `bootstrap.sh` | Linux bootstrap script updates |
+| `bootstrap.sh` | Linux bootstrap script with automated DXC wrapper compilation and installation |
+
+#### Steam API Fixes (NEW)
+| File | Change |
+|------|--------|
+| `Sandbox.Engine/Platform/Steam/Generated/SteamStructFunctions.cs` | Removed deprecated Stadia P/Invoke calls (Google Stadia shutdown 2023) |
+| `Sandbox.Engine/Core/Interop/NativeLibraryResolver.cs` | Added `steam_api64` → `libsteam_api.so` library mapping for P/Invoke resolution |
 
 ### DXC Shader Compiler Wrapper
 
 The DirectX Shader Compiler (DXC) on Linux expects UTF-32 encoded arguments, but s&box passes UTF-16. A wrapper library intercepts DXC calls and performs the conversion.
 
-- **Wrapper:** `game/bin/linuxsteamrt64/libdxcompiler.so`
-- **Original:** `game/bin/linuxsteamrt64/libdxcompiler.so.real`
+- **Wrapper:** `game/bin/linuxsteamrt64/libdxcompiler.so` (symlink to wrapper)
+- **Original:** `game/bin/linuxsteamrt64/libdxcompiler.so.real` (backed up original)
+- **Auto-setup:** The `bootstrap.sh` script automatically compiles and installs the wrapper after building
 
 ### Symlinks (Automated)
 

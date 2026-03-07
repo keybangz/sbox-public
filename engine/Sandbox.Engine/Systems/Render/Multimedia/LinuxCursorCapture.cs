@@ -42,7 +42,7 @@ namespace Sandbox.Systems.Render.Multimedia
 		private static uint _lastButtonMask = 0;
 
 		/// <summary>
-		/// Poll X11/SDL3 for input and forward to InputRouter.
+		/// Poll X11 for input and forward to InputRouter.
 		/// Uses X11 for getting mouse position relative to focused window and button states.
 		/// Should be called every frame from UpdateInput().
 		/// </summary>
@@ -57,13 +57,9 @@ namespace Sandbox.Systems.Render.Multimedia
 				if (_x11Display != IntPtr.Zero)
 				{
 					_x11RootWindow = XDefaultRootWindow(_x11Display);
-					System.IO.File.AppendAllText("/tmp/sdl3_input_debug.txt",
-						$"[LinuxInput] X11 initialized: display={_x11Display} root={_x11RootWindow}\n");
 				}
 				else
 				{
-					System.IO.File.AppendAllText("/tmp/sdl3_input_debug.txt",
-						$"[LinuxInput] Failed to open X11 display\n");
 					return;
 				}
 			}
@@ -84,13 +80,6 @@ namespace Sandbox.Systems.Render.Multimedia
 				out int rootX, out int rootY,
 				out int winX, out int winY,
 				out uint mask);
-
-			// Log first few polls for debugging
-			if (_pollCount <= 5)
-			{
-				System.IO.File.AppendAllText("/tmp/sdl3_input_debug.txt",
-					$"[LinuxInput] Poll #{_pollCount}: focusWindow={focusWindow}, winX={winX}, winY={winY}, rootX={rootX}, rootY={rootY}, mask=0x{mask:X}\n");
-			}
 
 			// Use window-relative coordinates
 			float mouseX = winX;
@@ -121,11 +110,6 @@ namespace Sandbox.Systems.Render.Multimedia
 
 			if (isDown != wasDown)
 			{
-				if (_pollCount <= 20)
-				{
-					System.IO.File.AppendAllText("/tmp/sdl3_input_debug.txt",
-						$"[LinuxInput] Button change: {code} down={isDown}\n");
-				}
 				InputRouter.OnMouseButton(code, isDown, 0);
 			}
 		}
@@ -133,80 +117,44 @@ namespace Sandbox.Systems.Render.Multimedia
 	}
 
 	/// <summary>
-	/// Linux cursor capture implementation using SDL3
+	/// Linux cursor capture implementation using X11 (stub implementation)
 	/// </summary>
 	public static class LinuxCursorCapture
 	{
-		public enum SDL_CursorState : int
-		{
-			StateNone = 0,
-			StateVisible = 1
-		}
-
-		[DllImport("libSDL3.so", CallingConvention = CallingConvention.Cdecl)]
-		public static extern int SDL_GetCursorState();
-
-		[DllImport("libSDL3.so", CallingConvention = CallingConvention.Cdecl)]
-		public static extern int SDL_ShowCursor(IntPtr id, int visible);
-
-		[DllImport("libSDL3.so", CallingConvention = CallingConvention.Cdecl)]
-		public static extern int SDL_HideCursor();
-
-		[DllImport("libSDL3.so", CallingConvention = CallingConvention.Cdecl)]
-		public static extern IntPtr SDL_GetCursor();
-
-		[DllImport("libSDL3.so", CallingConvention = CallingConvention.Cdecl)]
-		public static extern IntPtr SDL_GetGlobalMouseState();
-
-		[DllImport("libSDL3.so", CallingConvention = CallingConvention.Cdecl)]
-		public static extern bool SDL_WarpMouseGlobal(int x, int y);
-
 		public static void HideCursor()
 		{
-			SDL_HideCursor();
-			Log.Warning("LinuxCursorCapture: HideCursor() called (stub implementation)");
+			// Stub - cursor hiding not implemented
 		}
 
 		public static void ShowCursor()
 		{
-			int visible = 1;
-			SDL_ShowCursor(IntPtr.Zero, visible);
-			Log.Warning("LinuxCursorCapture: ShowCursor() called (stub implementation)");
+			// Stub - cursor showing not implemented
 		}
 
 		public static unsafe void BlitCursorToBuffer(byte* buffer, int width, int stride, int mouseX, int mouseY)
 		{
-			Log.Warning("LinuxCursorCapture: BlitCursorToBuffer() called (stub implementation)");
-			return;
+			// Stub - cursor blitting not implemented
 		}
 
 		public static IntPtr GetCursor()
 		{
-			IntPtr cursor = SDL_GetCursor();
-			Log.Warning("LinuxCursorCapture: GetCursor() called (stub implementation)");
-			return cursor;
+			return IntPtr.Zero;
 		}
 
 		public static bool IsCursorVisible()
 		{
-			int state = SDL_GetCursorState();
-			bool visible = (state == 1);
-			Log.Warning($"LinuxCursorCapture: IsCursorVisible() called, state={state} (stub implementation)");
-			return visible;
+			return true;
 		}
 
 		public static void GetCursorInfo(out bool visible, out IntPtr handle)
 		{
-			int state = SDL_GetCursorState();
-			visible = (state == 1);
+			visible = true;
 			handle = IntPtr.Zero;
-			Log.Warning($"LinuxCursorCapture: GetCursorInfo() called (stub implementation), visible={visible}");
 		}
 
 		public static IntPtr GetCursorShape(out IntPtr shape, int size)
 		{
 			shape = IntPtr.Zero;
-			Log.Warning($"LinuxCursorCapture: GetCursorShape() called (stub implementation), size={size}");
 			return IntPtr.Zero;
 		}
 
@@ -215,23 +163,19 @@ namespace Sandbox.Systems.Render.Multimedia
 			bitmap = IntPtr.Zero;
 			width = 16;
 			height = 16;
-			Log.Warning("LinuxCursorCapture: GetCursorBitmap() called (stub implementation)");
 			return false;
 		}
 
 		public static void WarpMouse(int x, int y)
 		{
-			SDL_WarpMouseGlobal(x, y);
-			Log.Warning($"LinuxCursorCapture: WarpMouse() called (stub implementation), x={x}, y={y}");
+			// Stub - mouse warping not implemented
 		}
 
 		public static IntPtr GetGlobalMouseState(out int mouseX, out int mouseY)
 		{
 			mouseX = 0;
 			mouseY = 0;
-			IntPtr state = SDL_GetGlobalMouseState();
-			Log.Warning("LinuxCursorCapture: GetGlobalMouseState() called (stub implementation)");
-			return state;
+			return IntPtr.Zero;
 		}
 	}
 #endif

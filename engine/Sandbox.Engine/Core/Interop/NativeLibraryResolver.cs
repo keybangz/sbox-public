@@ -23,6 +23,10 @@ public static class NativeLibraryResolver
 		["steam_api64"] = new[] { "libsteam_api.so", "libsteam_api64.so", "steam_api64.so" },
 		["steam_api64.dll"] = new[] { "libsteam_api.so", "libsteam_api64.so", "steam_api64.so" },
 
+		// Steam API - P/Invoke uses "steam_api64" but Linux has "libsteam_api.so"
+		["steam_api64"] = new[] { "libsteam_api.so" },
+		["steam_api64.dll"] = new[] { "libsteam_api.so" },
+
 		// SkiaSharp - versioned on Linux
 		["libSkiaSharp"] = new[] { "libSkiaSharp.so", "libSkiaSharp.so.116.0.0" },
 		["SkiaSharp"] = new[] { "libSkiaSharp.so", "libSkiaSharp.so.116.0.0" },

@@ -6,22 +6,8 @@ internal static partial class InputRouter
 {
 	static RealTimeSince timeSinceWindowActive;
 
-	private static int _mouseButtonCallCount = 0;
-
 	internal static void OnMouseButton( ButtonCode button, bool down, int ikeymods )
 	{
-		// Debug logging for Linux input issues - always log first 5 calls
-		_mouseButtonCallCount++;
-		if ( _mouseButtonCallCount <= 5 )
-		{
-			Log.Info( $"[InputRouter] OnMouseButton #{_mouseButtonCallCount}: button={button}, down={down}, keymods={ikeymods}" );
-			try
-			{
-				System.IO.File.AppendAllText( "/tmp/input_debug.txt", $"[{DateTime.Now}] OnMouseButton #{_mouseButtonCallCount}: button={button}, down={down}\n" );
-			}
-			catch { }
-		}
-
 		SetButtonState( button, down );
 
 		var mouse = Contexts.FirstOrDefault( x => x.MouseState != InputContext.InputState.Ignore );

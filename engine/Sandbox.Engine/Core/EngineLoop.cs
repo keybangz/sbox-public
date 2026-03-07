@@ -31,7 +31,6 @@ internal static class EngineLoop
 			Log.Info( $"[EngineLoop] RunFrame #{_runFrameCount} called!" );
 			try
 			{
-				System.IO.File.AppendAllText( "/tmp/runframe_debug.txt", $"[{DateTime.Now}] RunFrame #{_runFrameCount} called\n" );
 			}
 			catch { }
 		}
@@ -133,56 +132,31 @@ internal static class EngineLoop
 
 	}
 
-	private static int _updateInputCount = 0;
-
 	/// <summary>
 	/// Pumps the input system
 	/// </summary>
 	static void UpdateInput()
 	{
-		_updateInputCount++;
-		if ( _updateInputCount <= 3 )
-		{
-			System.IO.File.AppendAllText( "/tmp/updateinput_debug.txt", $"[UpdateInput] #{_updateInputCount} calling g_pInputService.Pump()\n" );
-		}
-
 		using var __ = PerformanceStats.Timings.Input.Scope();
 
 		g_pInputService.Pump();
 
 #if !WIN
 		// On Linux, the native engine doesn't call managed input callbacks,
-		// so we poll SDL events directly from managed code
-		if ( _updateInputCount <= 3 )
-		{
-			System.IO.File.AppendAllText( "/tmp/updateinput_debug.txt", $"[UpdateInput] #{_updateInputCount} About to call LinuxSDLInput.PollEvents()\n" );
-		}
+		// so we poll X11 events directly from managed code
 		try
 		{
 			Sandbox.Systems.Render.Multimedia.LinuxSDLInput.PollEvents();
 		}
-		catch ( System.Exception ex )
+		catch ( System.Exception )
 		{
-			System.IO.File.AppendAllText( "/tmp/updateinput_debug.txt", $"[UpdateInput] LinuxSDLInput error: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}\n" );
+			// Silently ignore input polling errors
 		}
 #endif
-
-		if ( _updateInputCount <= 3 )
-		{
-			System.IO.File.AppendAllText( "/tmp/updateinput_debug.txt", $"[UpdateInput] #{_updateInputCount} Pump() returned\n" );
-		}
 	}
-
-	private static int _frameStartCount = 0;
 
 	internal static void FrameStart()
 	{
-		_frameStartCount++;
-		if ( _frameStartCount <= 3 )
-		{
-			System.IO.File.AppendAllText( "/tmp/framestart_debug.txt", $"[FrameStart] #{_frameStartCount} called\n" );
-		}
-
 		ThreadSafe.AssertIsMainThread();
 
 		//
@@ -302,7 +276,6 @@ internal static class EngineLoop
 		_runAsyncTasksCount++;
 		if ( _runAsyncTasksCount <= 3 )
 		{
-			System.IO.File.AppendAllText( "/tmp/runasynctasks_debug.txt", $"[RunAsyncTasks] #{_runAsyncTasksCount} SyncContext.MainThread={SyncContext.MainThread != null}\n" );
 		}
 		using ( PerformanceStats.Timings.Async.Scope() )
 		{
@@ -468,7 +441,6 @@ internal static class EngineLoop
 			Log.Info( $"[EngineLoop] OnClientOutput #{_clientOutputCount} called!" );
 			try
 			{
-				System.IO.File.AppendAllText( "/tmp/onclientoutput_debug.txt", $"[{DateTime.Now}] OnClientOutput #{_clientOutputCount} called\n" );
 			}
 			catch { }
 		}

@@ -111,11 +111,14 @@ namespace Steamworks.Data
 		[DllImport( Platform.LibraryName, EntryPoint = "SteamAPI_SteamNetworkingIdentity_GetPSNID", CallingConvention = Platform.CC )]
 		internal static extern ulong InternalGetPSNID( ref NetIdentity self );
 
-		[DllImport( Platform.LibraryName, EntryPoint = "SteamAPI_SteamNetworkingIdentity_SetStadiaID", CallingConvention = Platform.CC )]
-		internal static extern void InternalSetStadiaID( ref NetIdentity self, ulong id );
+		// Stadia was shut down in 2023 - these functions no longer exist in the Steam API
+		// [DllImport( Platform.LibraryName, EntryPoint = "SteamAPI_SteamNetworkingIdentity_SetStadiaID", CallingConvention = Platform.CC )]
+		// internal static extern void InternalSetStadiaID( ref NetIdentity self, ulong id );
+		internal static void InternalSetStadiaID( ref NetIdentity self, ulong id ) { }
 
-		[DllImport( Platform.LibraryName, EntryPoint = "SteamAPI_SteamNetworkingIdentity_GetStadiaID", CallingConvention = Platform.CC )]
-		internal static extern ulong InternalGetStadiaID( ref NetIdentity self );
+		// [DllImport( Platform.LibraryName, EntryPoint = "SteamAPI_SteamNetworkingIdentity_GetStadiaID", CallingConvention = Platform.CC )]
+		// internal static extern ulong InternalGetStadiaID( ref NetIdentity self );
+		internal static ulong InternalGetStadiaID( ref NetIdentity self ) => 0;
 
 		[DllImport( Platform.LibraryName, EntryPoint = "SteamAPI_SteamNetworkingIdentity_GetIPAddr", CallingConvention = Platform.CC )]
 		internal static extern IntPtr InternalGetIPAddr( ref NetIdentity self );

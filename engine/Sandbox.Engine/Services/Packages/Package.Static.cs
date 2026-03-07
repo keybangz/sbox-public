@@ -316,10 +316,14 @@ public partial class Package
 	{
 		ArgumentException.ThrowIfNullOrEmpty( query );
 
+		Log.Info( $"[Package.FindAsync] Starting query=\"{query}\" take={take} skip={skip}" );
+		var startTime = DateTime.Now;
+
 		// If the query is for local, we redirect to the local packages
 		if ( query.Split( ' ' ).Contains( "local:true" ) )
 		{
 			var list = GetMockPackages( query ).ToArray();
+			Log.Info( $"[Package.FindAsync] Local query returned {list.Length} packages" );
 
 			return new FindResult
 			{
@@ -330,11 +334,22 @@ public partial class Package
 
 		try
 		{
+			Log.Info( $"[Package.FindAsync] Calling Backend.Package.Find..." );
 			var l = await Backend.Package.Find( query, take, skip );
+			var elapsed = (DateTime.Now - startTime).TotalMilliseconds;
+			Log.Info( $"[Package.FindAsync] Backend returned {l?.Packages?.Count ?? 0} packages in {elapsed:F0}ms" );
 			return FindResult.FromDto( l );
 		}
-		catch ( ApiException )
+		catch ( ApiException ex )
 		{
+			var elapsed = (DateTime.Now - startTime).TotalMilliseconds;
+			Log.Warning( $"[Package.FindAsync] ApiException after {elapsed:F0}ms: {ex.Message}" );
+			return new FindResult { Packages = Array.Empty<Package>(), TotalCount = 0, Tags = Array.Empty<TagEntry>(), Orders = Array.Empty<SortOrder>() };
+		}
+		catch ( System.Exception ex )
+		{
+			var elapsed = (DateTime.Now - startTime).TotalMilliseconds;
+			Log.Warning( $"[Package.FindAsync] Exception after {elapsed:F0}ms: {ex.GetType().Name}: {ex.Message}" );
 			return new FindResult { Packages = Array.Empty<Package>(), TotalCount = 0, Tags = Array.Empty<TagEntry>(), Orders = Array.Empty<SortOrder>() };
 		}
 	}
@@ -344,11 +359,29 @@ public partial class Package
 	/// </summary>
 	public static async Task<ListResult> ListAsync( string id, CancellationToken token = default )
 	{
-		var result = await Backend.Package.GetList( id );
-		if ( result.Groupings is null )
-			return null;
+		Log.Info( $"[Package.ListAsync] Starting id=\"{id}\"" );
+		var startTime = DateTime.Now;
 
-		return ListResult.From( result );
+		try
+		{
+			var result = await Backend.Package.GetList( id );
+			var elapsed = (DateTime.Now - startTime).TotalMilliseconds;
+
+			if ( result.Groupings is null )
+			{
+				Log.Warning( $"[Package.ListAsync] Backend returned null groupings after {elapsed:F0}ms" );
+				return null;
+			}
+
+			Log.Info( $"[Package.ListAsync] Backend returned {result.Groupings.Count} groupings in {elapsed:F0}ms" );
+			return ListResult.From( result );
+		}
+		catch ( System.Exception ex )
+		{
+			var elapsed = (DateTime.Now - startTime).TotalMilliseconds;
+			Log.Warning( $"[Package.ListAsync] Exception after {elapsed:F0}ms: {ex.GetType().Name}: {ex.Message}" );
+			return null;
+		}
 	}
 
 	/// <summary>
