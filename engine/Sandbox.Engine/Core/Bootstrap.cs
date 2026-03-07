@@ -141,8 +141,6 @@ internal static class Bootstrap
 	{
 		try
 		{
-			System.IO.File.AppendAllText( "/tmp/bootstrap_init_debug.txt", "[Bootstrap.Init] Starting\n" );
-
 			// Add native filesystem search paths for core content with correct casing
 			// This must happen after SourceEngineInit has set up the native filesystem
 			EngineFileSystem.InitializeNativeSearchPaths();
@@ -215,13 +213,11 @@ internal static class Bootstrap
 				SyncContext.RunBlocking( Services.Inventory.WaitForSteamInventoryItems( timeout.Token ) );
 			}
 
-			System.IO.File.AppendAllText( "/tmp/bootstrap_init_debug.txt", "[Bootstrap.Init] Before IMenuDll.Initialize()\n" );
 			if ( IMenuDll.Current is not null )
 			{
 				using var x = StartupTiming?.ScopeTimer( $"MenuBootstrap" );
 				SyncContext.RunBlocking( IMenuDll.Current.Initialize() );
 			}
-			System.IO.File.AppendAllText( "/tmp/bootstrap_init_debug.txt", "[Bootstrap.Init] After IMenuDll.Initialize()\n" );
 
 			if ( IGameInstanceDll.Current is not null )
 			{
@@ -267,7 +263,6 @@ internal static class Bootstrap
 			{
 				Log.Info( "Bootstrap Init Done" );
 			}
-			System.IO.File.AppendAllText( "/tmp/bootstrap_init_debug.txt", "[Bootstrap.Init] Almost done, before Networking.Bootstrap()\n" );
 
 			//
 			// Networking bootstrap
