@@ -89,9 +89,10 @@ __attribute__((constructor)) static void init(void) {
     
     // Load real DXC (must be named .real)
     const char* paths[] = {
+        "./bin/linuxsteamrt64/libdxcompiler.so.real",
         "./libdxcompiler.so.real",
         "libdxcompiler.so.real",
-        "/mnt/extra_ssd/Github/SBOX-DEV/game/libdxcompiler.so.real",
+        "bin/linuxsteamrt64/libdxcompiler.so.real",
         NULL
     };
     for (int i = 0; paths[i] && !real_dxc_lib; i++) {

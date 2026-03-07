@@ -133,18 +133,56 @@ internal static class EngineLoop
 
 	}
 
+	private static int _updateInputCount = 0;
+
 	/// <summary>
 	/// Pumps the input system
 	/// </summary>
 	static void UpdateInput()
 	{
+		_updateInputCount++;
+		if ( _updateInputCount <= 3 )
+		{
+			System.IO.File.AppendAllText( "/tmp/updateinput_debug.txt", $"[UpdateInput] #{_updateInputCount} calling g_pInputService.Pump()\n" );
+		}
+
 		using var __ = PerformanceStats.Timings.Input.Scope();
 
 		g_pInputService.Pump();
+
+#if !WIN
+		// On Linux, the native engine doesn't call managed input callbacks,
+		// so we poll SDL events directly from managed code
+		if ( _updateInputCount <= 3 )
+		{
+			System.IO.File.AppendAllText( "/tmp/updateinput_debug.txt", $"[UpdateInput] #{_updateInputCount} About to call LinuxSDLInput.PollEvents()\n" );
+		}
+		try
+		{
+			Sandbox.Systems.Render.Multimedia.LinuxSDLInput.PollEvents();
+		}
+		catch ( System.Exception ex )
+		{
+			System.IO.File.AppendAllText( "/tmp/updateinput_debug.txt", $"[UpdateInput] LinuxSDLInput error: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}\n" );
+		}
+#endif
+
+		if ( _updateInputCount <= 3 )
+		{
+			System.IO.File.AppendAllText( "/tmp/updateinput_debug.txt", $"[UpdateInput] #{_updateInputCount} Pump() returned\n" );
+		}
 	}
+
+	private static int _frameStartCount = 0;
 
 	internal static void FrameStart()
 	{
+		_frameStartCount++;
+		if ( _frameStartCount <= 3 )
+		{
+			System.IO.File.AppendAllText( "/tmp/framestart_debug.txt", $"[FrameStart] #{_frameStartCount} called\n" );
+		}
+
 		ThreadSafe.AssertIsMainThread();
 
 		//
