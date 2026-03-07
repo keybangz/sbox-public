@@ -248,14 +248,18 @@ public partial class Project
 
 	internal static async Task<bool> CompileAsync()
 	{
+		System.IO.File.AppendAllText( "/tmp/compileasync_debug.txt", $"[CompileAsync] Start, IsBuilding={CompileGroup.IsBuilding}\n" );
 		while ( CompileGroup.IsBuilding )
 		{
 			await Task.Delay( 50 );
 		}
 
+		System.IO.File.AppendAllText( "/tmp/compileasync_debug.txt", $"[CompileAsync] After wait loop, calling BuildAsync\n" );
 		CompileGroup.AllowFastHotload = HotloadManager.hotload_fast;
 
-		return await CompileGroup.BuildAsync();
+		var result = await CompileGroup.BuildAsync();
+		System.IO.File.AppendAllText( "/tmp/compileasync_debug.txt", $"[CompileAsync] BuildAsync returned: {result}\n" );
+		return result;
 	}
 
 	internal static IEnumerable<Microsoft.CodeAnalysis.Diagnostic> GetCompileDiagnostics()

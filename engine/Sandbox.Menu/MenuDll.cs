@@ -132,7 +132,8 @@ internal sealed class MenuDll : IMenuDll
 
 	public async Task Initialize()
 	{
-		System.IO.File.AppendAllText( "/tmp/menudll_init_debug.txt", "[MenuDll.Initialize] Starting\n" );
+		var currentSyncCtx = System.Threading.SynchronizationContext.Current;
+		System.IO.File.AppendAllText( "/tmp/menudll_init_debug.txt", $"[MenuDll.Initialize] Starting, SyncContext={currentSyncCtx?.GetType()?.FullName ?? "NULL"}\n" );
 		using var _ = PushScope();
 
 		//

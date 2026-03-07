@@ -257,8 +257,15 @@ internal static class EngineLoop
 		Audio.AudioEngine.Tick();
 	}
 
+	private static int _runAsyncTasksCount = 0;
+
 	public static void RunAsyncTasks()
 	{
+		_runAsyncTasksCount++;
+		if ( _runAsyncTasksCount <= 3 )
+		{
+			System.IO.File.AppendAllText( "/tmp/runasynctasks_debug.txt", $"[RunAsyncTasks] #{_runAsyncTasksCount} SyncContext.MainThread={SyncContext.MainThread != null}\n" );
+		}
 		using ( PerformanceStats.Timings.Async.Scope() )
 		{
 			using var sceneScope = IGameInstanceDll.Current?.PushScope();

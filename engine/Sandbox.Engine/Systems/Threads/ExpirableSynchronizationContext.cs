@@ -339,14 +339,23 @@ internal class ExpirableSynchronizationContext : SynchronizationContext
 		d( state );
 	}
 
+	private static int _postCount = 0;
+	private static int _globalOp = 0;
+
 	public override void Post( SendOrPostCallback d, object state )
 	{
+		_postCount++;
+		var op = System.Threading.Interlocked.Increment( ref _globalOp );
+		var target = GetCurrentContext();
 		if ( !CheckValid( state, out var isCancelled ) ) return;
 
-		var target = GetCurrentContext();
 		var data = new Data( d, state, isCancelled ? this : target );
 
-		target.m_queue.Writer.TryWrite( data );
+		var writeResult = target.m_queue.Writer.TryWrite( data );
+		if ( _postCount <= 10 )
+		{
+			System.IO.File.AppendAllText( "/tmp/sync_ops_debug.txt", $"[OP#{op}] POST #{_postCount} TryWrite={writeResult} QueueCount={target.m_queue.Reader.Count}\n" );
+		}
 	}
 
 	public void Expire( ExpirableSynchronizationContext newInstance )
@@ -384,8 +393,17 @@ internal class ExpirableSynchronizationContext : SynchronizationContext
 		public bool IsCompleted { get; set; }
 	}
 
+	private static int _processQueueCount = 0;
+
 	public void ProcessQueue()
 	{
+		_processQueueCount++;
+		var queueCount = m_queue.Reader.Count;
+		if ( _processQueueCount <= 5 || queueCount > 0 )
+		{
+			var op = System.Threading.Interlocked.Increment( ref _globalOp );
+			System.IO.File.AppendAllText( "/tmp/sync_ops_debug.txt", $"[OP#{op}] PROCESSQUEUE #{_processQueueCount} QueueCount={queueCount}\n" );
+		}
 		if ( _sCurrentProcessingContext != null )
 		{
 			return;
