@@ -73,9 +73,24 @@ public static class LauncherEnvironment
 		// Put our native dll path first so that when looking up native dlls we'll
 		// always use the ones from our folder first
 		//
-		var path = System.Environment.GetEnvironmentVariable( "PATH" );
-		path = $"{nativeDllPath};{path}";
-		System.Environment.SetEnvironmentVariable( "PATH", path );
+		if ( OperatingSystem.IsWindows() )
+		{
+			var path = System.Environment.GetEnvironmentVariable( "PATH" );
+			path = $"{nativeDllPath};{path}";
+			System.Environment.SetEnvironmentVariable( "PATH", path );
+		}
+		else if ( OperatingSystem.IsLinux() )
+		{
+			var ldPath = System.Environment.GetEnvironmentVariable( "LD_LIBRARY_PATH" ) ?? "";
+			ldPath = $"{nativeDllPath}:{GamePath}:{ldPath}";
+			System.Environment.SetEnvironmentVariable( "LD_LIBRARY_PATH", ldPath );
+		}
+		else if ( OperatingSystem.IsMacOS() )
+		{
+			var dylibPath = System.Environment.GetEnvironmentVariable( "DYLD_LIBRARY_PATH" ) ?? "";
+			dylibPath = $"{nativeDllPath}:{GamePath}:{dylibPath}";
+			System.Environment.SetEnvironmentVariable( "DYLD_LIBRARY_PATH", dylibPath );
+		}
 	}
 
 	private static Assembly CurrentDomain_AssemblyResolve( object sender, ResolveEventArgs args )

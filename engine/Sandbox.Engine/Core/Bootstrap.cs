@@ -139,6 +139,10 @@ internal static class Bootstrap
 	{
 		try
 		{
+			// Add native filesystem search paths for core content with correct casing
+			// This must happen after SourceEngineInit has set up the native filesystem
+			EngineFileSystem.InitializeNativeSearchPaths();
+
 			IToolsDll.Current?.Spin();
 
 #pragma warning disable CS0612 // Type or member is obsolete

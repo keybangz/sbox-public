@@ -1,5 +1,6 @@
 ﻿using Sandbox.Diagnostics;
 using System;
+using System.IO;
 using System.Reflection;
 
 namespace Sandbox;
@@ -21,6 +22,19 @@ public static class Program
 	/// </summary>
 	static string NativeDllPath { get; set; }
 
+	/// <summary>
+	/// Get the platform-specific bin folder name
+	/// </summary>
+	static string PlatformBinFolder
+	{
+		get
+		{
+			if ( OperatingSystem.IsLinux() ) return "linuxsteamrt64";
+			if ( OperatingSystem.IsMacOS() ) return "osx64";
+			return "win64";
+		}
+	}
+
 	[STAThread]
 	public static int Main()
 	{
@@ -28,8 +42,8 @@ public static class Program
 
 		var exePath = System.Environment.ProcessPath;
 		GamePath = System.IO.Path.GetDirectoryName( exePath );
-		ManagedDllPath = $"{GamePath}\\bin\\managed\\";
-		NativeDllPath = $"{GamePath}\\bin\\win64\\";
+		ManagedDllPath = Path.Combine( GamePath, "bin", "managed" );
+		NativeDllPath = Path.Combine( GamePath, "bin", PlatformBinFolder );
 
 		//
 		// Allows unit tests and csproj to find the engine path.
@@ -43,11 +57,24 @@ public static class Program
 		// Put our native dll path first so that when looking up native dlls we'll
 		// always use the ones from our folder first
 		//
-		var path = System.Environment.GetEnvironmentVariable( "PATH" );
-		path = $"{NativeDllPath};{path}";
-		System.Environment.SetEnvironmentVariable( "PATH", path );
-
-
+		if ( OperatingSystem.IsWindows() )
+		{
+			var path = System.Environment.GetEnvironmentVariable( "PATH" );
+			path = $"{NativeDllPath};{path}";
+			System.Environment.SetEnvironmentVariable( "PATH", path );
+		}
+		else if ( OperatingSystem.IsLinux() )
+		{
+			var ldPath = System.Environment.GetEnvironmentVariable( "LD_LIBRARY_PATH" ) ?? "";
+			ldPath = $"{NativeDllPath}:{GamePath}:{ldPath}";
+			System.Environment.SetEnvironmentVariable( "LD_LIBRARY_PATH", ldPath );
+		}
+		else if ( OperatingSystem.IsMacOS() )
+		{
+			var dylibPath = System.Environment.GetEnvironmentVariable( "DYLD_LIBRARY_PATH" ) ?? "";
+			dylibPath = $"{NativeDllPath}:{GamePath}:{dylibPath}";
+			System.Environment.SetEnvironmentVariable( "DYLD_LIBRARY_PATH", dylibPath );
+		}
 
 		//
 		// We can't call Sandbox.Engine.dll in this function because it'll try to
@@ -64,7 +91,7 @@ public static class Program
 		var cd = System.Environment.CurrentDirectory;
 		var trim = args.Name.Split( ',' )[0];
 
-		var name = $"{ManagedDllPath}\\{trim}.dll";
+		var name = Path.Combine( ManagedDllPath, $"{trim}.dll" );
 
 		// dlls with resources inside appear as a different name
 		name = name.Replace( ".resources.dll", ".dll" );
@@ -84,7 +111,8 @@ public static class Program
 		// load the c++ dlls and fill the interop functions
 		NetCore.InitializeInterop( GamePath );
 
-		NativeEngine.EngineGlobal.Plat_SetModuleFilename( $"{GamePath}\\sbox.exe" );
+		var exeName = OperatingSystem.IsWindows() ? "sbox.exe" : "sbox";
+		NativeEngine.EngineGlobal.Plat_SetModuleFilename( Path.Combine( GamePath, exeName ) );
 
 		var app = new SourceEngineApp( GamePath );
 

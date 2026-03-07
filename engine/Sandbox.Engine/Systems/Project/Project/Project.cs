@@ -176,40 +176,93 @@ public sealed partial class Project
 	public string GetProjectPath() => System.IO.Directory.EnumerateFiles( GetRootPath(), "*.sbproj" ).FirstOrDefault();
 
 	/// <summary>
+	/// Finds a subdirectory case-insensitively on Linux.
+	/// Returns the actual path on disk or the requested path if not found.
+	/// </summary>
+	private string FindDirectoryCaseInsensitive( string parentPath, string dirName )
+	{
+		if ( !OperatingSystem.IsLinux() )
+		{
+			return System.IO.Path.Combine( parentPath, dirName );
+		}
+
+		// Try exact match first
+		var exactPath = System.IO.Path.Combine( parentPath, dirName );
+		if ( System.IO.Directory.Exists( exactPath ) )
+		{
+			return exactPath;
+		}
+
+		// Search case-insensitively
+		try
+		{
+			var dirs = System.IO.Directory.GetDirectories( parentPath );
+			foreach ( var dir in dirs )
+			{
+				var name = System.IO.Path.GetFileName( dir );
+				if ( string.Equals( name, dirName, StringComparison.OrdinalIgnoreCase ) )
+				{
+					return dir;
+				}
+			}
+		}
+		catch
+		{
+			// Directory doesn't exist or access denied
+		}
+
+		return exactPath;
+	}
+
+	/// <summary>
+	/// Checks if a directory exists case-insensitively on Linux.
+	/// </summary>
+	private bool DirectoryExistsCaseInsensitive( string parentPath, string dirName )
+	{
+		if ( !OperatingSystem.IsLinux() )
+		{
+			return System.IO.Directory.Exists( System.IO.Path.Combine( parentPath, dirName ) );
+		}
+
+		var actualPath = FindDirectoryCaseInsensitive( parentPath, dirName );
+		return System.IO.Directory.Exists( actualPath );
+	}
+
+	/// <summary>
 	/// Absolute path to the Code folder of the project.
 	/// </summary>
-	public string GetCodePath() => System.IO.Path.Combine( RootDirectory.FullName, "Code" );
+	public string GetCodePath() => FindDirectoryCaseInsensitive( RootDirectory.FullName, "Code" );
 
 	/// <summary>
 	/// Returns true if the Code path exists
 	/// </summary>
-	public bool HasCodePath() => RootDirectory is not null && System.IO.Directory.Exists( GetCodePath() );
+	public bool HasCodePath() => RootDirectory is not null && DirectoryExistsCaseInsensitive( RootDirectory.FullName, "Code" );
 
 	/// <summary>
 	/// Absolute path to the Editor folder of the project.
 	/// </summary>
-	public string GetEditorPath() => System.IO.Path.Combine( RootDirectory.FullName, "Editor" );
+	public string GetEditorPath() => FindDirectoryCaseInsensitive( RootDirectory.FullName, "Editor" );
 
 	/// <summary>
 	/// Returns true if the Editor path exists
 	/// </summary>
-	public bool HasEditorPath() => RootDirectory is not null && System.IO.Directory.Exists( GetEditorPath() );
+	public bool HasEditorPath() => RootDirectory is not null && DirectoryExistsCaseInsensitive( RootDirectory.FullName, "Editor" );
 
 	/// <summary>
 	/// Absolute path to the Assets folder of the project, or <see langword="null"/> if not set.
 	/// </summary>
-	public string GetAssetsPath() => System.IO.Path.Combine( RootDirectory.FullName, "Assets" );
+	public string GetAssetsPath() => FindDirectoryCaseInsensitive( RootDirectory.FullName, "Assets" );
 
 	/// <summary>
 	/// Absolute path to the Localization folder of the project, or <see langword="null"/> if not set.
 	/// </summary>
 	/// <returns></returns>
-	public string GetLocalizationPath() => System.IO.Path.Combine( RootDirectory.FullName, "Localization" );
+	public string GetLocalizationPath() => FindDirectoryCaseInsensitive( RootDirectory.FullName, "Localization" );
 
 	/// <summary>
 	/// Returns true if the Assets path exists
 	/// </summary>
-	public bool HasAssetsPath() => RootDirectory is not null && System.IO.Directory.Exists( GetAssetsPath() );
+	public bool HasAssetsPath() => RootDirectory is not null && DirectoryExistsCaseInsensitive( RootDirectory.FullName, "Assets" );
 
 	internal void Save()
 	{

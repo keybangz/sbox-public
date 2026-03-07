@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+﻿using System;
+using System.Runtime.InteropServices;
 
 namespace Sandbox;
 
@@ -8,6 +9,22 @@ namespace Sandbox;
 static class MissingDependancyDiagnosis
 {
 	public static void Run()
+	{
+		if ( OperatingSystem.IsWindows() )
+		{
+			RunWindowsDiagnosis();
+		}
+		else if ( OperatingSystem.IsLinux() )
+		{
+			RunLinuxDiagnosis();
+		}
+		else if ( OperatingSystem.IsMacOS() )
+		{
+			RunMacOSDiagnosis();
+		}
+	}
+
+	private static void RunWindowsDiagnosis()
 	{
 		// leafiest first, all the dlls we're going to need to load
 
@@ -35,6 +52,30 @@ static class MissingDependancyDiagnosis
 		TestAssembly( "tier0.dll" );
 	}
 
+	private static void RunLinuxDiagnosis()
+	{
+		// Core engine libraries
+		TestAssemblyWithResolver( "libengine2.so" );
+		TestAssemblyWithResolver( "libtier0.so" );
+		TestAssemblyWithResolver( "libsteam_api.so" );
+		TestAssemblyWithResolver( "libfilesystem_stdio.so" );
+
+		// Rendering
+		TestAssemblyWithResolver( "librendersystemvulkan.so" );
+
+		// Font rendering (required for UI)
+		TestAssemblyWithResolver( "libSkiaSharp.so" );
+		TestAssemblyWithResolver( "libHarfBuzzSharp.so" );
+	}
+
+	private static void RunMacOSDiagnosis()
+	{
+		// Core engine libraries
+		TestAssemblyWithResolver( "libengine2.dylib" );
+		TestAssemblyWithResolver( "libtier0.dylib" );
+		TestAssemblyWithResolver( "libsteam_api.dylib" );
+	}
+
 	private static void TestAssembly( string assemblyName )
 	{
 		if ( NativeLibrary.TryLoad( assemblyName, out var handle ) )
@@ -44,5 +85,16 @@ static class MissingDependancyDiagnosis
 		}
 
 		throw new System.Exception( $"Native dll not found, or can't load: {assemblyName}" );
+	}
+
+	private static void TestAssemblyWithResolver( string assemblyName )
+	{
+		if ( NativeLibraryResolver.TryLoad( assemblyName, out var handle ) )
+		{
+			NativeLibrary.Free( handle );
+			return;
+		}
+
+		throw new System.Exception( $"Native library not found, or can't load: {assemblyName}" );
 	}
 }

@@ -810,7 +810,13 @@ internal partial class GameInstanceDll : Engine.IGameInstanceDll
 
 			var project = Project.AddFromFile( gameIdent );
 
-			NativeEngine.FullFileSystem.AddProjectPath( gameIdent, project.GetAssetsPath().ToLowerInvariant() );
+			// On Windows, lowercase the path. On Linux, keep the actual path to preserve case sensitivity.
+			var assetsPath = project.GetAssetsPath();
+			if ( OperatingSystem.IsWindows() )
+			{
+				assetsPath = assetsPath.ToLowerInvariant();
+			}
+			NativeEngine.FullFileSystem.AddProjectPath( gameIdent, assetsPath );
 
 			var libraries = Path.Combine( project.RootDirectory.FullName, "Libraries" );
 

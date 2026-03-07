@@ -1,6 +1,7 @@
 # 🐧 s&box Linux Native Client
 
-**Status:** ✅ STABLE, yeah! definitely...
+**Status:** ✅ STABLE - Now with automated setup!
+
 <img width="1911" height="1072" alt="Screenshot_20260307_015248" src="https://github.com/user-attachments/assets/4411404f-be8a-4b1e-afa4-1f3b7d23f80f" />
 
 This fork contains fixes and modifications to run s&box natively on Linux.
@@ -8,8 +9,26 @@ This fork contains fixes and modifications to run s&box natively on Linux.
 ### Quick Start (Linux)
 
 ```bash
-cd game && ./sbox
+# Run setup once (creates required symlinks automatically)
+cd linux && ./setup.sh
+
+# Run the game
+./run.sh
+
+# Or manually:
+cd game
+export LD_LIBRARY_PATH="$(pwd)/bin/linuxsteamrt64:$(pwd):${LD_LIBRARY_PATH:-}"
+./sbox
 ```
+
+### What's New: Automated Cross-Platform Support
+
+This update significantly reduces manual setup requirements:
+
+- **92% fewer symlinks** - Reduced from 441 to ~35 symlinks
+- **Case-insensitive filesystem layer** - Handles `Code` vs `code`, `Assets` vs `assets` automatically
+- **Cross-platform native library loading** - Automatic resolution of `steam_api64` → `libsteam_api.so`, etc.
+- **Automated setup script** - `linux/setup.sh` creates all required symlinks automatically
 
 ### Code Changes Summary
 
@@ -72,6 +91,25 @@ cd game && ./sbox
 |------|--------|
 | `game/*.runtimeconfig.json` | Updated for Linux runtime compatibility |
 
+#### Cross-Platform Filesystem & Libraries (NEW)
+| File | Change |
+|------|--------|
+| `Sandbox.Filesystem/CaseInsensitivePhysicalFileSystem.cs` | **New file**: Case-insensitive path resolution for Linux |
+| `Sandbox.Filesystem/LocalFileSystem.cs` | Use case-insensitive filesystem on Linux |
+| `Sandbox.Filesystem/BaseFileSystem.cs` | Case-insensitive SubFileSystem path resolution |
+| `Sandbox.Engine/Core/Interop/NativeLibraryResolver.cs` | **New file**: Cross-platform native library loading |
+| `Sandbox.Engine/Systems/Project/Project/Project.cs` | Case-insensitive Code/Assets/Editor path lookup |
+| `Sandbox.Engine/Systems/Filesystem/EngineFileSystem.cs` | Native search path initialization for Linux |
+| `Sandbox.Engine/Core/Bootstrap.cs` | Initialize native search paths after engine init |
+| `Sandbox.AppSystem/AppSystem.cs` | Cross-platform Steam API loading |
+| `Sandbox.AppSystem/QtAppSystem.cs` | Cross-platform Steam API loading |
+| `Sandbox.AppSystem/MissingDependancyDiagnosis.cs` | Platform-specific dependency checking |
+| `Sandbox.GameInstance/GameInstanceDll.cs` | Preserve path casing on Linux |
+| `Launcher/Launcher.cs` | Cross-platform paths, LD_LIBRARY_PATH setup |
+| `Launcher/Shared/LauncherEnvironment.cs` | Platform-appropriate library path variables |
+| `linux/setup.sh` | **New file**: Automated setup script |
+| `linux/run.sh` | **New file**: Game launch script |
+
 ### DXC Shader Compiler Wrapper
 
 The DirectX Shader Compiler (DXC) on Linux expects UTF-32 encoded arguments, but s&box passes UTF-16. A wrapper library intercepts DXC calls and performs the conversion.
@@ -79,66 +117,24 @@ The DirectX Shader Compiler (DXC) on Linux expects UTF-32 encoded arguments, but
 - **Wrapper:** `game/bin/linuxsteamrt64/libdxcompiler.so`
 - **Original:** `game/bin/linuxsteamrt64/libdxcompiler.so.real`
 
-### Required Symlinks
+### Symlinks (Automated)
 
-Linux has a case-sensitive filesystem. Symlinks are required to handle inconsistent casing in code references.
+The `linux/setup.sh` script automatically creates all required symlinks:
 
-#### ⚠️ Critical Rules
-- **NEVER** create symlinks for `.razor`, `.scss`, or `.cs` files
-- **NEVER** create symlinks inside `Code/` directories
-- Only create symlinks for Asset directories and top-level addon directories
+1. **Library soname symlinks** - Required by Linux dynamic linking (e.g., `libswscale.so.9 → libswscale.so.9.100`)
+2. **Engine library symlinks** - Required by native C++ `dlopen` calls (e.g., `libengine2.so → bin/linuxsteamrt64/libengine2.so`)
+3. **Case-sensitivity symlinks** - For addon folders referenced with different casing by native code:
+   - `assets → Assets`
+   - `transients → Transients`
+   - `code → Code`
+   - `localization → Localization`
 
-#### Library Symlinks
+The managed C# code now handles most case-sensitivity automatically via `CaseInsensitivePhysicalFileSystem`, reducing the total symlinks from 441 to ~35.
+
+#### Manual Setup (if needed)
 ```bash
-# In game/bin/linuxsteamrt64/
-ln -sf libswscale.so.9.1.100 libswscale.so.9
-ln -sf libSkiaSharp.so.116.0.0 libSkiaSharp.so
-ln -sf libHarfBuzzSharp.so.0.60830.0 libHarfBuzzSharp.so
-
-# In game/ root
-ln -sf bin/linuxsteamrt64/libsteam_api.so steam_api64.so
-ln -sf bin/linuxsteamrt64/libsteam_api.so libsteam_api64.so
-ln -sf bin/linuxsteamrt64/libSkiaSharp.so.116.0.0 libSkiaSharp.so
-ln -sf bin/linuxsteamrt64/libHarfBuzzSharp.so.0.60830.0 libHarfBuzzSharp.so
-
-# In game/bin/managed/
-ln -sf ../linuxsteamrt64/libsteam_api.so steam_api64.so
-ln -sf ../linuxsteamrt64/libsteam_api.so libsteam_api64.so
-ln -sf ../linuxsteamrt64/libSkiaSharp.so.116.0.0 libSkiaSharp.so
-ln -sf ../linuxsteamrt64/libHarfBuzzSharp.so.0.60830.0 libHarfBuzzSharp.so
-```
-
-#### Addon Directory Symlinks
-```bash
-# For each addon at ROOT level only:
-for addon in game/addons/*/; do
-    [ -d "${addon}Assets" ] && [ ! -e "${addon}assets" ] && ln -s Assets "${addon}assets"
-    [ -d "${addon}Code" ] && [ ! -e "${addon}code" ] && ln -s Code "${addon}code"
-    [ -d "${addon}Localization" ] && [ ! -e "${addon}localization" ] && ln -s Localization "${addon}localization"
-    [ -d "${addon}ProjectSettings" ] && [ ! -e "${addon}projectsettings" ] && ln -s ProjectSettings "${addon}projectsettings"
-done
-
-# Lowercase symlinks for directories inside Assets (NOT Code!)
-find game/addons -path "*/Assets/*" -type d | while read dir; do
-    basename=$(basename "$dir")
-    if [[ "$basename" =~ [A-Z] ]]; then
-        lower=$(echo "$basename" | tr '[:upper:]' '[:lower:]')
-        parent=$(dirname "$dir")
-        [ "$basename" != "$lower" ] && [ ! -e "$parent/$lower" ] && ln -s "$basename" "$parent/$lower"
-    fi
-done
-
-# Special symlinks
-ln -s code/Styles game/addons/base/styles
-ln -s Assets/shaders game/addons/base/shaders
-cd game/addons/base/code && ln -s Styles styles
-cd game/addons/menu/Code && ln -s MainMenu.razor.scss mainmenu.razor.scss
-```
-
-#### Core Directory
-```bash
-mkdir -p game/core/shaders
-cp game/addons/base/Assets/shaders/colorgrading.shader_c game/core/shaders/
+cd linux
+./setup.sh
 ```
 
 ### Known Issues

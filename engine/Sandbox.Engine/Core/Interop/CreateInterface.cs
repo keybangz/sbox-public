@@ -1,5 +1,6 @@
 ﻿using System.IO;
 using System.Runtime.InteropServices;
+using Sandbox;
 
 namespace NativeEngine;
 
@@ -9,38 +10,54 @@ namespace NativeEngine;
 /// </summary>
 internal static class CreateInterface
 {
-	static Dictionary<string, IntPtr> loadedModules = new();
+	static Dictionary<string, IntPtr> loadedModules = new( StringComparer.OrdinalIgnoreCase );
 
 	static IntPtr LoadModule( string dll )
 	{
 		if ( loadedModules.TryGetValue( dll, out var module ) )
 			return module;
 
-		// Try loading directly first
-		if ( NativeLibrary.TryLoad( dll, out module ) )
+		// Convert library name for the current platform
+		var platformDll = NativeLibraryResolver.ConvertLibraryName( dll );
+
+		// Try using our cross-platform resolver first
+		if ( NativeLibraryResolver.TryLoad( dll, out module ) )
 		{
 			loadedModules[dll] = module;
 			return module;
 		}
 
-		// On Linux, try with full path from game directory
-		if ( OperatingSystem.IsLinux() )
+		// Try loading directly
+		if ( NativeLibrary.TryLoad( platformDll, out module ) )
 		{
-			var gameDir = AppDomain.CurrentDomain.BaseDirectory;
-			var fullPath = Path.Combine( gameDir, dll );
-			if ( NativeLibrary.TryLoad( fullPath, out module ) )
-			{
-				loadedModules[dll] = module;
-				return module;
-			}
+			loadedModules[dll] = module;
+			return module;
+		}
 
-			// Also try bin/linuxsteamrt64 subdirectory
-			fullPath = Path.Combine( gameDir, "bin", "linuxsteamrt64", dll );
-			if ( NativeLibrary.TryLoad( fullPath, out module ) )
-			{
-				loadedModules[dll] = module;
-				return module;
-			}
+		// Try with full paths based on platform
+		var gameDir = AppDomain.CurrentDomain.BaseDirectory;
+		string binFolder;
+		if ( OperatingSystem.IsLinux() )
+			binFolder = "linuxsteamrt64";
+		else if ( OperatingSystem.IsMacOS() )
+			binFolder = "osx64";
+		else
+			binFolder = "win64";
+
+		// Try game root
+		var fullPath = Path.Combine( gameDir, platformDll );
+		if ( NativeLibrary.TryLoad( fullPath, out module ) )
+		{
+			loadedModules[dll] = module;
+			return module;
+		}
+
+		// Try bin subdirectory
+		fullPath = Path.Combine( gameDir, "bin", binFolder, platformDll );
+		if ( NativeLibrary.TryLoad( fullPath, out module ) )
+		{
+			loadedModules[dll] = module;
+			return module;
 		}
 
 		return default;

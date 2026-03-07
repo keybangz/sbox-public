@@ -69,6 +69,10 @@ internal static class EngineFileSystem
 
 			Assets.CreateAndMount( Root, "/core/" );
 			Assets.CreateAndMount( Root, "/addons/base/assets" );
+
+			// Add native filesystem paths with correct casing for Linux
+			AddNativeSearchPath( rootFolder, "core" );
+			AddNativeSearchPath( rootFolder, "addons/base/Assets", "addons/base/assets" );
 		}
 		else
 		{
@@ -79,6 +83,113 @@ internal static class EngineFileSystem
 			Assets.CreateAndMount( Root, "/core/" );
 			Assets.CreateAndMount( Root, "/addons/base/assets/" );
 			Assets.CreateAndMount( Root, "/addons/citizen/assets/" );
+
+			// Add native filesystem paths with correct casing for Linux
+			AddNativeSearchPath( rootFolder, "core" );
+			AddNativeSearchPath( rootFolder, "addons/base/Assets", "addons/base/assets" );
+			AddNativeSearchPath( rootFolder, "addons/citizen/Assets", "addons/citizen/assets" );
+		}
+	}
+
+	/// <summary>
+	/// Add a search path to the native filesystem with case-insensitive lookup on Linux.
+	/// </summary>
+	private static void AddNativeSearchPath( string rootFolder, string relativePath, string fallbackPath = null )
+	{
+		var fullPath = System.IO.Path.Combine( rootFolder, relativePath );
+
+		// On Linux, check if the path exists, otherwise try case-insensitive lookup
+		if ( OperatingSystem.IsLinux() && !System.IO.Directory.Exists( fullPath ) )
+		{
+			// Try the fallback path
+			if ( fallbackPath != null )
+			{
+				var fallbackFullPath = System.IO.Path.Combine( rootFolder, fallbackPath );
+				if ( System.IO.Directory.Exists( fallbackFullPath ) )
+				{
+					fullPath = fallbackFullPath;
+				}
+			}
+
+			// Try to find the correct cased path
+			var resolved = FindDirectoryCaseInsensitive( rootFolder, relativePath );
+			if ( resolved != null )
+			{
+				fullPath = resolved;
+			}
+		}
+
+		if ( System.IO.Directory.Exists( fullPath ) )
+		{
+			var ident = System.IO.Path.GetFileName( relativePath );
+			Log.Info( $"[EngineFileSystem] Adding native search path: ident={ident}, path={fullPath}" );
+			NativeEngine.FullFileSystem.AddProjectPath( ident, fullPath );
+			// Also add to the engine's search path so resource system can find files
+			NativeEngine.EngineGlue.AddSearchPath( fullPath, "GAME", true );
+		}
+		else
+		{
+			Log.Warning( $"[EngineFileSystem] Native search path not found: {fullPath}" );
+		}
+	}
+
+	/// <summary>
+	/// Find a directory with case-insensitive path matching.
+	/// </summary>
+	private static string FindDirectoryCaseInsensitive( string rootFolder, string relativePath )
+	{
+		var segments = relativePath.Split( new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries );
+		var currentPath = rootFolder;
+
+		foreach ( var segment in segments )
+		{
+			if ( !System.IO.Directory.Exists( currentPath ) )
+				return null;
+
+			var exactPath = System.IO.Path.Combine( currentPath, segment );
+			if ( System.IO.Directory.Exists( exactPath ) )
+			{
+				currentPath = exactPath;
+				continue;
+			}
+
+			// Search case-insensitively
+			bool found = false;
+			foreach ( var dir in System.IO.Directory.GetDirectories( currentPath ) )
+			{
+				var dirName = System.IO.Path.GetFileName( dir );
+				if ( string.Equals( dirName, segment, StringComparison.OrdinalIgnoreCase ) )
+				{
+					currentPath = dir;
+					found = true;
+					break;
+				}
+			}
+
+			if ( !found )
+				return null;
+		}
+
+		return currentPath;
+	}
+
+	/// <summary>
+	/// Initialize native filesystem search paths with correct casing for Linux.
+	/// This must be called after SourceEngineInit has set up the native filesystem.
+	/// </summary>
+	internal static void InitializeNativeSearchPaths()
+	{
+		var rootFolder = Environment.CurrentDirectory;
+		Log.Info( $"[EngineFileSystem] InitializeNativeSearchPaths called, rootFolder={rootFolder}" );
+
+		// Add core and addon paths to native filesystem
+		AddNativeSearchPath( rootFolder, "core" );
+		AddNativeSearchPath( rootFolder, "addons/base/Assets", "addons/base/assets" );
+
+		if ( !Application.IsStandalone )
+		{
+			AddNativeSearchPath( rootFolder, "addons/citizen/Assets", "addons/citizen/assets" );
+			AddNativeSearchPath( rootFolder, "addons/menu/Assets", "addons/menu/assets" );
 		}
 	}
 
