@@ -18,7 +18,7 @@ cd linux && ./setup.sh
 # Or manually:
 cd game
 export LD_LIBRARY_PATH="$(pwd)/bin/linuxsteamrt64:$(pwd):${LD_LIBRARY_PATH:-}"
-./sbox
+dotnet sbox.dll
 ```
 
 ### What's New: Automated Cross-Platform Support
@@ -29,6 +29,8 @@ This update significantly reduces manual setup requirements:
 - **Case-insensitive filesystem layer** - Handles `Code` vs `code`, `Assets` vs `assets` automatically
 - **Cross-platform native library loading** - Automatic resolution of `steam_api64` → `libsteam_api.so`, etc.
 - **Automated setup script** - `linux/setup.sh` creates all required symlinks automatically
+- **X11 input polling** - Native mouse position and button state using X11 instead of SDL (fixes input issues)
+- **Shader/texture loading fixes** - Proper colorgrading shader and DDGI texture initialization
 
 ### Code Changes Summary
 
@@ -109,6 +111,34 @@ This update significantly reduces manual setup requirements:
 | `Launcher/Shared/LauncherEnvironment.cs` | Platform-appropriate library path variables |
 | `linux/setup.sh` | **New file**: Automated setup script |
 | `linux/run.sh` | **New file**: Game launch script |
+
+#### Input System (NEW)
+| File | Change |
+|------|--------|
+| `Sandbox.Engine/Systems/Input/InputRouter.cs` | X11 native input polling for mouse position/buttons |
+| `Sandbox.Engine/Systems/Input/InputRouter.Input.cs` | X11 display/window handling with P/Invoke declarations |
+| `Sandbox.Engine/Systems/Render/Multimedia/LinuxCursorCapture.cs` | Extended X11 cursor capture with window focus detection |
+
+#### Rendering Pipeline (NEW)
+| File | Change |
+|------|--------|
+| `Sandbox.Engine/Systems/Render/Graphics.Hooks.cs` | Debug hooks for render pipeline investigation |
+| `Sandbox.Engine/Systems/Render/RenderPipeline/RenderPipeline.Static.cs` | Static pipeline initialization fixes |
+
+#### Compilation & Threading (NEW)
+| File | Change |
+|------|--------|
+| `Sandbox.Compiling/CompileGroup.cs` | Build tracing for compiler diagnostics |
+| `Sandbox.Compiling/Compiler/Compiler.Build.cs` | Enhanced build logging |
+| `Sandbox.Engine/Systems/Threads/SyncContext.cs` | Sync context operation tracing |
+| `Sandbox.Engine/Systems/Threads/ExpirableSynchronizationContext.cs` | Improved async context handling |
+| `Sandbox.Engine/Core/EngineLoop.cs` | Engine loop debugging and callback tracing |
+
+#### Launch System (NEW)
+| File | Change |
+|------|--------|
+| `Launcher/Sbox/Launcher.cs` | Launch via `dotnet sbox.dll` instead of native executable on Linux |
+| `bootstrap.sh` | Linux bootstrap script updates |
 
 ### DXC Shader Compiler Wrapper
 
