@@ -41,10 +41,26 @@
         var clothing = ClothingContainer.CreateFromLocalUser();
 
         if ( human.IsValid() )
+        {
             human.Enabled = clothing.PrefersHuman;
+            if ( clothing.PrefersHuman )
+            {
+                var body = human.GetComponent<SkinnedModelRenderer>( true );
+                if ( body.IsValid() )
+                    MenuUtility.RunTask( () => clothing.ApplyAsync( body, default ) );
+            }
+        }
 
         if ( citizen.IsValid() )
+        {
             citizen.Enabled = !clothing.PrefersHuman;
+            if ( !clothing.PrefersHuman )
+            {
+                var body = citizen.GetComponent<SkinnedModelRenderer>( true );
+                if ( body.IsValid() )
+                    MenuUtility.RunTask( () => clothing.ApplyAsync( body, default ) );
+            }
+        }
     }
 
     override protected void OnDisabled()

@@ -308,6 +308,7 @@ public partial class ClothingContainer
 					? Game.Resources.Get<Clothing>( entry.Path )
 					: Game.Resources.Get<Clothing>( entry.LegacyId );
 #pragma warning restore CS0618, CS0612 // Type or member is obsolete
+
 				if ( add.Clothing == null )
 				{
 					continue;
