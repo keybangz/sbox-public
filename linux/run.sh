@@ -115,6 +115,31 @@ if [ "$SBOX_MINIMAL_AVATAR" = "1" ]; then
 fi
 
 # ============================================================================
+# Memory Debugging Options
+# ============================================================================
+
+# MALLOC_CHECK: Enhanced glibc malloc debugging
+# Levels: 0=off, 1=print errors, 2=abort on error, 3=print+abort
+# Usage: SBOX_MALLOC_CHECK=1 ./run.sh (or =2, =3)
+if [ -n "$SBOX_MALLOC_CHECK" ]; then
+    export MALLOC_CHECK_="$SBOX_MALLOC_CHECK"
+    echo "Enabling MALLOC_CHECK_=$SBOX_MALLOC_CHECK (glibc heap debugging)"
+    echo "  Level 1: Print error messages"
+    echo "  Level 2: Abort immediately on error"
+    echo "  Level 3: Print and abort on error"
+    echo ""
+fi
+
+# GLIBC_TUNABLES for more aggressive malloc debugging
+# Usage: SBOX_MALLOC_PERTURB=1 ./run.sh
+if [ "$SBOX_MALLOC_PERTURB" = "1" ]; then
+    # Fill freed memory with a pattern to detect use-after-free
+    export MALLOC_PERTURB_=165
+    echo "Enabling MALLOC_PERTURB_=165 (fills freed memory with 0xA5)"
+    echo ""
+fi
+
+# ============================================================================
 # Launch
 # ============================================================================
 
@@ -126,11 +151,85 @@ fi
 # Note: We use regular invocation instead of 'exec' so our EXIT trap runs
 # for cleanup when the process terminates.
 
+# Valgrind memory debugging: SBOX_VALGRIND=1 ./run.sh
+# Additional options:
+#   SBOX_VALGRIND_ARGS="--leak-check=full" - extra Valgrind arguments
+#   SBOX_VALGRIND_LOG="/tmp/valgrind.log" - log to file instead of stderr
+#   SBOX_VALGRIND_TOOL="memcheck" - tool to use (default: memcheck)
+if [ "$SBOX_VALGRIND" = "1" ]; then
+    echo "=========================================="
+    echo "Running s&box under Valgrind"
+    echo "=========================================="
+    echo ""
+
+    # Check if valgrind is installed
+    if ! command -v valgrind &> /dev/null; then
+        echo "ERROR: Valgrind is not installed!"
+        echo "Install with: sudo apt install valgrind"
+        exit 1
+    fi
+
+    # Valgrind tool selection (default: memcheck)
+    VALGRIND_TOOL="${SBOX_VALGRIND_TOOL:-memcheck}"
+
+    echo "Valgrind tool: $VALGRIND_TOOL"
+    echo ""
+    echo "Common tools:"
+    echo "  memcheck   - Memory error detector (default)"
+    echo "  massif     - Heap profiler"
+    echo "  callgrind  - Call graph profiler"
+    echo "  helgrind   - Thread error detector"
+    echo ""
+
+    # Build Valgrind arguments
+    VALGRIND_ARGS=(
+        --tool="$VALGRIND_TOOL"
+        # Track child processes (important for .NET which may fork)
+        --trace-children=yes
+        # Show origins of uninitialized values
+        --track-origins=yes
+        # Increase error limit
+        --error-limit=no
+        # More precise (but slower) leak checking
+        --leak-check=full
+        --show-leak-kinds=all
+        # Track file descriptors
+        --track-fds=yes
+        # Suppressions for known .NET runtime issues
+        --gen-suppressions=all
+    )
+
+    # Log to file if specified
+    if [ -n "$SBOX_VALGRIND_LOG" ]; then
+        VALGRIND_ARGS+=(--log-file="$SBOX_VALGRIND_LOG")
+        echo "Logging to: $SBOX_VALGRIND_LOG"
+    else
+        echo "Logging to: stderr (use SBOX_VALGRIND_LOG=/path/to/log.txt to log to file)"
+    fi
+
+    # Add user-specified Valgrind arguments
+    if [ -n "$SBOX_VALGRIND_ARGS" ]; then
+        # shellcheck disable=SC2206
+        VALGRIND_ARGS+=($SBOX_VALGRIND_ARGS)
+    fi
+
+    echo ""
+    echo "Running Valgrind (this will be SLOW - 10-50x slower than normal)..."
+    echo "Press Ctrl+C to stop."
+    echo ""
+
+    # Enable MALLOC_CHECK for additional heap validation
+    export MALLOC_CHECK_=3
+
+    # Run with Valgrind - instrument dotnet directly
+    valgrind "${VALGRIND_ARGS[@]}" dotnet sbox.dll "$@"
+    EXIT_CODE=$?
+
 # GDB debugging: SBOX_GDB=1 ./run.sh
 # Additional options:
 #   SBOX_GDB_ARGS="-ex 'set follow-fork-mode child'" - extra GDB arguments
 #   SBOX_GDB_BATCH=1 - run in batch mode (for automated debugging/core dumps)
-if [ "$SBOX_GDB" = "1" ]; then
+elif [ "$SBOX_GDB" = "1" ]; then
     echo "=========================================="
     echo "Running s&box under GDB"
     echo "=========================================="
@@ -160,6 +259,7 @@ if [ "$SBOX_GDB" = "1" ]; then
 
     # Add user-specified GDB arguments
     if [ -n "$SBOX_GDB_ARGS" ]; then
+        # shellcheck disable=SC2206
         GDB_ARGS+=($SBOX_GDB_ARGS)
     fi
 
@@ -179,6 +279,45 @@ if [ "$SBOX_GDB" = "1" ]; then
     # Run with GDB
     gdb "${GDB_ARGS[@]}" --args dotnet sbox.dll "$@"
     EXIT_CODE=$?
+
+# AddressSanitizer: SBOX_ASAN=1 ./run.sh
+# Note: Requires ASAN runtime library to be available
+elif [ "$SBOX_ASAN" = "1" ]; then
+    echo "=========================================="
+    echo "Running s&box with AddressSanitizer"
+    echo "=========================================="
+    echo ""
+
+    # Find ASAN library
+    ASAN_LIB=""
+    for lib in /usr/lib/x86_64-linux-gnu/libasan.so.8 \
+               /usr/lib/x86_64-linux-gnu/libasan.so.6 \
+               /usr/lib/x86_64-linux-gnu/libasan.so; do
+        if [ -f "$lib" ]; then
+            ASAN_LIB="$lib"
+            break
+        fi
+    done
+
+    if [ -z "$ASAN_LIB" ]; then
+        echo "ERROR: AddressSanitizer library not found!"
+        echo "Install with: sudo apt install libasan8 (or libasan6)"
+        exit 1
+    fi
+
+    echo "Using ASAN library: $ASAN_LIB"
+    echo ""
+
+    # ASAN options
+    export ASAN_OPTIONS="detect_leaks=0:halt_on_error=0:print_stats=1:log_path=/tmp/sbox_asan"
+    export LD_PRELOAD="$ASAN_LIB:${LD_PRELOAD:-}"
+
+    echo "ASAN log: /tmp/sbox_asan.*"
+    echo ""
+
+    dotnet sbox.dll "$@"
+    EXIT_CODE=$?
+
 else
     dotnet sbox.dll "$@"
     EXIT_CODE=$?
