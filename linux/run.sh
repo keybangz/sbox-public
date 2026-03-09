@@ -113,6 +113,12 @@ if [ "$SBOX_SCENE_DEBUG" = "1" ] && [ -f "$SCRIPT_DIR/interpose/libscene_interpo
     echo "  Log: /tmp/sbox_scene.log"
 fi
 
+# Minimal avatar scene for debugging: SBOX_MINIMAL_AVATAR=1 ./run.sh
+if [ "$SBOX_MINIMAL_AVATAR" = "1" ]; then
+    echo "Using minimal avatar scene for debugging..."
+    export SBOX_MINIMAL_AVATAR=1
+fi
+
 # ============================================================================
 # Launch
 # ============================================================================
