@@ -388,17 +388,44 @@ public partial class ClothingContainer
 		return !model.Name.Contains( "citizen.vmdl", StringComparison.OrdinalIgnoreCase );
 	}
 
+	static int _isValidModelCallCount = 0;
+
 	static bool IsValidModel( string modelName )
 	{
-		if ( string.IsNullOrWhiteSpace( modelName ) )
+		var callId = System.Threading.Interlocked.Increment( ref _isValidModelCallCount );
+		ClothingLog( $"IsValidModel[{callId}] START: '{modelName}'" );
+
+		try
+		{
+			if ( string.IsNullOrWhiteSpace( modelName ) )
+			{
+				ClothingLog( $"IsValidModel[{callId}] - empty model name, returning false" );
+				return false;
+			}
+
+			ClothingLog( $"IsValidModel[{callId}] - calling Model.Load..." );
+			var model = Model.Load( modelName );
+			ClothingLog( $"IsValidModel[{callId}] - Model.Load returned: IsValid={model?.IsValid()}, IsError={model?.IsError}" );
+
+			if ( !model.IsValid() )
+			{
+				ClothingLog( $"IsValidModel[{callId}] - model not valid, returning false" );
+				return false;
+			}
+			if ( model.IsError )
+			{
+				ClothingLog( $"IsValidModel[{callId}] - model has error, returning false" );
+				return false;
+			}
+
+			ClothingLog( $"IsValidModel[{callId}] END - returning true" );
+			return true;
+		}
+		catch ( System.Exception ex )
+		{
+			ClothingLog( $"IsValidModel[{callId}] EXCEPTION: {ex.GetType().Name}: {ex.Message}" );
 			return false;
-
-		var model = Model.Load( modelName );
-
-		if ( !model.IsValid() ) return false;
-		if ( model.IsError ) return false;
-
-		return true;
+		}
 	}
 
 	static void EnsureHumanUnderwear( List<ClothingEntry> set, bool isFemale )
@@ -423,32 +450,68 @@ public partial class ClothingContainer
 		set.Add( entry );
 	}
 
+	static int _isValidClothingCallCount = 0;
+
 	static bool IsValidClothing( ClothingContainer.ClothingEntry e, bool targetIsHuman )
 	{
-		if ( e is null ) return false;
-		if ( e.Clothing is null ) return false;
-		if ( targetIsHuman && e.Clothing.HasHumanSkin ) return true;
+		var callId = System.Threading.Interlocked.Increment( ref _isValidClothingCallCount );
+		var clothingName = e?.Clothing?.Title ?? e?.Clothing?.ResourceName ?? "null";
+		ClothingLog( $"IsValidClothing[{callId}] START: '{clothingName}', targetIsHuman={targetIsHuman}" );
 
-		var model = e.Clothing.Model;
-
-		if ( targetIsHuman )
+		try
 		{
-			model = e.Clothing.HumanAltModel;
-
-			// If we have a citizen model, but not a human model, make clothing invalid
-			if ( string.IsNullOrEmpty( model ) && !string.IsNullOrEmpty( e.Clothing.Model ) )
+			if ( e is null )
+			{
+				ClothingLog( $"IsValidClothing[{callId}] - entry is null, returning false" );
 				return false;
-		}
+			}
+			if ( e.Clothing is null )
+			{
+				ClothingLog( $"IsValidClothing[{callId}] - clothing is null, returning false" );
+				return false;
+			}
+			if ( targetIsHuman && e.Clothing.HasHumanSkin )
+			{
+				ClothingLog( $"IsValidClothing[{callId}] - has human skin, returning true" );
+				return true;
+			}
 
-		if ( string.IsNullOrEmpty( model ) )
+			var model = e.Clothing.Model;
+			ClothingLog( $"IsValidClothing[{callId}] - Model='{model ?? "null"}', HumanAltModel='{e.Clothing.HumanAltModel ?? "null"}'" );
+
+			if ( targetIsHuman )
+			{
+				model = e.Clothing.HumanAltModel;
+
+				// If we have a citizen model, but not a human model, make clothing invalid
+				if ( string.IsNullOrEmpty( model ) && !string.IsNullOrEmpty( e.Clothing.Model ) )
+				{
+					ClothingLog( $"IsValidClothing[{callId}] - has citizen model but no human model, returning false" );
+					return false;
+				}
+			}
+
+			if ( string.IsNullOrEmpty( model ) )
+			{
+				ClothingLog( $"IsValidClothing[{callId}] - empty model (allowed), returning true" );
+				return true;
+			}
+
+			ClothingLog( $"IsValidClothing[{callId}] - checking if model is valid..." );
+			if ( !IsValidModel( model ) )
+			{
+				ClothingLog( $"IsValidClothing[{callId}] - model invalid, returning false" );
+				Log.Warning( $"Clothing model '{model}' in {e.Clothing} is invalid, removing" );
+				return false;
+			}
+
+			ClothingLog( $"IsValidClothing[{callId}] END - returning true" );
 			return true;
-
-		if ( !IsValidModel( model ) )
+		}
+		catch ( System.Exception ex )
 		{
-			Log.Warning( $"Clothing model '{model}' in {e.Clothing} is invalid, removing" );
+			ClothingLog( $"IsValidClothing[{callId}] EXCEPTION: {ex.GetType().Name}: {ex.Message}" );
 			return false;
 		}
-
-		return true;
 	}
 }
