@@ -126,6 +126,16 @@ internal static class EngineFileSystem
 			NativeEngine.FullFileSystem.AddProjectPath( ident, fullPath );
 			// Also add to the engine's search path so resource system can find files
 			NativeEngine.EngineGlue.AddSearchPath( fullPath, "GAME", true );
+
+			// Register for case-insensitive file resolution on Linux
+			if ( OperatingSystem.IsLinux() && !_nativeSearchPaths.Contains( fullPath ) )
+			{
+				_nativeSearchPaths.Add( fullPath );
+				Log.Info( $"[EngineFileSystem] Registered search path for case-insensitive resolution: {fullPath}" );
+
+				// Build the path case cache for fast lookups
+				BuildPathCacheForSearchPath( fullPath );
+			}
 		}
 		else
 		{
@@ -171,6 +181,195 @@ internal static class EngineFileSystem
 		}
 
 		return currentPath;
+	}
+
+	// List of registered native search paths for case-insensitive file resolution
+	private static List<string> _nativeSearchPaths = new();
+
+	// Cache of lowercase paths to correct-cased paths for fast lookup
+	// Key: lowercase relative path (e.g. "models/citizen_clothes/hat/headphones/models/headphones.vmdl")
+	// Value: correct-cased relative path (e.g. "models/citizen_clothes/hat/Headphones/Models/headphones.vmdl")
+	private static Dictionary<string, string> _pathCaseCache = new( StringComparer.OrdinalIgnoreCase );
+
+	/// <summary>
+	/// Build the path case cache for a search path. This scans all files and builds a mapping
+	/// from lowercase paths to their correct-cased equivalents.
+	/// </summary>
+	private static void BuildPathCacheForSearchPath( string searchPath )
+	{
+		if ( !OperatingSystem.IsLinux() )
+			return;
+
+		if ( !System.IO.Directory.Exists( searchPath ) )
+			return;
+
+		try
+		{
+			var files = System.IO.Directory.GetFiles( searchPath, "*", System.IO.SearchOption.AllDirectories );
+			foreach ( var fullPath in files )
+			{
+				var relativePath = System.IO.Path.GetRelativePath( searchPath, fullPath ).Replace( '\\', '/' );
+				var lowerPath = relativePath.ToLowerInvariant();
+
+				// Store both the exact case and the lowercase key
+				_pathCaseCache[lowerPath] = relativePath;
+			}
+
+			Log.Info( $"[EngineFileSystem] Built path cache for {searchPath}: {files.Length} files" );
+		}
+		catch ( System.Exception ex )
+		{
+			Log.Warning( $"[EngineFileSystem] Failed to build path cache for {searchPath}: {ex.Message}" );
+		}
+	}
+
+	/// <summary>
+	/// Resolve a path using the cached case mapping. This is O(1) lookup.
+	/// </summary>
+	internal static string ResolvePathCase( string relativePath )
+	{
+		if ( !OperatingSystem.IsLinux() )
+			return relativePath;
+
+		if ( string.IsNullOrWhiteSpace( relativePath ) )
+			return relativePath;
+
+		// Normalize the path
+		relativePath = relativePath.Replace( '\\', '/' ).TrimStart( '/' );
+		var lowerPath = relativePath.ToLowerInvariant();
+
+		// Try direct cache lookup first (fast path)
+		if ( _pathCaseCache.TryGetValue( lowerPath, out var cachedPath ) )
+		{
+			return cachedPath;
+		}
+
+		// Fallback to filesystem scan (slow path)
+		var (resolved, _) = FindFileCaseInsensitiveWithFullPath( relativePath );
+		if ( resolved != null )
+		{
+			// Cache the result
+			_pathCaseCache[lowerPath] = resolved;
+			return resolved;
+		}
+
+		return relativePath;
+	}
+
+	/// <summary>
+	/// Find a file with case-insensitive path matching across all search paths.
+	/// Returns the correctly-cased relative path if found, or null if not found.
+	/// </summary>
+	internal static string FindFileCaseInsensitive( string relativePath )
+	{
+		var (resolved, _) = FindFileCaseInsensitiveWithFullPath( relativePath );
+		return resolved;
+	}
+
+	/// <summary>
+	/// Find a file with case-insensitive path matching across all search paths.
+	/// Returns a tuple of (correctly-cased relative path, full absolute path) if found.
+	/// </summary>
+	internal static (string resolvedPath, string fullPath) FindFileCaseInsensitiveWithFullPath( string relativePath )
+	{
+		if ( !OperatingSystem.IsLinux() )
+			return (null, null); // Not needed on case-insensitive filesystems
+
+		if ( string.IsNullOrWhiteSpace( relativePath ) )
+			return (null, null);
+
+		// Normalize the path
+		relativePath = relativePath.Replace( '\\', '/' ).TrimStart( '/' );
+
+		// Try each search path
+		foreach ( var searchPath in _nativeSearchPaths )
+		{
+			var result = FindFileCaseInsensitiveInPath( searchPath, relativePath );
+			if ( result != null )
+			{
+				var fullPath = System.IO.Path.Combine( searchPath, result );
+				return (result, fullPath);
+			}
+		}
+
+		return (null, null);
+	}
+
+	/// <summary>
+	/// Find a file with case-insensitive path matching within a specific search path.
+	/// Returns the correctly-cased relative path if found, or null if not found.
+	/// </summary>
+	private static string FindFileCaseInsensitiveInPath( string searchPath, string relativePath )
+	{
+		var segments = relativePath.Split( new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries );
+		var currentPath = searchPath;
+		var resolvedSegments = new List<string>();
+
+		for ( int i = 0; i < segments.Length; i++ )
+		{
+			var segment = segments[i];
+			bool isLastSegment = ( i == segments.Length - 1 );
+
+			if ( isLastSegment )
+			{
+				// This is the file - check for file existence
+				var exactPath = System.IO.Path.Combine( currentPath, segment );
+				if ( System.IO.File.Exists( exactPath ) )
+				{
+					resolvedSegments.Add( segment );
+					return string.Join( "/", resolvedSegments );
+				}
+
+				// Search case-insensitively for the file
+				if ( System.IO.Directory.Exists( currentPath ) )
+				{
+					foreach ( var file in System.IO.Directory.GetFiles( currentPath ) )
+					{
+						var fileName = System.IO.Path.GetFileName( file );
+						if ( string.Equals( fileName, segment, StringComparison.OrdinalIgnoreCase ) )
+						{
+							resolvedSegments.Add( fileName );
+							return string.Join( "/", resolvedSegments );
+						}
+					}
+				}
+
+				return null; // File not found
+			}
+			else
+			{
+				// This is a directory - navigate into it
+				var exactPath = System.IO.Path.Combine( currentPath, segment );
+				if ( System.IO.Directory.Exists( exactPath ) )
+				{
+					resolvedSegments.Add( segment );
+					currentPath = exactPath;
+					continue;
+				}
+
+				// Search case-insensitively for the directory
+				bool found = false;
+				if ( System.IO.Directory.Exists( currentPath ) )
+				{
+					foreach ( var dir in System.IO.Directory.GetDirectories( currentPath ) )
+					{
+						var dirName = System.IO.Path.GetFileName( dir );
+						if ( string.Equals( dirName, segment, StringComparison.OrdinalIgnoreCase ) )
+						{
+							resolvedSegments.Add( dirName );
+							currentPath = dir;
+							found = true;
+							break;
+						}
+					}
+				}
+
+				if ( !found )
+					return null;
+			}
+		}
+
+		return null;
 	}
 
 	/// <summary>

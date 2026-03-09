@@ -219,6 +219,86 @@ if [ -d "$DDGI_DIR" ]; then
     done
 fi
 
+# Fix case sensitivity for Models/Model/Textures directories in citizen assets
+# These directories are referenced with lowercase in .clothing and .vmdl files
+# but exist with uppercase on disk. Create symlinks so native engine can find them.
+echo ""
+echo "Creating case-sensitivity symlinks for citizen clothing assets..."
+
+create_nested_case_symlinks() {
+    local base_dir=$1
+    local dir_name=$2
+    local link_name=$3
+    local count=0
+
+    if [ ! -d "$base_dir" ]; then
+        return
+    fi
+
+    # Find all directories named $dir_name and create lowercase symlinks
+    while IFS= read -r -d '' dir; do
+        local parent_dir=$(dirname "$dir")
+        local link_path="$parent_dir/$link_name"
+        if [ ! -e "$link_path" ]; then
+            ln -sf "$dir_name" "$link_path"
+            ((count++)) || true
+        fi
+    done < <(find "$base_dir" -type d -name "$dir_name" -print0 2>/dev/null)
+
+    if [ $count -gt 0 ]; then
+        echo "  Created $count symlinks: $dir_name -> $link_name"
+    fi
+}
+
+# Create lowercase symlinks for ALL directories with uppercase characters
+# This is needed because clothing files reference paths with lowercase names
+# but the actual directories may have mixed case (e.g., Headphones, Trapper_Hat)
+create_all_lowercase_symlinks() {
+    local base_dir=$1
+    local count=0
+
+    if [ ! -d "$base_dir" ]; then
+        return
+    fi
+
+    # Find all directories and create lowercase symlinks where needed
+    while IFS= read -r -d '' dir; do
+        local dir_name=$(basename "$dir")
+        local lower_name=$(echo "$dir_name" | tr '[:upper:]' '[:lower:]')
+
+        # Only create symlink if the lowercase version is different
+        if [ "$dir_name" != "$lower_name" ]; then
+            local parent_dir=$(dirname "$dir")
+            local link_path="$parent_dir/$lower_name"
+            if [ ! -e "$link_path" ]; then
+                ln -sf "$dir_name" "$link_path"
+                ((count++)) || true
+            fi
+        fi
+    done < <(find "$base_dir" -type d -print0 2>/dev/null)
+
+    if [ $count -gt 0 ]; then
+        echo "  Created $count lowercase symlinks in $base_dir"
+    fi
+}
+
+CITIZEN_ASSETS="$GAME_DIR/addons/citizen/Assets"
+if [ -d "$CITIZEN_ASSETS" ]; then
+    create_all_lowercase_symlinks "$CITIZEN_ASSETS"
+fi
+
+# Also fix in base assets if needed
+BASE_ASSETS="$GAME_DIR/addons/base/Assets"
+if [ -d "$BASE_ASSETS" ]; then
+    create_all_lowercase_symlinks "$BASE_ASSETS"
+fi
+
+# Fix menu assets as well
+MENU_ASSETS="$GAME_DIR/addons/menu/Assets"
+if [ -d "$MENU_ASSETS" ]; then
+    create_all_lowercase_symlinks "$MENU_ASSETS"
+fi
+
 echo ""
 echo "Creating native engine resource symlinks..."
 
