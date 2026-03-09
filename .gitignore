@@ -115,3 +115,5 @@ engine/TestResults/
 /game/tools
 /game/aftermath_dumps
 /game/gamecache
+linux/docs/reverse_engineering/ida_output/resource_compiler_dll_info.txt
+linux/docs/reverse_engineering/scripts/resource_compiler_dll_info.txt
