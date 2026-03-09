@@ -30,6 +30,10 @@ public sealed partial class AvatarEditManager : Component
 	public ClothingContainer Container { get; set; } = new ClothingContainer();
 	public ClothingContainer PreviewContainer { get; set; } = new ClothingContainer();
 
+	// Track if we have pending async operations
+	private bool _hasPendingAsyncOperations = false;
+	private int _pendingAsyncCount = 0;
+
 	protected override void OnAwake()
 	{
 		AvatarLog( "OnAwake() START" );
@@ -60,6 +64,81 @@ public sealed partial class AvatarEditManager : Component
 		catch ( Exception e )
 		{
 			AvatarLog( $"OnAwake() EXCEPTION: {e.GetType().Name}: {e.Message}" );
+			AvatarLog( $"  Stack: {e.StackTrace}" );
+			throw;
+		}
+	}
+
+	protected override void OnEnabled()
+	{
+		AvatarLog( "OnEnabled() START" );
+		try
+		{
+			base.OnEnabled();
+			AvatarLog( $"OnEnabled() END - Citizen={Citizen?.IsValid()}, Human={Human?.IsValid()}" );
+		}
+		catch ( Exception e )
+		{
+			AvatarLog( $"OnEnabled() EXCEPTION: {e.GetType().Name}: {e.Message}" );
+			throw;
+		}
+	}
+
+	protected override void OnDisabled()
+	{
+		AvatarLog( "OnDisabled() START" );
+		AvatarLog( $"  PendingAsyncCount={_pendingAsyncCount}, HasPending={_hasPendingAsyncOperations}" );
+		AvatarLog( $"  Citizen={Citizen?.IsValid()}, Human={Human?.IsValid()}" );
+		AvatarLog( $"  Container.Clothing.Count={Container?.Clothing?.Count ?? -1}" );
+		try
+		{
+			base.OnDisabled();
+			AvatarLog( "OnDisabled() END - SUCCESS" );
+		}
+		catch ( Exception e )
+		{
+			AvatarLog( $"OnDisabled() EXCEPTION: {e.GetType().Name}: {e.Message}" );
+			AvatarLog( $"  Stack: {e.StackTrace}" );
+			throw;
+		}
+	}
+
+	protected override void OnDestroy()
+	{
+		AvatarLog( "OnDestroy() START" );
+		AvatarLog( $"  PendingAsyncCount={_pendingAsyncCount}, HasPending={_hasPendingAsyncOperations}" );
+		AvatarLog( $"  Citizen={Citizen?.IsValid()}, Human={Human?.IsValid()}" );
+		AvatarLog( $"  Container.Clothing.Count={Container?.Clothing?.Count ?? -1}" );
+		AvatarLog( $"  allClothing.Count={allClothing?.Count ?? -1}" );
+		AvatarLog( $"  Thread={System.Threading.Thread.CurrentThread.ManagedThreadId}" );
+		try
+		{
+			// Log the state of child GameObjects (clothing items)
+			if ( Citizen?.IsValid() == true )
+			{
+				var citizenChildren = Citizen.Children.Count();
+				AvatarLog( $"  Citizen children (clothing): {citizenChildren}" );
+			}
+			if ( Human?.IsValid() == true )
+			{
+				var humanChildren = Human.Children.Count();
+				AvatarLog( $"  Human children (clothing): {humanChildren}" );
+			}
+
+			// Clear references to help GC and prevent dangling refs
+			AvatarLog( "  Clearing Container..." );
+			Container = null;
+			PreviewContainer = null;
+
+			AvatarLog( "  Clearing allClothing list..." );
+			allClothing?.Clear();
+			allClothing = null;
+
+			AvatarLog( "OnDestroy() END - SUCCESS" );
+		}
+		catch ( Exception e )
+		{
+			AvatarLog( $"OnDestroy() EXCEPTION: {e.GetType().Name}: {e.Message}" );
 			AvatarLog( $"  Stack: {e.StackTrace}" );
 			throw;
 		}
@@ -268,6 +347,11 @@ public sealed partial class AvatarEditManager : Component
 	async Task ApplyAsync( ClothingContainer container, SkinnedModelRenderer targetRenderer, string targetName )
 	{
 		AvatarLog( $"ApplyAsync({targetName}) START - Thread={System.Threading.Thread.CurrentThread.ManagedThreadId}" );
+
+		// Track pending async operations
+		System.Threading.Interlocked.Increment( ref _pendingAsyncCount );
+		_hasPendingAsyncOperations = true;
+
 		try
 		{
 			if ( targetRenderer == null )
@@ -281,8 +365,23 @@ public sealed partial class AvatarEditManager : Component
 				return;
 			}
 
+			// Check if component is still valid before async operation
+			if ( !this.IsValid() )
+			{
+				AvatarLog( $"ApplyAsync({targetName}) - Component is no longer valid, aborting" );
+				return;
+			}
+
 			AvatarLog( $"ApplyAsync({targetName}) - Calling container.ApplyAsync..." );
 			await container.ApplyAsync( targetRenderer, default );
+
+			// Check again after async operation completes
+			if ( !this.IsValid() )
+			{
+				AvatarLog( $"ApplyAsync({targetName}) - Component became invalid during async operation" );
+				return;
+			}
+
 			AvatarLog( $"ApplyAsync({targetName}) END - SUCCESS" );
 		}
 		catch ( Exception e )
@@ -290,6 +389,15 @@ public sealed partial class AvatarEditManager : Component
 			AvatarLog( $"ApplyAsync({targetName}) EXCEPTION: {e.GetType().Name}: {e.Message}" );
 			AvatarLog( $"  Stack: {e.StackTrace}" );
 			throw;
+		}
+		finally
+		{
+			var remaining = System.Threading.Interlocked.Decrement( ref _pendingAsyncCount );
+			AvatarLog( $"ApplyAsync({targetName}) FINALLY - remaining pending: {remaining}" );
+			if ( remaining <= 0 )
+			{
+				_hasPendingAsyncOperations = false;
+			}
 		}
 	}
 

@@ -93,12 +93,36 @@
 
 		if (returnToMainMenu)
 		{
+			LogAvatarTransition("[AvatarUI] returnToMainMenu triggered - START");
+			LogAvatarTransition($"[AvatarUI] Current ActiveScene: {Game.ActiveScene?.Name ?? "null"}");
+
+			// Check for any AvatarEditManager and log its state
+			var avatarManager = Game.ActiveScene?.GetAllComponents<AvatarEditManager>().FirstOrDefault();
+			if (avatarManager != null)
+			{
+				LogAvatarTransition($"[AvatarUI] AvatarEditManager found: IsValid={avatarManager.IsValid()}");
+			}
+
 			var options = new SceneLoadOptions();
 			options.ShowLoadingScreen = false;
 			options.SetScene("/scenes/menu-main.scene");
 
+			LogAvatarTransition("[AvatarUI] Calling Game.ActiveScene.Load() for menu-main.scene");
 			Game.ActiveScene.Load(options);
+			LogAvatarTransition("[AvatarUI] Load() called - returning from OnUpdate");
 		}
+	}
+
+	private static void LogAvatarTransition(string message)
+	{
+		var timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+		var logLine = $"[AVATAR {timestamp}] {message}";
+		Log.Info(logLine);
+		try
+		{
+			System.IO.File.AppendAllText("/tmp/sbox_avatar.log", logLine + "\n");
+		}
+		catch { }
 	}
 
 	void Undo()
