@@ -25,11 +25,8 @@ internal static class WorkerThread
 			throw new InvalidOperationException( "Attempted to start new worker threads while some are still running." );
 		}
 
-		ThreadPool.GetMinThreads( out var workerThreads, out _ );
-
 		// Don't starve main thread
-
-		workerThreads = Math.Max( Environment.ProcessorCount - 2, 2 );
+		var workerThreads = Math.Max( Environment.ProcessorCount - 2, 2 );
 
 		_sWorkerTasks = new Task[workerThreads];
 		_sCts = new CancellationTokenSource();

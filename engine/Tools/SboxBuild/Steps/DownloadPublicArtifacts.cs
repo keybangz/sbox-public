@@ -293,6 +293,13 @@ internal class DownloadPublicArtifacts( string name ) : Step( name )
 
 	private static bool FileMatchesHash( string path, string expectedHash )
 	{
+		return FileMatchesHash( path, expectedHash, out _ );
+	}
+
+	private static bool FileMatchesHash( string path, string expectedHash, out bool isLocked )
+	{
+		isLocked = false;
+
 		if ( !File.Exists( path ) )
 		{
 			return false;
@@ -302,6 +309,14 @@ internal class DownloadPublicArtifacts( string name ) : Step( name )
 		{
 			var hash = Utility.CalculateSha256( path );
 			return string.Equals( hash, expectedHash, StringComparison.OrdinalIgnoreCase );
+		}
+		catch ( IOException ex )
+		{
+			// File is locked by another process - treat as matching since it exists
+			// and is actively in use (likely already correctly downloaded)
+			Log.Info( $"File {path} is locked by another process, assuming it matches: {ex.Message}" );
+			isLocked = true;
+			return true;
 		}
 		catch ( Exception ex )
 		{

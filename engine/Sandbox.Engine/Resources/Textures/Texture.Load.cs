@@ -4,15 +4,44 @@ using Sandbox.Mounting;
 
 namespace Sandbox;
 
+/// <summary>
+/// Debug helper for texture loading/unloading issues.
+/// Enable via environment variable SBOX_TEXTURE_DEBUG=1
+/// </summary>
+internal static class TextureDebug
+{
+	public static readonly bool Enabled;
+
+	static TextureDebug()
+	{
+		try
+		{
+			Enabled = global::System.Environment.GetEnvironmentVariable( "SBOX_TEXTURE_DEBUG" ) == "1";
+		}
+		catch
+		{
+			Enabled = false;
+		}
+	}
+}
+
 public partial class Texture
 {
 	internal static Texture FromNative( ITexture native )
 	{
-		if ( !native.IsStrongHandleValid() )
-			return default;
-
 		if ( native.IsNull )
+		{
+			if ( TextureDebug.Enabled )
+				Log.Info( "[Texture] FromNative: native handle is null" );
 			return default;
+		}
+
+		if ( !native.IsStrongHandleValid() )
+		{
+			if ( TextureDebug.Enabled )
+				Log.Warning( "[Texture] FromNative: native handle is not valid" );
+			return default;
+		}
 
 		var instanceId = native.GetBindingPtr().ToInt64();
 		if ( NativeResourceCache.TryGetValue<Texture>( instanceId, out var cached ) )
@@ -20,6 +49,8 @@ public partial class Texture
 			// If the cached texture was explicitly disposed, evict it and create a fresh wrapper.
 			if ( !cached.IsValid )
 			{
+				if ( TextureDebug.Enabled )
+					Log.Info( $"[Texture] FromNative: evicting invalid cached texture 0x{instanceId:X}" );
 				NativeResourceCache.Remove( instanceId );
 			}
 			else
@@ -31,6 +62,10 @@ public partial class Texture
 
 		var texture = new Texture( native );
 		NativeResourceCache.Add( instanceId, texture );
+
+		if ( TextureDebug.Enabled )
+			Log.Info( $"[Texture] FromNative: created texture wrapper 0x{instanceId:X}" );
+
 		return texture;
 	}
 
@@ -205,9 +240,31 @@ public partial class Texture
 		// Try to load from engine, which will worst case give us an error texture
 		//
 		ThreadSafe.AssertIsMainThread();
+
+		if ( TextureDebug.Enabled )
+			Log.Info( $"[Texture] TryToLoad: loading '{filepath}'" );
+
 		var textureHandle = NativeGlue.Resources.GetTexture( filepath );
+
+		if ( textureHandle.IsNull )
+		{
+			if ( TextureDebug.Enabled )
+				Log.Warning( $"[Texture] TryToLoad: GetTexture returned null for '{filepath}'" );
+			return null;
+		}
+
+		if ( textureHandle.IsError() )
+		{
+			if ( TextureDebug.Enabled )
+				Log.Warning( $"[Texture] TryToLoad: GetTexture returned error texture for '{filepath}'" );
+		}
+
 		var t = FromNative( textureHandle );
 		t?.RegisterWeakResourceId( filepath );
+
+		if ( TextureDebug.Enabled && t != null )
+			Log.Info( $"[Texture] TryToLoad: loaded '{filepath}' -> {t.Width}x{t.Height}" );
+
 		return t;
 	}
 

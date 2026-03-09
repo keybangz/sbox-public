@@ -5,35 +5,11 @@ namespace Facepunch.InteropGen;
 
 internal partial class ManagerWriter
 {
-	// Flag to use delegate-based exports instead of UnmanagedCallersOnly
-	// This is needed for Linux compatibility
-	private bool UseLinuxCompatibleExports => true;
 
 	private void Exports()
 	{
 		StartBlock( $"internal static unsafe class Exports" );
 		{
-			if ( UseLinuxCompatibleExports )
-			{
-				// Store delegates to prevent GC collection
-				WriteLine( "// Delegate storage to prevent garbage collection" );
-				WriteLine( "private static readonly List<Delegate> _delegateStore = new List<Delegate>();" );
-				WriteLine( "private static readonly Dictionary<string, IntPtr> _functionPointers = new Dictionary<string, IntPtr>();" );
-				WriteLine();
-
-				// Helper method to get or create function pointer
-				StartBlock( "internal static IntPtr GetFunctionPointer<T>( string name, T del ) where T : Delegate" );
-				{
-					WriteLine( "if ( _functionPointers.TryGetValue( name, out var ptr ) ) return ptr;" );
-					WriteLine( "_delegateStore.Add( del );" );
-					WriteLine( "ptr = Marshal.GetFunctionPointerForDelegate( del );" );
-					WriteLine( "_functionPointers[name] = ptr;" );
-					WriteLine( "return ptr;" );
-				}
-				EndBlock();
-				WriteLine();
-			}
-
 			foreach ( Class c in definitions.Classes.Where( x => x.Native == false ) )
 			{
 				if ( ShouldSkip( c ) )
@@ -66,22 +42,12 @@ internal partial class ManagerWriter
 
 		string namespc = $"{c.ManagedNamespace}.{c.ManagedName}";
 
-		// Always generate delegate type for Linux compatibility
-		WriteLine( $"[UnmanagedFunctionPointer( CallingConvention.Cdecl )]" );
-		WriteLine( $"internal delegate {f.Return.GetManagedDelegateType( true )} {f.MangledName}_d( {nativeArgS.Trim( ',', ' ' )} );" );
-		WriteLine();
-
 		WriteLine( "/// <summary>" );
 		WriteLine( $"/// {namespc}.{f.Name}( ... )" );
 		WriteLine( "/// </summary>" );
-
-		if ( !UseLinuxCompatibleExports )
-		{
-			// Original UnmanagedCallersOnly approach (Windows)
-			WriteLine( "[UnmanagedCallersOnly( CallConvs = new[] { typeof(CallConvCdecl) } )]" );
-		}
-
+		WriteLine( "[UnmanagedCallersOnly]" );
 		StartBlock( $"internal static {f.Return.GetManagedDelegateType( true )} {f.MangledName}( {nativeArgS.Trim( ',', ' ' )} )" );
+		{
 			StartBlock( "try" );
 			{
 				string func = $"{c.ManagedNameWithNamespace}.{f.Name}( {managedArgsS} )";
@@ -125,13 +91,15 @@ internal partial class ManagerWriter
 				}
 			}
 			EndBlock();
+
+
+		}
 		EndBlock();
 		WriteLine();
 
-		if ( UseLinuxCompatibleExports )
+		if ( definitions.InitFrom == "Managed" )
 		{
-			// Generate function pointer getter for this export
-			WriteLine( $"internal static IntPtr {f.MangledName}_Ptr => GetFunctionPointer( \"{f.MangledName}\", new {f.MangledName}_d( {f.MangledName} ) );" );
+			WriteLine( $"internal delegate {f.Return.GetManagedDelegateType( true )} {f.MangledName}_d( {nativeArgS.Trim( ',', ' ' )} );" );
 			WriteLine();
 		}
 	}

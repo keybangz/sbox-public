@@ -66,12 +66,78 @@ rm -rf ./engine/Sandbox.Menu/bin ./engine/Sandbox.Menu/obj
 rm -rf ./engine/Sandbox.Compiling/bin ./engine/Sandbox.Compiling/obj
 rm -rf ./engine/Sandbox.Services/bin ./engine/Sandbox.Services/obj
 
+# Disable dotnet telemetry and build server caching to prevent background processes
+export DOTNET_CLI_TELEMETRY_OPTOUT=1
+export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
+export DOTNET_NOLOGO=1
+# Disable build servers entirely - they cause file locking issues
+export DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1
+export UseSharedCompilation=false
+# Disable MSBuild node reuse (persistent worker processes)
+export MSBUILDDISABLENODEREUSE=1
+
+# Function to cleanup all dotnet-related processes
+cleanup_dotnet_processes() {
+    echo "Cleaning up dotnet processes..."
+
+    # Shutdown build servers gracefully first
+    dotnet build-server shutdown 2>/dev/null || true
+
+    # Give them time to terminate
+    sleep 1
+
+    # Kill any remaining build-related processes
+    # Note: MSBuild.dll with /nodeReuse:true creates persistent worker nodes
+    local patterns=(
+        "VBCSCompiler"
+        "MSBuild.dll"
+        "dotnet.*watch"
+        "dotnet.*restore"
+    )
+
+    for pattern in "${patterns[@]}"; do
+        if pgrep -f "$pattern" > /dev/null 2>&1; then
+            echo "  Killing processes matching: $pattern"
+            pkill -f "$pattern" 2>/dev/null || true
+        fi
+    done
+
+    # Final force kill if still running
+    sleep 0.5
+    for pattern in "${patterns[@]}"; do
+        if pgrep -f "$pattern" > /dev/null 2>&1; then
+            pkill -9 -f "$pattern" 2>/dev/null || true
+        fi
+    done
+}
+
+# Cleanup any stale processes from previous runs BEFORE starting
+echo "Pre-build cleanup..."
+cleanup_dotnet_processes
+
 echo "Building..."
 dotnet run --project ./engine/Tools/SboxBuild/SboxBuild.csproj -- build --config Developer
 dotnet run --project ./engine/Tools/SboxBuild/SboxBuild.csproj -- build-shaders
+
+# Cleanup after build, before wine
+echo "Post-build cleanup (before wine)..."
+cleanup_dotnet_processes
 
 #HACK: Currently Facepunch doesn't ship native binary for contentbuilder. Run this instead via wine.
 wine game/bin/win64/contentbuilder.exe -b game
 
 # Run DXC wrapper setup after build (needs libdxcompiler.so to exist first)
 setup_dxc_wrapper
+
+# Final cleanup after everything
+echo "Final cleanup..."
+cleanup_dotnet_processes
+
+# Verify cleanup
+echo "Verifying process cleanup..."
+if pgrep -f "VBCSCompiler|MSBuild.dll" > /dev/null 2>&1; then
+    echo "  [!] Warning: Some build server processes still running"
+    pgrep -af "VBCSCompiler|MSBuild.dll" 2>/dev/null || true
+else
+    echo "  [OK] All build server processes cleaned up"
+fi

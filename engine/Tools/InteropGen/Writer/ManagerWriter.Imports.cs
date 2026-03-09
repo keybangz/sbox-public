@@ -6,7 +6,7 @@ namespace Facepunch.InteropGen;
 internal partial class ManagerWriter
 {
 	private const string InternalNative = "__N";
-	private static bool addRecording = false;
+	private const bool addRecording = false;
 
 	private void Imports()
 	{
@@ -128,10 +128,12 @@ internal partial class ManagerWriter
 						Write( $"internal {st}{f.Return.ManagedType} {f.GetManagedName()}( {string.Join( ", ", managedArgs )} ) {{ ", true );
 					}
 
+#pragma warning disable CS0162 // Unreachable code detected (addRecording is const false)
 					if ( addRecording )
 					{
 						Write( $"Sandbox.InteropSystem.Record( \"{c.ManagedName}.{f.Name}\", \"{string.Join( ",", c.Attributes )},{string.Join( ",", f.attr )}\" );" );
 					}
+#pragma warning restore CS0162
 
 					{
 						if ( !c.Accessor && !c.Static && !f.Static )
@@ -248,36 +250,28 @@ internal partial class ManagerWriter
 						IEnumerable<string> managedArgs = c.SelfArg( false, f.Static ).Concat( f.Parameters ).Where( x => x.IsRealArgument ).Select( x => $"{x.GetManagedDelegateType( false )}" ).Concat( new[] { f.Return.GetManagedDelegateType( true ) } );
 						string managedArgss = $"{string.Join( ", ", managedArgs )}";
 
-						// Disable SuppressGCTransition for Linux compatibility
-						// On Linux, using SuppressGCTransition can leave the thread in cooperative GC mode,
-						// which breaks subsequent reverse P/Invoke calls (native calling managed)
-						// For now, disable it entirely to test if this is the issue
 						string nogc = "";
-						// if ( f.IsNoGC )
-						// {
-						// 	nogc = "[SuppressGCTransition]";
-						// }
+						if ( f.IsNoGC )
+						{
+							nogc = "[SuppressGCTransition]";
+						}
 
 						WriteLine( $"internal static delegate* unmanaged{nogc}< {managedArgss} > {f.MangledName};" );
 					}
 
 					foreach ( Variable f in c.Variables )
 					{
-						List<string> managedArgs = c.SelfArg( false, f.Static ).Select( x => $"{x.GetManagedDelegateType( true )}" ).ToList();
-						// For getter: the return type (what we receive from native) - use incoming=true
-						string getterReturnType = f.Return.GetManagedDelegateType( true );
-						// For setter: the parameter (what we send to native) - use incoming=false for pointer
-						string setterParamType = f.Return.GetManagedDelegateType( false );
+						// Getter: self args + return type (incoming=true means receiving from native)
+						List<string> managedArgsGetter = c.SelfArg( false, f.Static ).Select( x => $"{x.GetManagedDelegateType( false )}" ).ToList();
+						// Setter: self args + value type (incoming=false means sending to native, so use pointer for non-small structs)
+						List<string> managedArgsSetter = new List<string>( managedArgsGetter );
+						managedArgsGetter.Add( f.Return.GetManagedDelegateType( true ) );
+						managedArgsSetter.Add( f.Return.GetManagedDelegateType( false ) );
+						string managedArgssGet = $"{string.Join( ", ", managedArgsGetter )}";
+						string managedArgssSet = $"{string.Join( ", ", managedArgsSetter )}";
 
-						string getterArgs = $"{string.Join( ", ", managedArgs )}, {getterReturnType}";
-
-						List<string> setterArgsList = new List<string>( managedArgs );
-						setterArgsList.Add( setterParamType );
-						string setterArgs = $"{string.Join( ", ", setterArgsList )}";
-
-						// Removed [SuppressGCTransition] for Linux compatibility
-						WriteLine( $"internal static delegate* unmanaged<{getterArgs}> Get__{f.MangledName};\n" );
-						WriteLine( $"internal static delegate* unmanaged<{setterArgs}, void> Set__{f.MangledName};\n" );
+						WriteLine( $"internal static delegate* unmanaged[SuppressGCTransition]<{managedArgssGet}> Get__{f.MangledName};\n" );
+						WriteLine( $"internal static delegate* unmanaged[SuppressGCTransition]<{managedArgssSet}, void> Set__{f.MangledName};\n" );
 					}
 				}
 				EndBlock();

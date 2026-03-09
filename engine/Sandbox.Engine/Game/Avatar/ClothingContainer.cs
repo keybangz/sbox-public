@@ -138,24 +138,19 @@ public partial class ClothingContainer
 		// no definition? This isn't a proper clothing?
 		if ( definition == null )
 		{
+			Log.Warning( $"Def not found {entry.ItemDefinitionId}" );
 			return;
 		}
 
 		// maybe it's a locally stored inventory item, and already loaded?
 		entry.Clothing = ResourceLibrary.GetAll<Clothing>().FirstOrDefault( x => x.SteamItemDefinitionId == entry.ItemDefinitionId );
-		if ( entry.Clothing != null )
-		{
-			return;
-		}
+		if ( entry.Clothing != null ) return;
 
 		// maybe it's remote, but we've downloaded it
 		entry.Clothing = ResourceLibrary.GetAll<Clothing>().FirstOrDefault( x => x.ResourcePath == definition.Asset );
-		if ( entry.Clothing != null )
-		{
-			return;
-		}
+		if ( entry.Clothing != null ) return;
 
-		// Couldn't fix clothing - will need to download
+		Log.Trace( $"Couldn't fix clothing item def {entry.ItemDefinitionId}" );
 	}
 
 	/// <summary>
@@ -308,11 +303,7 @@ public partial class ClothingContainer
 					? Game.Resources.Get<Clothing>( entry.Path )
 					: Game.Resources.Get<Clothing>( entry.LegacyId );
 #pragma warning restore CS0618, CS0612 // Type or member is obsolete
-
-				if ( add.Clothing == null )
-				{
-					continue;
-				}
+				if ( add.Clothing == null ) continue;
 			}
 
 			add.Tint = entry.Tint;

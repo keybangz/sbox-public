@@ -82,10 +82,6 @@ internal partial class ManagerWriter : BaseWriter
 
 		StartBlock( "internal unsafe static partial class NativeInterop" );
 		{
-			WriteLine( "static IntPtr _nativeLibraryHandle;" );
-			WriteLine( "static bool _initialized;" );
-			WriteLine();
-
 			ErrorFunction();
 
 			WriteLine( "[UnmanagedFunctionPointer( CallingConvention.Cdecl )]" );
@@ -94,12 +90,8 @@ internal partial class ManagerWriter : BaseWriter
 
 			StartBlock( "internal static void Initialize()" );
 			{
-				WriteLine( "if ( _initialized ) return;" );
-				WriteLine();
-
 				WriteLine( $"if ( !NativeLibrary.TryLoad( System.IO.Path.Combine( NetCore.NativeDllPath, \"{definitions.NativeDll}\" ), out var nativeDll ) )" );
 				WriteLine( $"	Sandbox.Interop.NativeAssemblyLoadFailed( \"{definitions.NativeDll}\" );" );
-				WriteLine( "_nativeLibraryHandle = nativeDll;" );
 
 				WriteLine();
 				WriteLine( $"IntPtr nativeInitPtr = NativeLibrary.GetExport( nativeDll, \"igen_{definitions.Ident}\" );" );
@@ -124,16 +116,7 @@ internal partial class ManagerWriter : BaseWriter
 						IEnumerable<string> managedArgs = c.SelfArg( false, f.Static ).Concat( f.Parameters ).Concat( new[] { f.Return } ).Where( x => x.IsRealArgument ).Select( x => $"{x.GetManagedDelegateType( true )}" );
 						string managedArgss = $"{string.Join( ", ", managedArgs )}";
 
-						if ( UseLinuxCompatibleExports )
-						{
-							// Use delegate-based function pointers (Linux compatible)
-							WriteLine( $"Exports.{f.MangledName}_Ptr," );
-						}
-						else
-						{
-							// Use UnmanagedCallersOnly function pointers (Windows)
-							WriteLine( $"(IntPtr) (delegate* unmanaged[Cdecl]<{managedArgss}>) &Exports.{f.MangledName}," );
-						}
+						WriteLine( $"(IntPtr) (delegate* unmanaged<{managedArgss}>) &Exports.{f.MangledName}," );
 					}
 					EndBlock( ";" );
 				}
@@ -229,26 +212,22 @@ internal partial class ManagerWriter : BaseWriter
 						IEnumerable<string> managedArgs = c.SelfArg( false, f.Static ).Concat( f.Parameters ).Where( x => x.IsRealArgument ).Select( x => $"{x.GetManagedDelegateType( false )}" ).Concat( new[] { f.Return.GetManagedDelegateType( true ) } );
 						string managedArgss = $"{string.Join( ", ", managedArgs )}";
 
-						// Disable SuppressGCTransition for Linux compatibility
 						string nogc = "";
-						// if ( f.IsNoGC )
-						// {
-						// 	nogc = "[SuppressGCTransition]";
-						// }
+
+						if ( f.IsNoGC )
+						{
+							nogc = "[SuppressGCTransition]";
+						}
 
 						WriteLine( $"{namespc}.{InternalNative}.{f.MangledName} = (delegate* unmanaged{nogc}< {managedArgss} >) nativeFunctions[{i++}];" );
 					}
 
 					foreach ( Variable f in c.Variables )
 					{
-						// For getter: the return type (what we receive from native) - use incoming=true
-						string getterReturnType = f.Return.GetManagedDelegateType( true );
-						// For setter: the parameter (what we send to native) - use incoming=false for pointer
-						string setterParamType = f.Return.GetManagedDelegateType( false );
-
-						// Removed [SuppressGCTransition] for Linux compatibility
-						WriteLine( $"{namespc}.{InternalNative}.Get__{f.MangledName} = (delegate* unmanaged<IntPtr, {getterReturnType}>)( nativeFunctions[{i++}] );" );
-						WriteLine( $"{namespc}.{InternalNative}.Set__{f.MangledName} = (delegate* unmanaged<IntPtr, {setterParamType}, void>)( nativeFunctions[{i++}] );" );
+						// Getter: incoming=true (receiving value from native)
+						WriteLine( $"{namespc}.{InternalNative}.Get__{f.MangledName} = (delegate* unmanaged[SuppressGCTransition]<IntPtr, {f.Return.GetManagedDelegateType( true )}>)( nativeFunctions[{i++}] );" );
+						// Setter: incoming=false (sending value to native, use pointer for non-small structs)
+						WriteLine( $"{namespc}.{InternalNative}.Set__{f.MangledName} = (delegate* unmanaged[SuppressGCTransition]<IntPtr, {f.Return.GetManagedDelegateType( false )}, void>)( nativeFunctions[{i++}] );" );
 					}
 				}
 
@@ -258,18 +237,6 @@ internal partial class ManagerWriter : BaseWriter
 					WriteLine( "onError( $\"{___e.Message}\\n\\n{___e.StackTrace}\" );" );
 				}
 				EndBlock();
-
-
-				WriteLine( "_initialized = true;" );
-			}
-			EndBlock();
-
-			StartBlock( "internal static void Free()" );
-			{
-				WriteLine( "if ( _nativeLibraryHandle == IntPtr.Zero ) return;" );
-				WriteLine( "NativeLibrary.Free( _nativeLibraryHandle );" );
-				WriteLine( "_nativeLibraryHandle = IntPtr.Zero;" );
-				WriteLine( "_initialized = false;" );
 			}
 			EndBlock();
 		}
@@ -365,3 +332,7 @@ internal partial class ManagerWriter : BaseWriter
 		EndBlock();
 	}
 }
+
+
+
+

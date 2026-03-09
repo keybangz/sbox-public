@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace Facepunch.InteropGen;
 
@@ -54,20 +54,11 @@ public class ArgDefinedStruct : Arg
 
 	public override string ToInterop( bool native, string code = null )
 	{
-		// If it's already a pointer type, just use the value
-		if ( Type.IsPointer )
-			return code ?? Name;
-
-		// For non-small structs going to native: pass by pointer
-		// This handles both cases: when Name is used (code=null) and when code is provided
-		if ( !native && Flags == null && !Type.IsEnum && !Type.HasAttribute( "small" ) )
-		{
-			var varName = code ?? Name;
-			if ( varName != null )
-				return $"&{varName}";
-		}
-
-		return base.ToInterop( native, code );
+		return Type.IsPointer
+			? code ?? Name
+			: !native && (code == null || code == "value") && Name != null && Flags == null && !Type.IsEnum && !Type.HasAttribute( "small" )
+			? $"&{Name}"
+			: base.ToInterop( native, code );
 	}
 
 	public override string FromInterop( bool native, string code = null )

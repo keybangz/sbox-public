@@ -15,7 +15,7 @@ public static class Launcher
 			Bootstrap.InitMinimal( Environment.CurrentDirectory );
 			Project.InitializeBuiltIn( false ).GetAwaiter().GetResult();
 			Project.GenerateSolution().GetAwaiter().GetResult();
-			Managed.SandboxEngine.NativeInterop.Free();
+			Interop.Free();
 			EngineFileSystem.Shutdown();
 			return 0;
 		}

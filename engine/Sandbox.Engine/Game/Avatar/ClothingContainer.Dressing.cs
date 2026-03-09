@@ -29,18 +29,13 @@ public partial class ClothingContainer
 		// Find any clothing that needs downloading
 		// Download it, and apply it to the container.
 		//
-		var clothingNeedingDownload = Clothing.Where( x => x.Clothing == null || string.IsNullOrEmpty( x.Clothing.ResourcePath ) ).ToArray();
-
-		foreach ( var item in clothingNeedingDownload )
+		foreach ( var item in Clothing.Where( x => x.Clothing == null || string.IsNullOrEmpty( x.Clothing.ResourcePath ) ).ToArray() )
 		{
-			if ( item.ItemDefinitionId == 0 )
-			{
-				continue;
-			}
-
+			if ( item.ItemDefinitionId == 0 ) continue;
 			var def = Sandbox.Services.Inventory.FindDefinition( item.ItemDefinitionId );
 			if ( def == null )
 			{
+				Log.Warning( $"FindDefinition null : {item.ItemDefinitionId}" );
 				continue;
 			}
 
@@ -102,7 +97,7 @@ public partial class ClothingContainer
 				}
 
 				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
-					clothing = await Cloud.Load<Clothing>( def.PackageIdent ).ConfigureAwait( false );
+				clothing = await Cloud.Load<Clothing>( def.PackageIdent ).ConfigureAwait( false );
 			}
 
 			if ( clothing is null )
