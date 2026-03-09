@@ -87,16 +87,11 @@ if [ "$SBOX_TEXTURE_DEBUG" = "1" ]; then
     echo "  Texture load/dispose events will be logged to console"
 fi
 
-# Memory debug (heap corruption detection): SBOX_MEMORY_DEBUG=1 ./run.sh
-# NOTE: Memory interpose conflicts with GDB - disable if using GDB
+# Memory debug (resource tracking): SBOX_MEMORY_DEBUG=1 ./run.sh
 if [ "$SBOX_MEMORY_DEBUG" = "1" ] && [ -f "$SCRIPT_DIR/interpose/libmemory_interpose.so" ]; then
-    if [ "$SBOX_GDB" = "1" ]; then
-        echo "WARNING: SBOX_MEMORY_DEBUG is incompatible with SBOX_GDB, skipping memory interpose"
-    else
-        echo "Loading memory interpose library (heap corruption detection)..."
-        export LD_PRELOAD="$SCRIPT_DIR/interpose/libmemory_interpose.so:${LD_PRELOAD:-}"
-        echo "  Log: /tmp/sbox_memory.log"
-    fi
+    echo "Loading memory interpose library (resource tracking)..."
+    export LD_PRELOAD="$SCRIPT_DIR/interpose/libmemory_interpose.so:${LD_PRELOAD:-}"
+    echo "  Log: /tmp/sbox_memory.log"
 fi
 
 # Native texture tracking: SBOX_NATIVE_TEXTURE_DEBUG=1 ./run.sh
