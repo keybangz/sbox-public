@@ -8,133 +8,189 @@ namespace Sandbox;
 /// </summary>
 public partial class ClothingContainer
 {
+	// Debug logging helper for clothing operations
+	private static void ClothingLog( string message )
+	{
+		var timestamp = DateTime.Now.ToString( "HH:mm:ss.fff" );
+		var threadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
+		var logLine = $"[CLOTHING {timestamp} T{threadId}] {message}";
+		Log.Info( logLine );
+		try
+		{
+			System.IO.File.AppendAllText( "/tmp/sbox_avatar.log", logLine + "\n" );
+		}
+		catch { }
+	}
+
 	/// <summary>
 	/// Dresses a skinned model with an outfit. Will apply all the clothes it can immediately, then download any missing clothing.
 	/// </summary>
 	public async Task ApplyAsync( SkinnedModelRenderer body, CancellationToken token )
 	{
-		if ( !body.IsValid() )
-			return;
-
-		bool isMenu = GlobalContext.Current == GlobalContext.Menu;
-
-		var scene = body.Scene;
-
-		// apply any changes that we can, immediately
-		Apply( body );
-
-		bool hasChanges = false;
-
-		//
-		// Find any clothing that needs downloading
-		// Download it, and apply it to the container.
-		//
-		foreach ( var item in Clothing.Where( x => x.Clothing == null || string.IsNullOrEmpty( x.Clothing.ResourcePath ) ).ToArray() )
+		ClothingLog( "ApplyAsync START" );
+		try
 		{
-			if ( item.ItemDefinitionId == 0 ) continue;
-			var def = Sandbox.Services.Inventory.FindDefinition( item.ItemDefinitionId );
-			if ( def == null )
-			{
-				Log.Warning( $"FindDefinition null : {item.ItemDefinitionId}" );
-				continue;
-			}
-
-			Sandbox.Clothing clothing = default;
-
-
-			//
-			// If we're in the menu we can't just use Cloud.Load because the package and resource will be loaded
-			// in the GAME resource system instead of the menu resource system.
-			//
-			if ( isMenu )
-			{
-				clothing = GlobalContext.Menu.ResourceSystem.Get<Clothing>( def.Asset );
-
-				if ( clothing != null )
-				{
-					item.Clothing = clothing;
-					hasChanges = true;
-					continue;
-				}
-
-				var o = new PackageLoadOptions
-				{
-					PackageIdent = def.PackageIdent,
-					ContextTag = "menu",
-					CancellationToken = token
-				};
-
-				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
-				var activePackage = await PackageManager.InstallAsync( o ).ConfigureAwait( false );
-				if ( activePackage == null )
-				{
-					Log.Warning( $"Error installing clothing package {def.PackageIdent}" );
-					continue;
-				}
-
-				var primaryasset = activePackage.Package.PrimaryAsset;
-
-				GlobalContext.Menu.FileMount.Mount( activePackage.FileSystem );
-
-				clothing = GlobalContext.Menu.ResourceSystem.LoadGameResource<Clothing>( primaryasset, activePackage.FileSystem );
-
-				// these should match - else we wno't be able to find them later
-				if ( primaryasset != def.Asset )
-				{
-					Log.Warning( $"Clothing primary assets don't match for {def.PackageIdent} ({primaryasset} vs {def.Asset})" );
-				}
-			}
-			else
-			{
-				// Cloud.Load is always going to load them in the global context, so we need to switch to that context here
-				clothing = GlobalContext.Game.ResourceSystem.Get<Clothing>( def.Asset );
-
-				if ( clothing != null )
-				{
-					item.Clothing = clothing;
-					hasChanges = true;
-					continue;
-				}
-
-				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
-				clothing = await Cloud.Load<Clothing>( def.PackageIdent ).ConfigureAwait( false );
-			}
-
-			if ( clothing is null )
-			{
-				Log.Warning( $"Clothing from package was null: {def.PackageIdent}" );
-				continue;
-			}
-
-
-			token.ThrowIfCancellationRequested();
-
 			if ( !body.IsValid() )
+			{
+				ClothingLog( "ApplyAsync - body not valid, returning early" );
 				return;
-
-			if ( clothing != null )
-			{
-				item.Clothing = clothing;
-				hasChanges = true;
 			}
-		}
 
-		using ( scene.Push() )
-		{
+			bool isMenu = GlobalContext.Current == GlobalContext.Menu;
+			ClothingLog( $"ApplyAsync - isMenu={isMenu}, Clothing.Count={Clothing.Count}" );
+
+			var scene = body.Scene;
+
+			// apply any changes that we can, immediately
+			ClothingLog( "ApplyAsync - calling Apply() (sync)" );
+			Apply( body );
+			ClothingLog( "ApplyAsync - Apply() complete" );
+
+			bool hasChanges = false;
+
 			//
-			// If we have any changes, then re-apply all the clothing to the container
-			// so that things get removed if they don't work with other items (but in the right order).
-			// Then apply them to the target renderer.
+			// Find any clothing that needs downloading
+			// Download it, and apply it to the container.
 			//
-			if ( hasChanges )
+			var itemsToDownload = Clothing.Where( x => x.Clothing == null || string.IsNullOrEmpty( x.Clothing.ResourcePath ) ).ToArray();
+			ClothingLog( $"ApplyAsync - items needing download: {itemsToDownload.Length}" );
+
+			foreach ( var item in itemsToDownload )
 			{
-				foreach ( var entry in Clothing.ToArray() )
+				if ( item.ItemDefinitionId == 0 ) continue;
+
+				ClothingLog( $"ApplyAsync - processing item {item.ItemDefinitionId}" );
+				var def = Sandbox.Services.Inventory.FindDefinition( item.ItemDefinitionId );
+				if ( def == null )
 				{
-					Add( entry );
+					Log.Warning( $"FindDefinition null : {item.ItemDefinitionId}" );
+					continue;
 				}
 
-				Apply( body );
+				Sandbox.Clothing clothing = default;
+
+
+				//
+				// If we're in the menu we can't just use Cloud.Load because the package and resource will be loaded
+				// in the GAME resource system instead of the menu resource system.
+				//
+				if ( isMenu )
+				{
+					ClothingLog( $"ApplyAsync - menu context, trying ResourceSystem.Get for {def.Asset}" );
+					clothing = GlobalContext.Menu.ResourceSystem.Get<Clothing>( def.Asset );
+
+					if ( clothing != null )
+					{
+						ClothingLog( $"ApplyAsync - found in cache: {def.Asset}" );
+						item.Clothing = clothing;
+						hasChanges = true;
+						continue;
+					}
+
+					ClothingLog( $"ApplyAsync - not in cache, installing package {def.PackageIdent}" );
+					var o = new PackageLoadOptions
+					{
+						PackageIdent = def.PackageIdent,
+						ContextTag = "menu",
+						CancellationToken = token
+					};
+
+					// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+					ClothingLog( $"ApplyAsync - awaiting PackageManager.InstallAsync..." );
+					var activePackage = await PackageManager.InstallAsync( o ).ConfigureAwait( false );
+					ClothingLog( $"ApplyAsync - InstallAsync returned, activePackage={(activePackage != null ? "valid" : "NULL")}" );
+
+					if ( activePackage == null )
+					{
+						Log.Warning( $"Error installing clothing package {def.PackageIdent}" );
+						continue;
+					}
+
+					var primaryasset = activePackage.Package.PrimaryAsset;
+					ClothingLog( $"ApplyAsync - mounting filesystem and loading {primaryasset}" );
+
+					GlobalContext.Menu.FileMount.Mount( activePackage.FileSystem );
+
+					clothing = GlobalContext.Menu.ResourceSystem.LoadGameResource<Clothing>( primaryasset, activePackage.FileSystem );
+					ClothingLog( $"ApplyAsync - LoadGameResource returned: {(clothing != null ? "valid" : "NULL")}" );
+
+					// these should match - else we wno't be able to find them later
+					if ( primaryasset != def.Asset )
+					{
+						Log.Warning( $"Clothing primary assets don't match for {def.PackageIdent} ({primaryasset} vs {def.Asset})" );
+					}
+				}
+				else
+				{
+					// Cloud.Load is always going to load them in the global context, so we need to switch to that context here
+					ClothingLog( $"ApplyAsync - game context, trying ResourceSystem.Get for {def.Asset}" );
+					clothing = GlobalContext.Game.ResourceSystem.Get<Clothing>( def.Asset );
+
+					if ( clothing != null )
+					{
+						ClothingLog( $"ApplyAsync - found in cache: {def.Asset}" );
+						item.Clothing = clothing;
+						hasChanges = true;
+						continue;
+					}
+
+					// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+					ClothingLog( $"ApplyAsync - awaiting Cloud.Load for {def.PackageIdent}" );
+					clothing = await Cloud.Load<Clothing>( def.PackageIdent ).ConfigureAwait( false );
+					ClothingLog( $"ApplyAsync - Cloud.Load returned: {(clothing != null ? "valid" : "NULL")}" );
+				}
+
+				if ( clothing is null )
+				{
+					Log.Warning( $"Clothing from package was null: {def.PackageIdent}" );
+					continue;
+				}
+
+
+				token.ThrowIfCancellationRequested();
+
+				if ( !body.IsValid() )
+				{
+					ClothingLog( "ApplyAsync - body became invalid during async operations" );
+					return;
+				}
+
+				if ( clothing != null )
+				{
+					item.Clothing = clothing;
+					hasChanges = true;
+				}
 			}
+
+			ClothingLog( $"ApplyAsync - download loop complete, hasChanges={hasChanges}" );
+
+			using ( scene.Push() )
+			{
+				//
+				// If we have any changes, then re-apply all the clothing to the container
+				// so that things get removed if they don't work with other items (but in the right order).
+				// Then apply them to the target renderer.
+				//
+				if ( hasChanges )
+				{
+					ClothingLog( "ApplyAsync - re-applying clothing after downloads" );
+					foreach ( var entry in Clothing.ToArray() )
+					{
+						Add( entry );
+					}
+
+					Apply( body );
+					ClothingLog( "ApplyAsync - re-apply complete" );
+				}
+			}
+
+			ClothingLog( "ApplyAsync END - SUCCESS" );
+		}
+		catch ( System.Exception e )
+		{
+			ClothingLog( $"ApplyAsync EXCEPTION: {e.GetType().Name}: {e.Message}" );
+			ClothingLog( $"  Stack: {e.StackTrace}" );
+			throw;
 		}
 	}
 
@@ -143,122 +199,153 @@ public partial class ClothingContainer
 	/// </summary>
 	public void Apply( SkinnedModelRenderer body )
 	{
-		bool isHuman = DetermineHuman( body );
-
-		// remove out outfit
-		Reset( body );
-		Normalize();
-
-		// apply indicentals
-		body.Set( "scale_height", Height.Remap( 0, 1, 0.8f, 1.2f, true ) );
-		body.Set( "scale_heel", Clothing?.Select( x => x.Clothing?.HeelHeight ?? 0.0f ).DefaultIfEmpty( 0 ).Max() ?? 0.0f );
-
-		// TODO - we should expose the render attributes, somehow, in a way accessible to editor inspector and serialization!
-		body.Attributes.Set( "skin_age", Age );
-		body.Attributes.Set( "skin_tint", Tint );
-
-		// Clean the clothing. Remove any invalid items, any items with broken models
-		// any items that can't be worn with other items.
-		List<ClothingContainer.ClothingEntry> set = Clothing?
-														.Where( x => IsValidClothing( x, isHuman ) )
-														.ToList() ?? new();
-
-		TagSet tags = new();
-
-		Material skinMaterial = default;
-		Material eyesMaterial = default;
-
-		//
-		// apply alternate human skin, if we have one
-		//
-		if ( isHuman )
+		ClothingLog( "Apply (sync) START" );
+		try
 		{
-			skinMaterial = set.Select( x => x.Clothing.HumanSkinMaterial ).Where( x => !string.IsNullOrWhiteSpace( x ) ).Select( x => Material.Load( x ) ).FirstOrDefault();
-			eyesMaterial = set.Select( x => x.Clothing.HumanEyesMaterial ).Where( x => !string.IsNullOrWhiteSpace( x ) ).Select( x => Material.Load( x ) ).FirstOrDefault();
+			bool isHuman = DetermineHuman( body );
+			ClothingLog( $"Apply - isHuman={isHuman}, body.Model={body.Model?.Name ?? "null"}" );
 
-			tags.Add( "human" );
+			// remove out outfit
+			ClothingLog( "Apply - calling Reset()" );
+			Reset( body );
+			Normalize();
 
-			var humanskin = set.Where( x => x.Clothing.HasHumanSkin ).FirstOrDefault();
-			if ( humanskin is not null && Model.Load( humanskin.Clothing.HumanSkinModel ) is Model model && model.IsValid() )
+			// apply indicentals
+			ClothingLog( "Apply - setting body properties" );
+			body.Set( "scale_height", Height.Remap( 0, 1, 0.8f, 1.2f, true ) );
+			body.Set( "scale_heel", Clothing?.Select( x => x.Clothing?.HeelHeight ?? 0.0f ).DefaultIfEmpty( 0 ).Max() ?? 0.0f );
+
+			// TODO - we should expose the render attributes, somehow, in a way accessible to editor inspector and serialization!
+			body.Attributes.Set( "skin_age", Age );
+			body.Attributes.Set( "skin_tint", Tint );
+
+			// Clean the clothing. Remove any invalid items, any items with broken models
+			// any items that can't be worn with other items.
+			ClothingLog( $"Apply - filtering {Clothing?.Count ?? 0} clothing items" );
+			List<ClothingContainer.ClothingEntry> set = Clothing?
+															.Where( x => IsValidClothing( x, isHuman ) )
+															.ToList() ?? new();
+			ClothingLog( $"Apply - {set.Count} valid clothing items after filtering" );
+
+			TagSet tags = new();
+
+			Material skinMaterial = default;
+			Material eyesMaterial = default;
+
+			//
+			// apply alternate human skin, if we have one
+			//
+			if ( isHuman )
 			{
-				body.Model = model;
-				tags.Add( humanskin.Clothing.HumanSkinTags );
+				skinMaterial = set.Select( x => x.Clothing.HumanSkinMaterial ).Where( x => !string.IsNullOrWhiteSpace( x ) ).Select( x => Material.Load( x ) ).FirstOrDefault();
+				eyesMaterial = set.Select( x => x.Clothing.HumanEyesMaterial ).Where( x => !string.IsNullOrWhiteSpace( x ) ).Select( x => Material.Load( x ) ).FirstOrDefault();
 
-				body.BodyGroups = humanskin.Clothing.HumanSkinBodyGroups;
-				body.MaterialGroup = humanskin.Clothing.HumanSkinMaterialGroup;
+				tags.Add( "human" );
+
+				var humanskin = set.Where( x => x.Clothing.HasHumanSkin ).FirstOrDefault();
+				if ( humanskin is not null && Model.Load( humanskin.Clothing.HumanSkinModel ) is Model model && model.IsValid() )
+				{
+					body.Model = model;
+					tags.Add( humanskin.Clothing.HumanSkinTags );
+
+					body.BodyGroups = humanskin.Clothing.HumanSkinBodyGroups;
+					body.MaterialGroup = humanskin.Clothing.HumanSkinMaterialGroup;
+				}
+				else
+				{
+					body.BodyGroups = body.Model.Parts.DefaultMask;
+					body.MaterialGroup = "default";
+				}
 			}
 			else
 			{
-				body.BodyGroups = body.Model.Parts.DefaultMask;
-				body.MaterialGroup = "default";
+				skinMaterial = set.Select( x => x.Clothing.SkinMaterial ).Where( x => !string.IsNullOrWhiteSpace( x ) ).Select( x => Material.Load( x ) ).FirstOrDefault();
+				eyesMaterial = set.Select( x => x.Clothing.EyesMaterial ).Where( x => !string.IsNullOrWhiteSpace( x ) ).Select( x => Material.Load( x ) ).FirstOrDefault();
 			}
-		}
-		else
-		{
-			skinMaterial = set.Select( x => x.Clothing.SkinMaterial ).Where( x => !string.IsNullOrWhiteSpace( x ) ).Select( x => Material.Load( x ) ).FirstOrDefault();
-			eyesMaterial = set.Select( x => x.Clothing.EyesMaterial ).Where( x => !string.IsNullOrWhiteSpace( x ) ).Select( x => Material.Load( x ) ).FirstOrDefault();
-		}
 
-		body.SetMaterialOverride( skinMaterial, "skin" );
-		body.SetMaterialOverride( eyesMaterial, "eyes" );
+			body.SetMaterialOverride( skinMaterial, "skin" );
+			body.SetMaterialOverride( eyesMaterial, "eyes" );
 
-		if ( isHuman )
-		{
-			EnsureHumanUnderwear( set, tags.Has( "female" ) );
-		}
-
-		//
-		// Create clothes models
-		//
-		foreach ( var entry in set )
-		{
-			var c = entry.Clothing;
-
-			var modelPath = c.GetModel( set.Select( x => x.Clothing ).Except( new[] { c } ), tags );
-
-			if ( string.IsNullOrEmpty( modelPath ) || !string.IsNullOrEmpty( c.SkinMaterial ) )
-				continue;
-
-			var model = Model.Load( modelPath );
-			if ( !model.IsValid() || model.IsError )
-				continue;
-
-			var go = new GameObject( false, $"Clothing - {c.ResourceName}" );
-			go.Parent = body.GameObject;
-			go.Tags.Add( "clothing" );
-
-			var r = go.Components.Create<SkinnedModelRenderer>();
-			r.Model = model;
-			r.BoneMergeTarget = body;
-
-			// TODO - we should expose the render attributes, somehow, in a way accessible to editor inspector and serialization!
-			r.Attributes.Set( "skin_age", Age );
-			r.Attributes.Set( "skin_tint", Tint );
-
-			r.SetMaterialOverride( skinMaterial, "skin" );
-			r.SetMaterialOverride( eyesMaterial, "eyes" );
-
-			if ( !string.IsNullOrEmpty( c.MaterialGroup ) )
-				r.MaterialGroup = c.MaterialGroup;
-
-			if ( c.AllowTintSelect )
+			if ( isHuman )
 			{
-				var tintValue = entry.Tint?.Clamp( 0, 1 ) ?? c.TintDefault;
-				var tintColor = c.TintSelection.Evaluate( tintValue );
-				r.Tint = tintColor;
+				EnsureHumanUnderwear( set, tags.Has( "female" ) );
 			}
 
-			go.Enabled = true;
+			//
+			// Create clothes models
+			//
+			ClothingLog( $"Apply - creating {set.Count} clothing models" );
+			int modelIndex = 0;
+			foreach ( var entry in set )
+			{
+				var c = entry.Clothing;
+				modelIndex++;
+
+				var modelPath = c.GetModel( set.Select( x => x.Clothing ).Except( new[] { c } ), tags );
+				ClothingLog( $"Apply - [{modelIndex}/{set.Count}] {c.ResourceName}: modelPath={modelPath ?? "null"}" );
+
+				if ( string.IsNullOrEmpty( modelPath ) || !string.IsNullOrEmpty( c.SkinMaterial ) )
+				{
+					ClothingLog( $"Apply - [{modelIndex}] skipping (empty path or skin material)" );
+					continue;
+				}
+
+				ClothingLog( $"Apply - [{modelIndex}] loading model..." );
+				var model = Model.Load( modelPath );
+				if ( !model.IsValid() || model.IsError )
+				{
+					ClothingLog( $"Apply - [{modelIndex}] model invalid/error, skipping" );
+					continue;
+				}
+
+				ClothingLog( $"Apply - [{modelIndex}] creating GameObject and SkinnedModelRenderer" );
+				var go = new GameObject( false, $"Clothing - {c.ResourceName}" );
+				go.Parent = body.GameObject;
+				go.Tags.Add( "clothing" );
+
+				var r = go.Components.Create<SkinnedModelRenderer>();
+				r.Model = model;
+				r.BoneMergeTarget = body;
+
+				// TODO - we should expose the render attributes, somehow, in a way accessible to editor inspector and serialization!
+				r.Attributes.Set( "skin_age", Age );
+				r.Attributes.Set( "skin_tint", Tint );
+
+				r.SetMaterialOverride( skinMaterial, "skin" );
+				r.SetMaterialOverride( eyesMaterial, "eyes" );
+
+				if ( !string.IsNullOrEmpty( c.MaterialGroup ) )
+					r.MaterialGroup = c.MaterialGroup;
+
+				if ( c.AllowTintSelect )
+				{
+					var tintValue = entry.Tint?.Clamp( 0, 1 ) ?? c.TintDefault;
+					var tintColor = c.TintSelection.Evaluate( tintValue );
+					r.Tint = tintColor;
+				}
+
+				go.Enabled = true;
+				ClothingLog( $"Apply - [{modelIndex}] model created successfully" );
+			}
+
+			//
+			// Set body groups
+			//
+			ClothingLog( "Apply - setting body groups" );
+			foreach ( var (name, value) in GetBodyGroups( set.Select( x => x.Clothing ) ) )
+			{
+				if ( value == 0 ) continue;
+
+				body.SetBodyGroup( name, value );
+			}
+
+			ClothingLog( "Apply (sync) END - SUCCESS" );
 		}
-
-		//
-		// Set body groups
-		//
-		foreach ( var (name, value) in GetBodyGroups( set.Select( x => x.Clothing ) ) )
+		catch ( System.Exception e )
 		{
-			if ( value == 0 ) continue;
-
-			body.SetBodyGroup( name, value );
+			ClothingLog( $"Apply (sync) EXCEPTION: {e.GetType().Name}: {e.Message}" );
+			ClothingLog( $"  Stack: {e.StackTrace}" );
+			throw;
 		}
 	}
 

@@ -3,6 +3,19 @@ using static Sandbox.ClothingContainer;
 
 public sealed partial class AvatarEditManager : Component
 {
+	// Debug logging helper
+	private static void AvatarLog( string message )
+	{
+		var timestamp = DateTime.Now.ToString( "HH:mm:ss.fff" );
+		var logLine = $"[AVATAR {timestamp}] {message}";
+		Log.Info( logLine );
+		try
+		{
+			System.IO.File.AppendAllText( "/tmp/sbox_avatar.log", logLine + "\n" );
+		}
+		catch { }
+	}
+
 	[Header( "Bodies" )]
 	[Property] public GameObject Citizen { get; set; }
 	[Property] public GameObject Human { get; set; }
@@ -19,42 +32,83 @@ public sealed partial class AvatarEditManager : Component
 
 	protected override void OnAwake()
 	{
-		BuildSteamInventoryClothing();
+		AvatarLog( "OnAwake() START" );
+		try
+		{
+			AvatarLog( "  Calling BuildSteamInventoryClothing..." );
+			BuildSteamInventoryClothing();
+			AvatarLog( $"  BuildSteamInventoryClothing complete. Found {allClothing.Count} clothing items." );
 
-		Container = ClothingContainer.CreateFromLocalUser();
-		lastSaved = Container.Serialize();
+			AvatarLog( "  Calling ClothingContainer.CreateFromLocalUser..." );
+			Container = ClothingContainer.CreateFromLocalUser();
+			AvatarLog( $"  CreateFromLocalUser complete. Container has {Container.Clothing.Count} items." );
 
-		ApplyChangesToModel();
-		AvatarBackgroundRig.RestoreSaved();
+			AvatarLog( "  Calling Container.Serialize..." );
+			lastSaved = Container.Serialize();
+			AvatarLog( $"  Serialize complete. Length={lastSaved?.Length ?? 0}" );
+
+			AvatarLog( "  Calling ApplyChangesToModel..." );
+			ApplyChangesToModel();
+			AvatarLog( "  ApplyChangesToModel complete." );
+
+			AvatarLog( "  Calling AvatarBackgroundRig.RestoreSaved..." );
+			AvatarBackgroundRig.RestoreSaved();
+			AvatarLog( "  RestoreSaved complete." );
+
+			AvatarLog( "OnAwake() END - SUCCESS" );
+		}
+		catch ( Exception e )
+		{
+			AvatarLog( $"OnAwake() EXCEPTION: {e.GetType().Name}: {e.Message}" );
+			AvatarLog( $"  Stack: {e.StackTrace}" );
+			throw;
+		}
 	}
 
 	List<Clothing> allClothing = new();
 
 	void BuildSteamInventoryClothing()
 	{
-		foreach ( var c in ResourceLibrary.GetAll<Clothing>() )
+		AvatarLog( "  BuildSteamInventoryClothing START" );
+		try
 		{
-			if ( !c.ResourcePath.StartsWith( "models/citizen_clothes/" ) ) continue;
+			AvatarLog( "    Getting all Clothing from ResourceLibrary..." );
+			int localCount = 0;
+			foreach ( var c in ResourceLibrary.GetAll<Clothing>() )
+			{
+				if ( !c.ResourcePath.StartsWith( "models/citizen_clothes/" ) ) continue;
+				allClothing.Add( c );
+				localCount++;
+			}
+			AvatarLog( $"    Found {localCount} local clothing resources." );
 
-			allClothing.Add( c );
+			AvatarLog( "    Getting Steam Inventory Definitions..." );
+			int steamCount = 0;
+			foreach ( var item in Sandbox.Services.Inventory.Definitions )
+			{
+				// Don't include any definitions that we already have as Clothing resources
+				if ( allClothing.Any( x => x.SteamItemDefinitionId == item.Id ) )
+					continue;
+
+				var clothing = new Clothing();
+				clothing.Title = item.Name;
+				clothing.Category = Enum.TryParse<Clothing.ClothingCategory>( item.Category, out var category ) ? category : Clothing.ClothingCategory.HairLong;
+				clothing.Icon = new Clothing.IconSetup() { Path = item.IconUrl };
+				clothing.SteamItemDefinitionId = item.Id;
+
+				if ( item.SellStart != null && item.SellStart > DateTime.UtcNow && !IsPurchased( clothing ) )
+					continue;
+
+				allClothing.Add( clothing );
+				steamCount++;
+			}
+			AvatarLog( $"    Found {steamCount} Steam inventory items." );
+			AvatarLog( "  BuildSteamInventoryClothing END" );
 		}
-
-		foreach ( var item in Sandbox.Services.Inventory.Definitions )
+		catch ( Exception e )
 		{
-			// Don't include any definitions that we already have as Clothing resources
-			if ( allClothing.Any( x => x.SteamItemDefinitionId == item.Id ) )
-				continue;
-
-			var clothing = new Clothing();
-			clothing.Title = item.Name;
-			clothing.Category = Enum.TryParse<Clothing.ClothingCategory>( item.Category, out var category ) ? category : Clothing.ClothingCategory.HairLong;
-			clothing.Icon = new Clothing.IconSetup() { Path = item.IconUrl };
-			clothing.SteamItemDefinitionId = item.Id;
-
-			if ( item.SellStart != null && item.SellStart > DateTime.UtcNow && !IsPurchased( clothing ) )
-				continue;
-
-			allClothing.Add( clothing );
+			AvatarLog( $"  BuildSteamInventoryClothing EXCEPTION: {e.GetType().Name}: {e.Message}" );
+			throw;
 		}
 	}
 
@@ -197,22 +251,46 @@ public sealed partial class AvatarEditManager : Component
 
 	public void ApplyPreviewToModel()
 	{
+		AvatarLog( "ApplyPreviewToModel() called" );
 		// We have to run it this way so it'll be in the menu context
-		MenuUtility.RunTask( () => ApplyAsync( PreviewContainer, Citizen.GetComponent<SkinnedModelRenderer>( true ) ) );
-		MenuUtility.RunTask( () => ApplyAsync( PreviewContainer, Human.GetComponent<SkinnedModelRenderer>( true ) ) );
+		MenuUtility.RunTask( () => ApplyAsync( PreviewContainer, Citizen.GetComponent<SkinnedModelRenderer>( true ), "Citizen-Preview" ) );
+		MenuUtility.RunTask( () => ApplyAsync( PreviewContainer, Human.GetComponent<SkinnedModelRenderer>( true ), "Human-Preview" ) );
 	}
 
 	public void ApplyChangesToModel()
 	{
+		AvatarLog( "ApplyChangesToModel() called" );
 		// We have to run it this way so it'll be in the menu context
-		MenuUtility.RunTask( () => ApplyAsync( Container, Citizen.GetComponent<SkinnedModelRenderer>( true ) ) );
-		MenuUtility.RunTask( () => ApplyAsync( Container, Human.GetComponent<SkinnedModelRenderer>( true ) ) );
+		MenuUtility.RunTask( () => ApplyAsync( Container, Citizen.GetComponent<SkinnedModelRenderer>( true ), "Citizen" ) );
+		MenuUtility.RunTask( () => ApplyAsync( Container, Human.GetComponent<SkinnedModelRenderer>( true ), "Human" ) );
 	}
 
-	async Task ApplyAsync( ClothingContainer container, SkinnedModelRenderer targetRenderer )
+	async Task ApplyAsync( ClothingContainer container, SkinnedModelRenderer targetRenderer, string targetName )
 	{
-		// apply the clothing
-		await container.ApplyAsync( targetRenderer, default );
+		AvatarLog( $"ApplyAsync({targetName}) START - Thread={System.Threading.Thread.CurrentThread.ManagedThreadId}" );
+		try
+		{
+			if ( targetRenderer == null )
+			{
+				AvatarLog( $"ApplyAsync({targetName}) - targetRenderer is NULL, skipping" );
+				return;
+			}
+			if ( !targetRenderer.IsValid() )
+			{
+				AvatarLog( $"ApplyAsync({targetName}) - targetRenderer is INVALID, skipping" );
+				return;
+			}
+
+			AvatarLog( $"ApplyAsync({targetName}) - Calling container.ApplyAsync..." );
+			await container.ApplyAsync( targetRenderer, default );
+			AvatarLog( $"ApplyAsync({targetName}) END - SUCCESS" );
+		}
+		catch ( Exception e )
+		{
+			AvatarLog( $"ApplyAsync({targetName}) EXCEPTION: {e.GetType().Name}: {e.Message}" );
+			AvatarLog( $"  Stack: {e.StackTrace}" );
+			throw;
+		}
 	}
 
 	void RevertHovered()
