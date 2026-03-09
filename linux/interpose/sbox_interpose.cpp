@@ -1,8 +1,8 @@
 /**
  * sbox_interpose.cpp - Thread and library tracking for S&box Linux debugging
- * 
+ *
  * Intercepts dlopen, dlsym, pthread_create to track library loading and threading.
- * 
+ *
  * Build: make libsbox_interpose.so
  * Usage: SBOX_INTERPOSE=1 ./run.sh
  * Log: /tmp/sbox_interpose.log
@@ -14,6 +14,7 @@
 #include <dlfcn.h>
 #include <pthread.h>
 #include <atomic>
+#include <unistd.h>
 
 static FILE* g_log = nullptr;
 static std::atomic<int> g_thread_count{0};
@@ -44,23 +45,8 @@ extern "C" void* dlopen(const char* filename, int flags) {
     return handle;
 }
 
-// Intercept dlsym for important symbols
-extern "C" void* dlsym(void* handle, const char* symbol) {
-    static void* (*real_dlsym)(void*, const char*) = nullptr;
-    if (!real_dlsym) {
-        real_dlsym = (void*(*)(void*, const char*))__libc_dlsym(RTLD_NEXT, "dlsym");
-    }
-    
-    void* result = real_dlsym(handle, symbol);
-    
-    // Log interesting symbols
-    if (symbol && (strstr(symbol, "Engine") || strstr(symbol, "igen") || 
-                   strstr(symbol, "SDL") || strstr(symbol, "vk"))) {
-        LOG("dlsym: %s -> %p", symbol, result);
-    }
-    
-    return result;
-}
+// Note: We don't intercept dlsym because it causes bootstrapping issues
+// The dlopen interception is sufficient for library tracking
 
 // Intercept pthread_create
 extern "C" int pthread_create(pthread_t* thread, const pthread_attr_t* attr,
@@ -83,9 +69,6 @@ extern "C" int pthread_create(pthread_t* thread, const pthread_attr_t* attr,
     
     return result;
 }
-
-// Need internal dlsym for bootstrapping
-extern "C" void* __libc_dlsym(void* handle, const char* symbol);
 
 __attribute__((constructor))
 static void init() {
