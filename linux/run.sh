@@ -106,6 +106,13 @@ if [ "$SBOX_NATIVE_TEXTURE_DEBUG" = "1" ] && [ -f "$SCRIPT_DIR/interpose/libtext
     echo "  Log: /tmp/sbox_native_texture.log"
 fi
 
+# Scene rendering tracking: SBOX_SCENE_DEBUG=1 ./run.sh
+if [ "$SBOX_SCENE_DEBUG" = "1" ] && [ -f "$SCRIPT_DIR/interpose/libscene_interpose.so" ]; then
+    echo "Loading scene interpose library..."
+    export LD_PRELOAD="$SCRIPT_DIR/interpose/libscene_interpose.so:${LD_PRELOAD:-}"
+    echo "  Log: /tmp/sbox_scene.log"
+fi
+
 # ============================================================================
 # Launch
 # ============================================================================

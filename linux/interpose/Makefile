@@ -9,7 +9,8 @@ CFLAGS = -shared -fPIC -O2 -Wall -Wextra
 LDFLAGS = -ldl -lpthread
 
 TARGETS = libsbox_interpose.so libaudio_interpose.so libvulkan_interpose.so \
-          libframe_hook.so libmemory_interpose.so libtexture_interpose.so
+          libframe_hook.so libmemory_interpose.so libtexture_interpose.so \
+          libscene_interpose.so
 
 all: $(TARGETS)
 
@@ -43,6 +44,11 @@ libtexture_interpose.so: texture_interpose.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
 	@echo "Built $@"
 
+# Scene interpose - Track scene rendering and layer processing
+libscene_interpose.so: scene_interpose.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS) -rdynamic
+	@echo "Built $@"
+
 clean:
 	rm -f $(TARGETS)
 
@@ -60,6 +66,7 @@ help:
 	@echo "  SBOX_MEMORY_DEBUG=1 ./run.sh           - Heap corruption detection"
 	@echo "  SBOX_NATIVE_TEXTURE_DEBUG=1 ./run.sh   - Native texture tracking"
 	@echo "  SBOX_TEXTURE_DEBUG=1 ./run.sh          - Managed texture logging"
+	@echo "  SBOX_SCENE_DEBUG=1 ./run.sh            - Scene rendering tracking"
 	@echo ""
 	@echo "Logs in /tmp/sbox_*.log"
 
