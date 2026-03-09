@@ -1,0 +1,24 @@
+============================================================
+ResourceCompilerSystem001 VTable Analysis
+============================================================
+
+Interface name at: 0x180b3c578
+Name: b'ResourceCompilerSystem001'
+
+--- Cross-references to interface name ---
+Xref from: 0x180001620 (type=1)
+  Possible struct at: 0x180001618
+  VTable candidate: 0xcccccccccccccccc
+
+Xref from: 0x180088345 (type=1)
+  Possible struct at: 0x18008833d
+  VTable candidate: 0xe0458d4ce0458948
+
+Xref from: 0x180af77e0 (type=1)
+  Possible struct at: 0x180af77d8
+  VTable candidate: 0x180d696c0
+
+
+--- Searching for CResourceCompilerSystem vtable ---
+
+--- Potential VTable addresses ---

@@ -1,0 +1,25 @@
+Address: 0x180d696c0
+Flags: 0x30009400
+Is code: False
+Name: qword_180D696C0
+
+Bytes at address:
+ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff 
+
+Data values:
+  +0: 0xffffffffffffffff 
+  +8: 0xffffffffffffffff 
+  +16: 0xffffffffffffffff 
+  +24: 0xffffffffffffffff 
+  +32: 0xffffffffffffffff 
+  +40: 0xffffffffffffffff 
+  +48: 0xffffffffffffffff 
+  +56: 0xffffffffffffffff 
+  +64: 0xffffffffffffffff 
+  +72: 0xffffffffffffffff 
+
+============================================================
+Looking for related C++ classes...
+
+Searching for IResourceCompilerSystem references...
+RTTI at 0x180d34178: b'.?AVCResourceCompilerSystem@@'

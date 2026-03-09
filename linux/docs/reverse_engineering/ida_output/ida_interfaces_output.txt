@@ -1,0 +1,363 @@
+============================================================
+ResourceCompiler.dll Interface Analysis
+============================================================
+
+Interface list head: 0xffffffffffffffff
+
+--- Registered Interfaces ---
+0: (no name) Entry=0xffffffffffffffff
+
+Total interfaces: 1
+
+--- Compiler-Related Strings ---
+0x1809f1f90: ResourceCompiler
+0x1809f2050: MeshCompiler
+0x180a34440: ResourceCompiler/PhysicsBuilder/DefaultHammerMeshSimplification
+0x180afaf00: m_CompilerIdentifier
+0x180b11109: Microsoft (R) HLSL Shader Compiler 9.29.952.3111
+0x180b156a7: Microsoft (R) HLSL Shader Compiler 9.29.952.3111
+0x180b34190: Entity lump compiler was not passed a entity_lump_pointer!
+
+0x180b341d0: Entity Lump Compiler Version
+0x180b34480: ImageCompiler
+0x180b346c0: KV3 Compiler Version
+0x180b346f8: resourcecompiler: Failed to load file "%s"
+
+0x180b347c0: Manifest Compiler Version
+0x180b348f8: DynData Compiler Version
+0x180b34a28: Map Compiler Version
+0x180b34b30: ResourceCompiler/DefaultMapBuilders/bakedlighting
+0x180b34b98: ResourceCompiler/BakedLighting/LightmapChannels
+0x180b34c68: ResourceCompiler/BakedLighting/IndexCountMax
+0x180b353f0: Material Compiler Version
+0x180b35410: MaterialCompiler
+0x180b35430: CResourceCompilerMaterial::CalculateSpecialDependencyFingerprint(62): Begin
+
+0x180b354f0: CResourceCompilerMaterial::CalculateSpecialDependencyFingerprint(78): End
+
+0x180b35540: CResourceCompilerMaterial::CalculateSpecialDependencyFingerprint(102): End
+
+0x180b35590: CResourceCompilerMaterial::CalculateSpecialDependencyFingerprint(94): End
+
+0x180b355e0: CResourceCompilerMaterial::CompileResource(120): Begin
+
+0x180b35620: CResourceCompilerMaterial::CalculateSpecialDependencyFingerprint(106): End
+
+0x180b35690: CResourceCompilerMaterial::CompileResource(139): Begin
+
+0x180b356c8: CResourceCompilerMaterial::CompileResource(132): End
+
+0x180b35740: CResourceCompilerMaterial::CompileResource(151): End
+
+0x180b362a8: Sbox Data Compiler Version
+0x180b362d0: [CResourceCompilerSBData::CompileResource] - This should never get called!
+
+0x180b363b0: Shader Compiler Version
+0x180b367c0: C:\actions-runner\_work\sbox\sbox\src\utils\resourcecompiler\compilesound.cpp
+0x180b368b8: Sound Compiler Version
+0x180b36b08: TextureCompiler
+0x180b37288: Texture Compiler Version
+0x180b372c8: ResourceCompiler/TextureCompiler/CompressMinRatio
+0x180b37300: ResourceCompiler/TextureCompiler/CompressMipsOnDisk
+0x180b38330: Texture Compiler Version GenerateSheetData
+0x180b38368: Texture Compiler Version Brightness
+0x180b38390: Texture Compiler Version LegacySource1InvertNormals
+0x180b383c8: Texture Compiler Version Image NormalizeNormals
+0x180b383f8: Texture Compiler Version Image Mod2X
+0x180b38420: Texture Compiler Version Image ScaleToPowerOfTwo
+0x180b38458: Texture Compiler Version Image FillToPowerOfTwo
+0x180b38488: Texture Compiler Version Image Inverse
+0x180b384b0: Texture Compiler Version Image HeightToNormal
+0x180b384e0: Texture Compiler Version Image Dilate Color
+0x180b38510: Texture Compiler Version Image YCoCg Conversion
+0x180b38540: Texture Compiler Version Mip None
+0x180b38568: Texture Compiler Version Image Encode RGBM
+0x180b38598: Texture Compiler Version Mip Box Inverse
+0x180b385c8: Texture Compiler Version Mip Box
+0x180b385f0: Texture Compiler Version Mip Normals
+0x180b38618: Texture Compiler Version Mip Multiply
+0x180b38640: Texture Compiler Version Mip HemiOctIsoRoughness_RG_B
+0x180b38678: Texture Compiler Version Mip HemiOctNormal
+0x180b386a8: Texture Compiler Version Mip AnisoRoughness_RG
+0x180b386d8: Texture Compiler Version Mip HemiOctAnisoRoughness_RG_BA
+0x180b38718: Texture Compiler Version Mip AnisoNormals
+0x180b38748: Texture Compiler Version Mip HemiOctAnisoRoughness
+0x180b38780: Texture Compiler Version Mip MipSize
+0x180b387a8: Texture Compiler Version Mip Gradient2D
+0x180b387d0: Texture Compiler Version Mip PreserveCoverage
+0x180b38800: Texture Compiler Version Mip AlphaWeighted
+0x180b38830: Texture Compiler Version Mip RGBM
+0x180b38858: Texture Compiler Version Mip GGXCubeMapBlur
+0x180b38888: Texture Compiler Version Mip Auto Levels
+0x180b388b8: Texture Compiler Version Mip Nice
+0x180b38938: Texture Compiler Version Mip Height Combine
+0x180b389d0: ERROR: Sheetcompiler - Missing image file : "%s" 
+
+0x180b39a88: ResourceCompiler/TextureCompiler/MaxRoughnessAnisotropy
+0x180b39b88: ResourceCompiler/TextureCompiler/MinRoughness
+0x180b3aa88: World compiler was not passed a world_pointer!
+
+0x180b3aab8: World Compiler Version
+0x180b3aae8: World node compiler was not passed a world_node_pointer!
+
+0x180b3ab28: World Node Compiler Version
+0x180b3b158: CResourceCompilerContext::SetGameRoot
+0x180b3b4b8: Failure: No compiler '%s' found for file "%s".
+
+0x180b3b638: Failed to find compiler for file "%s"!
+
+0x180b3b6b0: override_compiler
+0x180b3b778:   CompilerIdentifier: '%s'
+
+0x180b3bc60: ERROR: Internal compiler error - expected %d file blocks but wrote %d!
+
+0x180b3bca8: CResourceCompilerContext::GenerateResourceFileBuffer
+0x180b3c248: CResourceCompilerPathScope - Failed to split search path %s
+
+0x180b3c4b8: resourcecompiler_log_compile_stats
+0x180b3c4e0: ResourceCompilerSystem
+0x180b3c4f8: resourcecompilerwarnings_log.txt
+0x180b3c520: resourcecompilerwarnings_lastrun.txt
+0x180b3c578: ResourceCompilerSystem001
+0x180b3c598: resourcecompiler.exe
+0x180b3c6b8: resourcecompiler
+0x180b3c718: CompileResourceManifest
+0x180b3c810: CompileRenderMesh
+0x180b3c870: ManagedResourceCompiler
+0x180b3c8d0: MapVisibilityV001RESOURCE_TYPE_COMPILER_002
+0x180b3c900: Resource type compiler identifier not found: "%s"
+
+0x180b3c940: Failed to create resource-type compiler "%s" from %s in %s.dll
+
+0x180b3c980: Failed to create resource-type compiler "%s"
+
+0x180b3c9f0: -resourcecompiler_log_compile_stats
+0x180b3cb50: Usage: resourcecompiler <in resource file list>
+
+0x180b3d108: resourcecompiler: Unable to read file "%s"!
+
+0x180b3d288: CompilerArgs
+0x180b3d330: -debug_override_compiler
+0x180b3d400: resourcecompiler: No input files found
+
+0x180b3e8b0: Animation Compiler Version
+0x180b3ed40: Animation Group Compiler Version
+0x180b3f358: resourcecompiler: Sequence compilation failed: "%s"
+
+0x180b3f3a0: Sequence Compiler Version
+0x180b405a0: resourcecompiler.dll
+0x180b4d388: ResourceCompiler/BakedLighting/DisableCullingForShadows
+0x180b4e160: ResourceCompiler/BakedLighting/IndexResolutionDivisor
+0x180b4eec0: ResourceCompiler/WorldRendererBuilder/MinimumTrianglesPerClusteredMesh
+0x180b4ef10: ResourceCompiler/WorldRendererBuilder/MinimumVerticesPerClusteredMesh
+0x180b4ef60: ResourceCompiler/WorldRendererBuilder/MinimumVolumePerClusteredMesh
+0x180b4f000: ResourceCompiler/WorldRendererBuilder/MaxPrecomputedVisClusterMembership
+0x180b4f628: ResourceCompiler/BakedLighting/Version
+0x180b51580: ResourceCompiler/WorldRendererBuilder/MaxCullingBoundsGroups
+0x180b515c0: ResourceCompiler/WorldRendererBuilder/FixTJunctionEdgeCracks
+0x180b51658: ResourceCompiler/WorldRendererBuilder/UseModelDoc
+0x180b51810: ResourceCompiler/WorldRendererBuilder/VisibilityGuidedMeshClustering
+0x180b52ea0: CResourceCompilerCollisionMesh::CollapseCollisionMeshes
+0x180b535b0: Collision Mesh Compiler Version
+0x180b53618: resourcecompiler: No DmeModel element in "%s"!
+
+0x180b537c8: resourcecompiler: Encountered an error reading file "%s"!
+
+0x180b53e60: CFlexCompiler called for a CDmeModel which doesn't use CDmeFlexRules
+
+0x180b541e0: ResourceCompiler/MeshCompiler/EncodeVertexBuffer
+0x180b54218: ResourceCompiler/MeshCompiler/EncodeIndexBuffer
+0x180b542c8: ResourceCompiler/MeshCompiler/PerDrawCullingData
+0x180b54520: resourcecompiler: No skinning data provided! 
+
+0x180b54638: resourcecompiler: Could not find material data for "%s"!
+
+0x180b54678: resourcecompiler: Encountered error reading mesh data "%s"!
+
+0x180b546b8: resourcecompiler: cannot find part %s
+
+0x180b546e0: resourcecompiler: Cannot compile mesh resource files from on-disk source data!
+
+0x180b54860: resourcecompiler: No DmeModel for mesh compile "%s"!
+
+0x180b548b0: Mesh Compiler Version
+0x180b54ed8: Model Compiler Version
+0x180b554a8: ModelDoc Compiler Version
+0x180b554c8: ModelDocCompiler
+0x180b55ee8: Morph Compiler Version
+0x180b55f00: Warning! Morph Compiler: Invalid compile invocation on %s!
+
+0x180b55f58: Warning! Morph Compiler: No DmeModel on %s!
+
+0x180b55f88: Warning! Morph Compiler: Cannot unserialize DmeModel on %s!
+
+0x180b56048: Warning! Morph Compiler: No DmeModel in %s!
+
+0x180b562e0: Warning! Morph Compiler: Could not load meshes in %s!
+
+0x180c8b224: resourcecompiler.dll
+0x180d33938: .?AVIResourceTypeCompiler_InMemory@@
+0x180d33970: .?AVIResourceTypeCompiler@@
+0x180d339e0: .?AVCResourceCompilerEntityLump@@
+0x180d33a58: .?AVCResourceCompilerGenericData@@
+0x180d33a90: .?AVCResourceCompilerKV3@@
+0x180d33ac0: .?AVCResourceCompilerManifest@@
+0x180d33af0: .?AVCResourceCompilerMap@@
+0x180d33b20: .?AVCResourceCompilerMaterial@@
+0x180d33b50: .?AVCResourceCompilerSBData@@
+0x180d33b80: .?AVCResourceCompilerShader@@
+0x180d33c00: .?AVCResourceCompilerSound@@
+0x180d33c58: .?AVCResourceCompilerTexture@@
+0x180d33d40: .?AVCResourceCompilerWorld@@
+0x180d33d70: .?AVCResourceCompilerWorldNode@@
+0x180d33da8: .?AVIResourceCompilerContextAssociate@@
+0x180d33de0: .?AVCResourceCompilerContext@@
+0x180d33e48: .?AVIResourceCompilerContext@@
+0x180d33eb0: .?AVIResourceCompilerContextChild@@
+0x180d34100: .?AV?$CTier1AppSystem@VIResourceCompilerSystem@@$0A@@@
+0x180d34178: .?AVCResourceCompilerSystem@@
+0x180d34218: .?AVIResourceCompilerSystem@@
+0x180d34248: .?AVIInMemoryCompileResultsListener@@
+0x180d34280: .?AV?$CTier0AppSystem@VIResourceCompilerSystem@@$0A@@@
+0x180d34300: .?AV?$CTier3DmAppSystem@VIResourceCompilerSystem@@$0A@@@
+0x180d34350: .?AV?$CTier2AppSystem@VIResourceCompilerSystem@@$0A@@@
+0x180d34410: .?AV?$CBaseAppSystem@VIResourceCompilerSystem@@@@
+0x180d34460: .?AV?$CTier2DmAppSystem@VIResourceCompilerSystem@@$0A@@@
+0x180d345f8: .?AVCResourceCompilerAnimation@@
+0x180d34698: .?AVCResourceCompilerAnimationGroup@@
+0x180d347c0: .?AVCResourceCompilerAnimgraph@@
+0x180d347f8: .?AVCResourceCompilerSequence@@
+0x180d37410: .?AVCResourceCompilerCollisionMesh@@
+0x180d37448: .?AVIFlexCompiler@@
+0x180d37470: .?AVCFlexCompiler@@
+0x180d37578: .?AVCResourceCompilerMesh@@
+0x180d37790: .?AVCResourceCompilerModel@@
+0x180d37850: .?AVIResourceCompilerErrorListener@@
+0x180d37a90: .?AVCResourceCompilerMorphSet@@
+0x180d39390: .?AVCSchemaRegistration_resourcecompiler@@
+
+--- V* Interface Patterns ---
+0x1809f29d0: VApplication001
+0x180a00608: VDataModelVersion001
+0x180a01d70: VDmElementFrameworkVersion001
+0x180a08260: VDmSerializers001
+0x180a2f280: Valve Path Trace Scene Info V0001
+0x180addad8: VPhysXConstraint2_t
+0x180adf470: VPhysXConstraintParams_t::EnumFlags0_t
+0x180af7ae0: VBaseFileSystem011
+0x180af7af8: VAsyncFileSystem2_001
+0x180af7b60: VBAllocTracker001
+0x180af7b78: VideoSystem001
+0x180af7d70: VDebugService_001
+0x180af87b8: Value is not convertible to Int64.
+0x180af8820: Value is not convertible to UInt64.
+0x180b01a8e: VTka1ah
+0x180b045d9: VT(,(6
+0x180b0536d: VJT|a/.1^/
+0x180b1bb1a: V_:X1:
+0x180b30a54: V6E>`"(5
+0x180b349d8: VisBuilder_001
+0x180b3c3c8: VFileSystem017
+0x180b3c5e0: VMaterialSystem2_001
+0x180b3c610: VProcessUtils002
+0x180b3c650: VPhysics2_Interface_002
+0x180b40cf8: VEngineCvar007
+0x180b40df8: VStringTokenSystem001
+0x180b410e0: VRenderDeviceSetupV001
+0x180b4b582: V?S0W?y
+0x180b521e0: VertexPaintBlendParams1
+0x180b58368: Vector2D
+0x180b583a8: Vector4D
+0x180c8ddf2: V_strtoui64
+0x180c8e622: V_strtoi64
+0x180c8e630: V_log10f
+0x180c8edb8: V_fopenUTF8
+0x180c8fb92: V_atofloat64
+0x180c8fba2: V_atoi64
+0x180c8ffa6: V_CopyMemory3D
+0x180c90682: V_atoui64
+0x180c9068e: V_atofloat32
+0x180c906ba: V_UChar32ToUTF8
+0x180c906cc: V_UTF16ToUTF8
+0x180c909ec: V_atan2d
+0x180c90a2a: V_atan2f
+0x180c9294c: V_exp2f
+0x180c92956: V_log2f
+0x180e1b5d4: V6'?C
+0x180e2f370: V7kL
+
+0x180e2fac8: V@FC9
+0x180e39278: V@FC9
+
+--- Shader/VFX Strings ---
+0x1809f19c0: DefaultShader
+0x1809f1c60: EnvmapInfoStoredInExtraShaderData
+0x1809f2478: VulkanSteamShaderCache
+0x1809f2490: VulkanSteamAppShaderCache
+0x1809f24b0: VulkanSteamDownloadedShaderCache
+0x1809f24d8: vulkan_shader_cache.foz
+0x1809f24f0: VulkanAdditionalShaderCache
+0x180a09a20: Attempted to serialize an unsupported shader parameter type %s (%s)
+
+0x180a09c20: Error importing vmt shader parameter %s
+
+0x180aba400: Copy bone positions into vertex stream for use in foliage animation shader
+0x180add0d0: m_bCanBatchWithDynamicShaderConstants
+0x180ae3000: MESH_DRAW_FLAGS_CAN_BATCH_WITH_DYNAMIC_SHADER_CONSTANTS
+0x180afb068: CShaderAssetTypeInfo
+0x180b002d0: C:\actions-runner\_work\sbox\sbox\src\vfx\vfx_common.cpp
+0x180b00510: *** VfxReadAndPrepForCrc(1030): Error opening file "%s"!
+
+0x180b00550: *** VfxReadAndPrepForCrc(1040): Error masking unused parts for "%s"!
+
+0x180b00720: vfx_dx11
+0x180b007a8: vfx_vulkan
+0x180b007e0: shaders/%s
+0x180b00858: CVfxStaticComboData::Decompress
+0x180b00900: CVfxProgramData::CalcStaticComboIdFromValues
+0x180b00a00: CVfxProgramData::FindOrAddVsInputSignatureToArray
+0x180b00a88: VFX value %s out of range %d-%d: %d
+
+0x180b00ca0: %s: Shader needs to be recompiled! ABI version %i expected %i!
+
+0x180b00ce0: CVfx::CreateFromResourceBuffer(6306): VCS %s Unserialize failed
+
+0x180b00d30: CVfx::CreateFromResourceBuffer(6320): VCS %s Unserialize hit EOF
+
+0x180b00da0: MD5 mismatch on %s, will load from vfx instead.
+
+0x180b00e08: VfxFindOrBuildFeatureComboData
+0x180b01068: CUtlBlockMemory<class CVfxStaticComboData,int>::ChangeSize
+0x180b11109: Microsoft (R) HLSL Shader Compiler 9.29.952.3111
+0x180b156a7: Microsoft (R) HLSL Shader Compiler 9.29.952.3111
+0x180b17208: C:\actions-runner\_work\sbox\sbox\src\vfx\vfxexpr.g
+0x180b18260: C:\actions-runner\_work\sbox\sbox\src\vfx\vfxexpr.g
+0x180b35378: ShaderIDColor
+0x180b353e0: ShaderVersion
+0x180b35428: .shader
+0x180b35de0: LoadVfxAndFeatureCombo(1295): Error opening shader "%s" from mod "%s"
+
+0x180b35ef0: .shader_c
+0x180b35efc: shader
+0x180b35f08: Upgraded legacy shader path '%s' to '%s' in material '%s'
+
+0x180b36038: Vertex shader input signature serialization failed.
+
+0x180b36088: Failed to extract vertex shader input signature from shader
+
+0x180b36370: Attempting to compile shader resource %s without buffer
+
+0x180b363b0: Shader Compiler Version
+0x180b3c850: CompileShader
+0x180b41728: shaders/unlit.shader_c
+0x180b58018: m_shaderName
+0x180b58148: m_shaderVersion
+0x180c8b656: vfxexprLexerNew
+0x180c8b666: vfxexprLexerNewSSD
+0x180c8b679: vfxexprParserNew
+0x180c8b68a: vfxexprParserNewSSD
+0x180d31830: .?AVCShaderAssetTypeInfo@@
+0x180d32eb0: .?AVIRenderShaderByteCode@@
+0x180d32ee0: .?AVCVfxShaderBuffer@@
+0x180d32f10: .?AV?$_Ref_count_obj2@UDecompressedComboData_t@CVfxStaticComboData@@@std@@
+0x180d33b80: .?AVCResourceCompilerShader@@
