@@ -12,6 +12,7 @@ partial class VertexPaintTool
 	public class VertexPaintToolWidget : ToolSidebarWidget
 	{
 		readonly Widget _blendRow;
+		readonly Widget _channelsWidget;
 		readonly ControlSheetRow _paintRow;
 		readonly Label _selectionCountLabel;
 		readonly VertexPaintTool _tool;
@@ -48,6 +49,11 @@ partial class VertexPaintTool
 				_blendRow.Layout = Layout.Row();
 				_blendRow.Layout.Margin = 4;
 				_blendRow.Layout.Spacing = 4;
+
+				_channelsWidget = new Widget( this );
+				_channelsWidget.Layout = Layout.Column();
+				_channelsWidget.Layout.Margin = 4;
+				_channelsWidget.Layout.Spacing = 4;
 
 				var material = tool.Tool.ActiveMaterial;
 				var blendCount = material.IsValid() ? material.GetFeature( "F_MULTIBLEND" ) : 0;
@@ -87,24 +93,32 @@ partial class VertexPaintTool
 							FixedWidth = size,
 							FixedHeight = size + BlendWidget.LabelHeight,
 							Pixmap = CreateBlendPixmap( tool.Tool.ActiveMaterial, size, maskVec ),
-							Selected = tool.ActiveBlendMask == maskId,
+							Selected = i == 1,
 							Label = layerLabel
 						};
 
-						w.OnClicked = () =>
-						{
-							tool.ActiveBlendMask = maskId;
+						var channel = i;
 
+						w.OnClicked = ( b ) =>
+						{
 							foreach ( var bw in blendWidgets )
 								bw.Selected = false;
 
 							w.Selected = true;
+
+							if ( b ) tool.SetChannelDisableOther( channel );
+							else tool.SetChannelEnableOther( channel );
 
 							Update();
 						};
 
 						blendWidgets.Add( w );
 						_blendRow.Layout.Add( w );
+
+						if ( maskId == BlendMask.R ) _channelsWidget.Layout.Add( new ChannelWidget( so.GetProperty( nameof( tool.ChannelR ) ), channel ) );
+						if ( maskId == BlendMask.G ) _channelsWidget.Layout.Add( new ChannelWidget( so.GetProperty( nameof( tool.ChannelG ) ), channel ) );
+						if ( maskId == BlendMask.B ) _channelsWidget.Layout.Add( new ChannelWidget( so.GetProperty( nameof( tool.ChannelB ) ), channel ) );
+						if ( maskId == BlendMask.A ) _channelsWidget.Layout.Add( new ChannelWidget( so.GetProperty( nameof( tool.ChannelA ) ), channel ) );
 					}
 				}
 
@@ -115,6 +129,7 @@ partial class VertexPaintTool
 				group.Add( ControlSheetRow.Create( so.GetProperty( nameof( tool.Hardness ) ) ) );
 				group.Add( _blendRow );
 				group.Add( _paintRow );
+				group.Add( _channelsWidget );
 
 				modeProp.OnChanged += ( e ) => UpdateModeVisibility( tool.Mode );
 			}
@@ -132,6 +147,7 @@ partial class VertexPaintTool
 		void UpdateModeVisibility( PaintMode mode )
 		{
 			_blendRow.Visible = mode == PaintMode.Blend;
+			_channelsWidget.Visible = mode == PaintMode.Blend;
 			_paintRow.Visible = mode == PaintMode.Color;
 		}
 
@@ -144,21 +160,38 @@ partial class VertexPaintTool
 				return;
 			}
 
-			var (count, name) = _tool.LimitMode switch
+			var count = _tool.LimitMode switch
 			{
-				PaintLimitMode.Objects => (_tool._selectedMeshes.Count,
-					_tool._selectedMeshes.Count == 1 ? "object" : "objects"),
-				PaintLimitMode.Faces => (SelectionTool.GetAllSelected<MeshFace>().Count(),
-					SelectionTool.GetAllSelected<MeshFace>().Count() == 1 ? "face" : "faces"),
-				PaintLimitMode.Edges => (SelectionTool.GetAllSelected<MeshEdge>().Count(),
-					SelectionTool.GetAllSelected<MeshEdge>().Count() == 1 ? "edge" : "edges"),
-				PaintLimitMode.Vertices => (SelectionTool.GetAllSelected<MeshVertex>().Count(),
-					SelectionTool.GetAllSelected<MeshVertex>().Count() == 1 ? "vertex" : "vertices"),
-				_ => (0, "selected")
+				PaintLimitMode.Objects => _tool._selectedMeshes.Count,
+				PaintLimitMode.Faces => _tool.GetSelectedElements<MeshFace>().Count(),
+				PaintLimitMode.Edges => _tool.GetSelectedElements<MeshEdge>().Count(),
+				PaintLimitMode.Vertices => _tool.GetSelectedElements<Editor.MeshEditor.MeshVertex>().Count(),
+				_ => 0
+			};
+
+			var name = _tool.LimitMode switch
+			{
+				PaintLimitMode.Objects => count == 1 ? "object" : "objects",
+				PaintLimitMode.Faces => count == 1 ? "face" : "faces",
+				PaintLimitMode.Edges => count == 1 ? "edge" : "edges",
+				PaintLimitMode.Vertices => count == 1 ? "vertex" : "vertices",
+				_ => "selected"
 			};
 
 			_selectionCountLabel.Visible = true;
 			_selectionCountLabel.Text = $"{count} {name} selected";
+		}
+
+		class ChannelWidget : ControlWidget
+		{
+			public ChannelWidget( SerializedProperty property, int channel ) : base( property )
+			{
+				if ( !property.TryGetAsObject( out var so ) ) return;
+
+				Layout = Layout.Row();
+				Layout.Add( Create( so.GetProperty( nameof( Channel.Enabled ) ) ) );
+				Layout.Add( new FloatControlWidget( so.GetProperty( nameof( Channel.Value ) ) ) { Label = $"{channel}" } );
+			}
 		}
 
 		class BlendWidget : Widget
@@ -166,7 +199,7 @@ partial class VertexPaintTool
 			public Pixmap Pixmap;
 			public bool Selected;
 			public string Label;
-			public Action OnClicked;
+			public Action<bool> OnClicked;
 
 			public const float LabelHeight = 20f;
 			const float Rounding = 4f;
@@ -179,7 +212,7 @@ partial class VertexPaintTool
 
 			protected override void OnMousePress( MouseEvent e )
 			{
-				OnClicked?.Invoke();
+				OnClicked?.Invoke( e.RightMouseButton );
 				e.Accepted = true;
 			}
 
@@ -257,7 +290,7 @@ partial class VertexPaintTool
 				World = world
 			};
 
-			var light = new SceneLight( world )
+			var light = new ScenePointLight( world )
 			{
 				Radius = 4000,
 				LightColor = Color.White * 0.8f,

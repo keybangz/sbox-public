@@ -195,7 +195,12 @@ internal static class CloneHelpers
 /// </summary>
 internal static class MemberCopyCache
 {
+	// Compiled expression delegates come from cant be upgraded via hot upload -> skip.
+	// The cache is still cleared explicitly via ReflectionQueryCache.ClearTypeCache() during hotload.
+	[SkipHotload]
 	private static readonly Dictionary<MemberDescription, Action<object, object>> _cache = new();
+
+	internal static bool IsEmpty => _cache.Count == 0;
 
 	internal static void Clear() => _cache.Clear();
 

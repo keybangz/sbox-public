@@ -38,6 +38,12 @@ public static partial class MenuUtility
 		IMenuDll.Current?.RunEvent( "ui.skiptransitions" );
 	}
 
+	public static async Task<bool> RefreshAccountInfo()
+	{
+		await AccountInformation.Update();
+		return Api.IsConnected;
+	}
+
 	/// <summary>
 	/// If current game is active, return the package
 	/// </summary>
@@ -163,11 +169,7 @@ public static partial class MenuUtility
 	/// </summary>
 	public static void CancelLoading()
 	{
-		// Close the game
-		CloseGame();
-
-		// Close the loading screen
-		LoadingScreen.IsVisible = false;
+		IGameInstanceDll.Current.Disconnect();
 	}
 
 	/// <summary>
@@ -192,6 +194,15 @@ public static partial class MenuUtility
 		{
 			PartyRoom.Current?.SetBroadcastVoice();
 		}
+	}
+
+	/// <summary>
+	/// Connect to a lobby and close all open modals.
+	/// </summary>
+	public static void Connect( ulong lobbyId )
+	{
+		CloseAllModals();
+		Networking.Connect( lobbyId );
 	}
 
 	/// <summary>
@@ -278,8 +289,6 @@ public static partial class MenuUtility
 	/// </summary>
 	public static void RunTask( Func<Task> func )
 	{
-		if ( Application.IsEditor ) func();
-
 		// Post the *whole* function into the target context
 		MenuDll.AsyncContext.Post( async _ =>
 		{

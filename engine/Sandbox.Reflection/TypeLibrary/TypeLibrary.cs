@@ -158,6 +158,7 @@ public partial class TypeLibrary
 		typeof(Color.Rgba16),
 		typeof(Color32),
 		typeof(ColorHsv),
+		typeof(Gradient),
 		typeof(Capsule),
 		typeof(Line),
 		typeof(Transform),
@@ -576,6 +577,8 @@ public partial class TypeLibrary
 
 		if ( targetType is null )
 			return null;
+
+		property.CreateObjectValue();
 
 		var getTarget = () => property.GetValue<object>();
 		var value = getTarget();

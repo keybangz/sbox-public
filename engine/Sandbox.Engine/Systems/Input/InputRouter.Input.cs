@@ -40,7 +40,7 @@ internal static partial class InputRouter
 			{
 				Log.Info( $"[InputRouter] Sending button to context: {mouse.Name}" );
 			}
-			mouse.IN_Button( down, button, false, modifiers );
+			mouse.IN_Button( down, button, button, false, modifiers );
 		}
 		else if ( Environment.GetEnvironmentVariable( "SBOX_INPUT_DEBUG" ) == "1" )
 		{
@@ -57,7 +57,7 @@ internal static partial class InputRouter
 			{
 				if ( context == mouse ) continue;
 
-				context.IN_ButtonReleased( button, modifiers );
+				context.IN_ButtonReleased( button, button, modifiers );
 			}
 		}
 	}
@@ -263,16 +263,16 @@ internal static partial class InputRouter
 		}
 	}
 
-	internal static void OnKey( ButtonCode button, bool down, bool repeat, int ikeymods, int vkcode )
+	internal static void OnKey( ButtonCode scanButtonCode, ButtonCode keyButtonCode, bool down, bool repeat, int ikeymods )
 	{
 		if ( !repeat )
 		{
-			SetButtonState( button, down );
+			SetButtonState( scanButtonCode, down );
 		}
 
 		var modifiers = GetCurrentModifiers();
 
-		if ( button == ButtonCode.KEY_ESCAPE )
+		if ( scanButtonCode == ButtonCode.KEY_ESCAPE )
 		{
 			if ( repeat )
 				return;
@@ -284,13 +284,13 @@ internal static partial class InputRouter
 		//
 		// Function keys
 		//
-		if ( button >= ButtonCode.KEY_F1 && button <= ButtonCode.KEY_F12 )
+		if ( scanButtonCode >= ButtonCode.KEY_F1 && scanButtonCode <= ButtonCode.KEY_F12 )
 		{
 			if ( !down || repeat ) return;
 
-			IToolsDll.Current?.OnFunctionKey( button, modifiers );
+			IToolsDll.Current?.OnFunctionKey( scanButtonCode, modifiers );
 
-			var bind = g_pInputService.GetBinding( button );
+			var bind = g_pInputService.GetBinding( scanButtonCode );
 			if ( string.IsNullOrEmpty( bind ) ) return;
 
 			ConVarSystem.Run( bind );
@@ -300,7 +300,7 @@ internal static partial class InputRouter
 		//
 		// Console
 		//
-		if ( button == ButtonCode.KEY_BACKQUOTE || button == ButtonCode.KEY_TILDE )
+		if ( scanButtonCode == ButtonCode.KEY_BACKQUOTE || scanButtonCode == ButtonCode.KEY_TILDE )
 		{
 			if ( !down || repeat ) return;
 
@@ -314,7 +314,7 @@ internal static partial class InputRouter
 		var keyboard = Contexts.FirstOrDefault( x => x.KeyboardState != InputContext.InputState.Ignore );
 		if ( keyboard is not null )
 		{
-			keyboard.IN_Button( down, button, repeat, modifiers );
+			keyboard.IN_Button( down, scanButtonCode, keyButtonCode, repeat, modifiers );
 		}
 
 		//
@@ -327,7 +327,7 @@ internal static partial class InputRouter
 			{
 				if ( context == keyboard ) continue;
 
-				context.IN_ButtonReleased( button, modifiers );
+				context.IN_ButtonReleased( scanButtonCode, keyButtonCode, modifiers );
 			}
 		}
 	}
@@ -351,13 +351,13 @@ internal static partial class InputRouter
 		{
 			if ( y < 0 )
 			{
-				mouse.IN_Button( true, ButtonCode.MouseWheelDown, false, default );
-				mouse.IN_Button( false, ButtonCode.MouseWheelDown, false, default );
+				mouse.IN_Button( true, ButtonCode.MouseWheelDown, ButtonCode.MouseWheelDown, false, default );
+				mouse.IN_Button( false, ButtonCode.MouseWheelDown, ButtonCode.MouseWheelDown, false, default );
 			}
 			else
 			{
-				mouse.IN_Button( true, ButtonCode.MouseWheelUp, false, default );
-				mouse.IN_Button( false, ButtonCode.MouseWheelUp, false, default );
+				mouse.IN_Button( true, ButtonCode.MouseWheelUp, ButtonCode.MouseWheelUp, false, default );
+				mouse.IN_Button( false, ButtonCode.MouseWheelUp, ButtonCode.MouseWheelUp, false, default );
 			}
 
 			mouse.IN_MouseWheel( value, modifiers );

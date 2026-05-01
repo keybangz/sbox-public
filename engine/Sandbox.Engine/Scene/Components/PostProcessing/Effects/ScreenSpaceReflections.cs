@@ -42,8 +42,8 @@ public class ScreenSpaceReflections : BasePostProcess<ScreenSpaceReflections>
 	CommandList cmd = new CommandList( "ScreenSpaceReflections" );
 	CommandList cmdLastframe = new CommandList( "ScreenSpaceReflections (Last Frame)" );
 
-	private static readonly ComputeShader ShaderCs = new ComputeShader( "screen_space_reflections_cs" );
-	private static readonly ComputeShader ClassifyShaderCs = new ComputeShader( "screen_space_reflections_classify_cs" );
+	private static ComputeShader ShaderCs = new ComputeShader( "screen_space_reflections_cs" );
+	private static ComputeShader ClassifyShaderCs = new ComputeShader( "screen_space_reflections_classify_cs" );
 
 	private GpuBuffer<uint> ClassifiedTilesBuffer;
 	private GpuBuffer<GpuBuffer.IndirectDispatchArguments> DispatchArgsBuffer;

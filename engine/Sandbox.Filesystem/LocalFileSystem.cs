@@ -23,37 +23,21 @@ internal class LocalFileSystem : BaseFileSystem
 
 	internal LocalFileSystem( string rootFolder, bool makereadonly = false )
 	{
-		DebugLog( $"Creating LocalFileSystem for rootFolder='{rootFolder}', readonly={makereadonly}" );
-
-		// Use case-insensitive file system on Linux to eliminate symlink requirements
+		// on Linux we're going to have a case sensitive filesystem
+		// instead of fucking everything up everywhere and relying on people to nail case
+		// we wrap our highest filesystem and resolve it there
 		if ( OperatingSystem.IsLinux() )
 		{
 			Physical = new CaseInsensitivePhysicalFileSystem();
-			DebugLog( "Using CaseInsensitivePhysicalFileSystem on Linux" );
 		}
+		// on sane operating systems with case insensitive filesystems
+		// windows + macos do the normal path
 		else
 		{
 			Physical = new Zio.FileSystems.PhysicalFileSystem();
-			DebugLog( "Using standard PhysicalFileSystem" );
 		}
 
-		// On Linux, don't convert to lowercase - the CaseInsensitivePhysicalFileSystem handles case matching
-		// On Windows, lowercase is fine since the OS handles case-insensitivity
-		string normalizedPath;
-		if ( OperatingSystem.IsLinux() )
-		{
-			normalizedPath = rootFolder;
-			DebugLog( $"Linux: keeping original path '{normalizedPath}'" );
-		}
-		else
-		{
-			normalizedPath = rootFolder.ToLowerInvariant();
-			DebugLog( $"Windows: converted to lowercase '{normalizedPath}'" );
-		}
-
-		var rootPath = Physical.ConvertPathFromInternal( normalizedPath );
-		DebugLog( $"ConvertPathFromInternal: '{normalizedPath}' -> UPath='{rootPath}'" );
-
+		var rootPath = Physical.ConvertPathFromInternal( rootFolder );
 		system = new Zio.FileSystems.SubFileSystem( Physical, rootPath );
 		DebugLog( $"Created SubFileSystem with root='{rootPath}'" );
 

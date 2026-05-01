@@ -76,6 +76,7 @@ internal class SyncPublicRepo( string name, bool dryRun = false ) : Step( name )
 	private static readonly string[] RepoFilterShaderWhitelistGlobs =
 	{
 		"game/core/shaders/**/vr_*",
+		"game/core/shaders/**/*.hlsl",
 		"game/core/shaders/**/*.shader_c",
 		"game/core/shaders/common.fxc",
 		"game/core/shaders/common_samplers.fxc",
@@ -193,15 +194,16 @@ internal class SyncPublicRepo( string name, bool dryRun = false ) : Step( name )
 				return false;
 			}
 
-			// Make sure we filter out lfs files that are in the history as well
-			var allLfsPaths = GetAllPublicLfsFiles( relativeFilteredPath );
-			if ( allLfsPaths is null )
+			// Run git-filter-repo to filter out unwanted paths.
+			// LFS pointer blobs are detected and stripped inline by the Python
+			// filter (blob content inspection) so we no longer need to pass a
+			// pre-computed LFS path list.
+			if ( !RunFilterRepo( relativeFilteredPath ) )
 			{
 				return false;
 			}
 
-			// Run git-filter-repo to filter out unwanted paths
-			if ( !RunFilterRepo( relativeFilteredPath, allLfsPaths ) )
+			if ( !ValidateFilteredRepository( relativeFilteredPath ) )
 			{
 				return false;
 			}
@@ -298,11 +300,12 @@ internal class SyncPublicRepo( string name, bool dryRun = false ) : Step( name )
 			return true;
 		}
 
-		// Inline matcher: include everything, exclude managed root folder and pdbs
+		// Inline matcher: include everything, exclude managed root folder, pdbs, and debug symbols
 		var matcher = new Matcher( StringComparison.OrdinalIgnoreCase, preserveFilterOrder: true );
 		matcher.AddInclude( "**/*" );
 		matcher.AddExclude( "managed/**" );
 		matcher.AddExclude( "**/*.pdb" );
+		matcher.AddExclude( "**/*.dbg" );
 
 		var filesToUpload = matcher
 			.GetResultsInFullPath( buildArtifactsRoot )
@@ -390,7 +393,7 @@ internal class SyncPublicRepo( string name, bool dryRun = false ) : Step( name )
 		return TryUploadArtifacts( candidates, remoteBase, artifacts, uploadedHashes, "LFS", skipUpload );
 	}
 
-	private bool RunFilterRepo( string relativeRepoPath, IReadOnlyCollection<string> lfsPaths )
+	private bool RunFilterRepo( string relativeRepoPath )
 	{
 		Log.Info( "Running git-filter-repo to filter paths..." );
 
@@ -406,11 +409,7 @@ internal class SyncPublicRepo( string name, bool dryRun = false ) : Step( name )
 			IncludeGlobs = RepoFilterPathIncludeGlobs,
 			ExcludeGlobs = RepoFilterPathExcludeGlobs,
 			WhitelistedShaders = RepoFilterShaderWhitelistGlobs,
-			PathRenames = RepoFilterPathRenames.ToDictionary( pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase ),
-			LfsPaths = lfsPaths
-				.Select( ToForwardSlash )
-				.Distinct( StringComparer.OrdinalIgnoreCase )
-				.ToList()
+			PathRenames = RepoFilterPathRenames.ToDictionary( pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase )
 		};
 
 		string configPath = null;
@@ -438,6 +437,54 @@ internal class SyncPublicRepo( string name, bool dryRun = false ) : Step( name )
 				File.Delete( configPath );
 			}
 		}
+	}
+
+	private static readonly HashSet<string> ForbiddenRepoExtensions = new( StringComparer.OrdinalIgnoreCase )
+	{
+		".lib", ".exe", ".pdb", ".a", ".dll", ".dylib", ".so",
+		".png", ".tga", ".jpg", ".psd", ".pdf", ".bmp", ".gif", ".exr", ".ico", ".svg", ".tif", ".tiff",
+		".ttf", ".otf",
+		".dmx", ".fbx", ".max",
+		".wav", ".ogg", ".mp3", ".mp4", ".webm", ".avi",
+		".pyd", ".ppf", ".vsix", ".vcs", ".bin", ".dat", ".jar", ".spv", ".ma", ".lxo"
+	};
+
+	private static bool ValidateFilteredRepository( string relativeRepoPath )
+	{
+		Log.Info( "Validating filtered repository before push..." );
+
+		var renamedTargets = new HashSet<string>( RepoFilterPathRenames.Values, StringComparer.OrdinalIgnoreCase );
+		var matcher = RepoFileFilter();
+		var violations = new List<string>();
+
+		Utility.RunProcess( "git", "ls-tree -r --name-only HEAD", relativeRepoPath, onDataReceived: ( _, e ) =>
+		{
+			if ( string.IsNullOrWhiteSpace( e.Data ) )
+				return;
+
+			var file = ToForwardSlash( e.Data.Trim() );
+
+			if ( file.StartsWith( "src/", StringComparison.OrdinalIgnoreCase ) )
+				violations.Add( $"Private source code: {file}" );
+
+			if ( !renamedTargets.Contains( file ) && !matcher.Match( file ).HasMatches )
+				violations.Add( $"Outside include rules: {file}" );
+
+			var ext = Path.GetExtension( file );
+			if ( !string.IsNullOrEmpty( ext ) && ForbiddenRepoExtensions.Contains( ext ) )
+				violations.Add( $"Forbidden extension ({ext}): {file}" );
+		} );
+
+		if ( violations.Count > 0 )
+		{
+			Log.Error( $"Filtered repository contains {violations.Count} violation(s):" );
+			foreach ( var v in violations )
+				Log.Error( $"  {v}" );
+			return false;
+		}
+
+		Log.Info( "Filtered repository validation passed" );
+		return true;
 	}
 
 	private string PushToPublicRepository( string relativeRepoPath )
@@ -530,26 +577,6 @@ internal class SyncPublicRepo( string name, bool dryRun = false ) : Step( name )
 		return trackedFiles;
 	}
 
-	private static HashSet<string> GetAllPublicLfsFiles( string relativeRepoPath )
-	{
-		var trackedFiles = GetCurrentLfsFiles( relativeRepoPath );
-
-		if ( !Utility.RunProcess( "git", "lfs ls-files --all --deleted --name-only", relativeRepoPath, onDataReceived: ( _, e ) =>
-		{
-			if ( string.IsNullOrWhiteSpace( e.Data ) )
-			{
-				return;
-			}
-
-			trackedFiles.Add( ToForwardSlash( e.Data.Trim() ) );
-		} ) )
-		{
-			Log.Error( "Failed to list historical LFS tracked files" );
-			return null;
-		}
-
-		return trackedFiles;
-	}
 
 	private void WriteDryRunOutputs( string commitHash, IEnumerable<ArtifactFileInfo> artifacts )
 	{
@@ -847,8 +874,5 @@ internal class SyncPublicRepo( string name, bool dryRun = false ) : Step( name )
 
 		[JsonPropertyName( "path_renames" )]
 		public Dictionary<string, string> PathRenames { get; init; }
-
-		[JsonPropertyName( "lfs_paths" )]
-		public List<string> LfsPaths { get; init; }
 	}
 }

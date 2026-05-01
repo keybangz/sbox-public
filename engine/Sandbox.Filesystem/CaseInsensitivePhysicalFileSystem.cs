@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO;
 using Zio;
 using Zio.FileSystems;
@@ -5,270 +6,175 @@ using Zio.FileSystems;
 namespace Sandbox;
 
 /// <summary>
-/// A case-insensitive physical file system wrapper for Linux.
-/// This resolves paths case-insensitively by searching the actual directory contents,
-/// eliminating the need for symlinks on case-sensitive file systems.
+/// A physical filesystem that resolves paths case-insensitively on Linux.
 /// </summary>
-internal class CaseInsensitivePhysicalFileSystem : PhysicalFileSystem
+internal sealed class CaseInsensitivePhysicalFileSystem : PhysicalFileSystem
 {
 	/// <summary>
-	/// Whether to use case-insensitive path resolution (enabled on Linux, disabled on Windows/macOS).
+	/// Real directory path -> case-insensitive name lookup (name -> actual on-disk name).
 	/// </summary>
-	private static readonly bool UseCaseInsensitiveResolution = OperatingSystem.IsLinux();
+	private readonly ConcurrentDictionary<string, Dictionary<string, string>> _directoryCache = new( StringComparer.Ordinal );
 
 	/// <summary>
-	/// Enable debug logging for path resolution.
-	/// Set SBOX_FS_DEBUG=1 environment variable to enable.
+	/// Input path (case-insensitive key) -> resolved path with correct on-disk casing.
 	/// </summary>
-	public static bool DebugLogging { get; set; } = Environment.GetEnvironmentVariable( "SBOX_FS_DEBUG" ) == "1";
-
-	/// <summary>
-	/// Cache for resolved paths to avoid repeated filesystem lookups.
-	/// Key: lowercase path, Value: actual path on disk
-	/// </summary>
-	private readonly Dictionary<string, string> _pathCache = new( StringComparer.OrdinalIgnoreCase );
-	private readonly object _cacheLock = new();
-
-	private static void DebugLog( string message )
-	{
-		if ( !DebugLogging ) return;
-		Console.WriteLine( $"[CaseInsensitiveFS] {message}" );
-	}
-
-	/// <summary>
-	/// Resolves a path case-insensitively by walking the directory tree.
-	/// </summary>
-	/// <param name="path">The path to resolve.</param>
-	/// <returns>The actual path on disk, or the original path if not found.</returns>
-	private string ResolveCaseInsensitive( string path )
-	{
-		if ( !UseCaseInsensitiveResolution || string.IsNullOrEmpty( path ) )
-			return path;
-
-		// Check cache first
-		lock ( _cacheLock )
-		{
-			if ( _pathCache.TryGetValue( path, out var cachedPath ) )
-			{
-				DebugLog( $"Cache hit: '{path}' -> '{cachedPath}'" );
-				return cachedPath;
-			}
-		}
-
-		var resolvedPath = ResolvePathInternal( path );
-
-		// Cache the result
-		lock ( _cacheLock )
-		{
-			_pathCache[path] = resolvedPath;
-		}
-
-		if ( resolvedPath != path )
-		{
-			DebugLog( $"Resolved: '{path}' -> '{resolvedPath}'" );
-		}
-		else
-		{
-			DebugLog( $"No change: '{path}'" );
-		}
-
-		return resolvedPath;
-	}
-
-	private string ResolvePathInternal( string path )
-	{
-		// Split the path into segments
-		var segments = path.Split( new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries );
-		if ( segments.Length == 0 )
-		{
-			DebugLog( $"ResolvePathInternal: empty segments for '{path}'" );
-			return path;
-		}
-
-		// Determine the root - if path starts with /, use /, otherwise use current directory
-		string currentPath;
-		if ( path.StartsWith( "/" ) )
-		{
-			currentPath = "/";
-		}
-		else
-		{
-			// Relative path - this shouldn't happen often in our use case
-			currentPath = Directory.GetCurrentDirectory();
-			DebugLog( $"ResolvePathInternal: relative path '{path}', using cwd '{currentPath}'" );
-		}
-
-		foreach ( var segment in segments )
-		{
-			if ( !Directory.Exists( currentPath ) )
-			{
-				DebugLog( $"ResolvePathInternal: parent '{currentPath}' doesn't exist for segment '{segment}'" );
-				return path; // Parent doesn't exist, return original
-			}
-
-			// Try exact match first
-			var exactPath = Path.Combine( currentPath, segment );
-			if ( Directory.Exists( exactPath ) || File.Exists( exactPath ) )
-			{
-				currentPath = exactPath;
-				continue;
-			}
-
-			// Search for case-insensitive match
-			bool found = false;
-			try
-			{
-				var entries = Directory.GetFileSystemEntries( currentPath );
-				foreach ( var entry in entries )
-				{
-					var entryName = Path.GetFileName( entry );
-					if ( string.Equals( entryName, segment, StringComparison.OrdinalIgnoreCase ) )
-					{
-						DebugLog( $"Case-insensitive match: '{segment}' -> '{entryName}' in '{currentPath}'" );
-						currentPath = entry;
-						found = true;
-						break;
-					}
-				}
-			}
-			catch ( UnauthorizedAccessException ex )
-			{
-				DebugLog( $"ResolvePathInternal: UnauthorizedAccessException in '{currentPath}': {ex.Message}" );
-				return path;
-			}
-			catch ( DirectoryNotFoundException ex )
-			{
-				DebugLog( $"ResolvePathInternal: DirectoryNotFoundException in '{currentPath}': {ex.Message}" );
-				return path;
-			}
-
-			if ( !found )
-			{
-				DebugLog( $"ResolvePathInternal: segment '{segment}' not found in '{currentPath}'" );
-				return path; // Segment not found, return original path
-			}
-		}
-
-		return currentPath;
-	}
-
-	/// <summary>
-	/// Clears the path cache. Should be called when files/directories are created or renamed.
-	/// </summary>
-	internal void ClearCache()
-	{
-		lock ( _cacheLock )
-		{
-			_pathCache.Clear();
-		}
-	}
+	private readonly ConcurrentDictionary<string, string> _resolvedPathCache = new( StringComparer.OrdinalIgnoreCase );
 
 	protected override string ConvertPathToInternalImpl( UPath path )
 	{
-		var internalPath = base.ConvertPathToInternalImpl( path );
-		var resolved = ResolveCaseInsensitive( internalPath );
-		DebugLog( $"ConvertPathToInternalImpl: UPath='{path}' -> internal='{internalPath}' -> resolved='{resolved}'" );
-		return resolved;
+		return ResolvePathCasing( base.ConvertPathToInternalImpl( path ) );
 	}
 
-	protected override bool FileExistsImpl( UPath path )
+	/// <summary>
+	/// Walk each component of <paramref name="path"/> and resolve it to the actual
+	/// on-disk casing. Returns the original path if any component can't be matched,
+	/// letting the OS produce a normal "file not found" error.
+	/// </summary>
+	private string ResolvePathCasing( string path )
 	{
-		var internalPath = ConvertPathToInternal( path );
-		var resolvedPath = ResolveCaseInsensitive( internalPath );
-		var exists = File.Exists( resolvedPath );
-		DebugLog( $"FileExistsImpl: UPath='{path}' -> internal='{internalPath}' -> resolved='{resolvedPath}' -> exists={exists}" );
-		return exists;
+		if ( path.Length < 2 )
+			return path;
+
+		if ( _resolvedPathCache.TryGetValue( path, out var cached ) )
+			return cached;
+
+		var components = path.Split( '/', StringSplitOptions.RemoveEmptyEntries );
+		var resolvedDir = "/";
+
+		for ( var i = 0; i < components.Length; i++ )
+		{
+			var entries = GetDirectoryEntries( resolvedDir );
+			if ( entries is null || !entries.TryGetValue( components[i], out var realName ) )
+				return path;
+
+			resolvedDir = resolvedDir == "/"
+				? $"/{realName}"
+				: $"{resolvedDir}/{realName}";
+		}
+
+		_resolvedPathCache.TryAdd( path, resolvedDir );
+		return resolvedDir;
 	}
 
-	protected override bool DirectoryExistsImpl( UPath path )
+	/// <summary>
+	/// Returns a case-insensitive lookup of names in <paramref name="directory"/>,
+	/// mapping each name to its real on-disk casing. Returns null if the directory
+	/// doesn't exist.
+	/// </summary>
+	private Dictionary<string, string> GetDirectoryEntries( string directory )
 	{
-		var internalPath = ConvertPathToInternal( path );
-		var resolvedPath = ResolveCaseInsensitive( internalPath );
-		var exists = Directory.Exists( resolvedPath );
-		DebugLog( $"DirectoryExistsImpl: UPath='{path}' -> internal='{internalPath}' -> resolved='{resolvedPath}' -> exists={exists}" );
-		return exists;
+		if ( _directoryCache.TryGetValue( directory, out var entries ) )
+			return entries;
+
+		if ( !Directory.Exists( directory ) )
+			return null;
+
+		try
+		{
+			var infos = new DirectoryInfo( directory ).GetFileSystemInfos();
+			var lookup = new Dictionary<string, string>( infos.Length, StringComparer.OrdinalIgnoreCase );
+
+			foreach ( var info in infos )
+				lookup.TryAdd( info.Name, info.Name );
+
+			_directoryCache.TryAdd( directory, lookup );
+			return lookup;
+		}
+		catch
+		{
+			return null;
+		}
+	}
+
+	//
+	// Cache invalidation for mutations
+	//
+
+	private void InvalidateParent( string resolvedPath )
+	{
+		var parent = Path.GetDirectoryName( resolvedPath );
+
+		if ( parent is not null )
+			_directoryCache.TryRemove( parent, out _ );
+
+		InvalidateResolvedPaths( parent ?? resolvedPath );
+	}
+
+	/// <summary>
+	/// Remove resolved-path cache entries whose resolved value passes through
+	/// <paramref name="directoryPrefix"/>.
+	/// </summary>
+	private void InvalidateResolvedPaths( string directoryPrefix )
+	{
+		foreach ( var kvp in _resolvedPathCache )
+		{
+			if ( kvp.Value.StartsWith( directoryPrefix, StringComparison.Ordinal ) )
+				_resolvedPathCache.TryRemove( kvp.Key, out _ );
+		}
+	}
+
+	protected override void CreateDirectoryImpl( UPath path )
+	{
+		base.CreateDirectoryImpl( path );
+		var resolved = ConvertPathToInternal( path );
+		InvalidateParent( resolved );
+		_directoryCache.TryRemove( resolved, out _ );
+	}
+
+	protected override void DeleteDirectoryImpl( UPath path, bool isRecursive )
+	{
+		var resolved = ConvertPathToInternal( path );
+		base.DeleteDirectoryImpl( path, isRecursive );
+		InvalidateParent( resolved );
+		_directoryCache.TryRemove( resolved, out _ );
+	}
+
+	protected override void DeleteFileImpl( UPath path )
+	{
+		var resolved = ConvertPathToInternal( path );
+		base.DeleteFileImpl( path );
+		InvalidateParent( resolved );
+	}
+
+	protected override void MoveDirectoryImpl( UPath srcPath, UPath destPath )
+	{
+		var resolvedSrc = ConvertPathToInternal( srcPath );
+		base.MoveDirectoryImpl( srcPath, destPath );
+		InvalidateParent( resolvedSrc );
+		InvalidateParent( ConvertPathToInternal( destPath ) );
+		_directoryCache.TryRemove( resolvedSrc, out _ );
+	}
+
+	protected override void MoveFileImpl( UPath srcPath, UPath destPath )
+	{
+		var resolvedSrc = ConvertPathToInternal( srcPath );
+		base.MoveFileImpl( srcPath, destPath );
+		InvalidateParent( resolvedSrc );
+		InvalidateParent( ConvertPathToInternal( destPath ) );
+	}
+
+	protected override void CopyFileImpl( UPath srcPath, UPath destPath, bool overwrite )
+	{
+		base.CopyFileImpl( srcPath, destPath, overwrite );
+		InvalidateParent( ConvertPathToInternal( destPath ) );
 	}
 
 	protected override Stream OpenFileImpl( UPath path, FileMode mode, FileAccess access, FileShare share )
 	{
-		var internalPath = ConvertPathToInternal( path );
-		var resolvedPath = ResolveCaseInsensitive( internalPath );
-		DebugLog( $"OpenFileImpl: UPath='{path}' -> internal='{internalPath}' -> resolved='{resolvedPath}'" );
-		try
-		{
-			return new FileStream( resolvedPath, mode, access, share );
-		}
-		catch ( Exception ex )
-		{
-			DebugLog( $"OpenFileImpl FAILED: {ex.GetType().Name}: {ex.Message}" );
-			throw;
-		}
+		var stream = base.OpenFileImpl( path, mode, access, share );
+
+		if ( mode is FileMode.Create or FileMode.CreateNew or FileMode.OpenOrCreate )
+			InvalidateParent( ConvertPathToInternal( path ) );
+
+		return stream;
 	}
 
-	protected override IEnumerable<UPath> EnumeratePathsImpl( UPath path, string searchPattern, SearchOption searchOption, SearchTarget searchTarget )
+	/// <summary>
+	/// Clear all caches (e.g. after external file changes).
+	/// </summary>
+	internal void InvalidateCache()
 	{
-		// Get the ORIGINAL internal path (before case resolution) from the base class
-		var originalInternalPath = base.ConvertPathToInternalImpl( path );
-		// Get the resolved path (with correct casing on disk)
-		var resolvedPath = ResolveCaseInsensitive( originalInternalPath );
-
-		DebugLog( $"EnumeratePathsImpl: UPath='{path}' -> originalInternal='{originalInternalPath}' -> resolved='{resolvedPath}', pattern='{searchPattern}'" );
-
-		// If the resolved path differs from the original internal path (case difference),
-		// we need to enumerate from the resolved path but return paths with original casing
-		// to satisfy SubFileSystem's path validation
-		if ( !string.Equals( originalInternalPath, resolvedPath, StringComparison.Ordinal ) )
-		{
-			return EnumerateWithOriginalCasing( path, originalInternalPath, resolvedPath, searchPattern, searchOption, searchTarget );
-		}
-
-		return base.EnumeratePathsImpl( path, searchPattern, searchOption, searchTarget );
-	}
-
-	private IEnumerable<UPath> EnumerateWithOriginalCasing( UPath originalPath, string internalPath, string resolvedPath, string searchPattern, SearchOption searchOption, SearchTarget searchTarget )
-	{
-		// Enumerate files from the actual (resolved) path on disk
-		IEnumerable<string> entries;
-		try
-		{
-			switch ( searchTarget )
-			{
-				case SearchTarget.File:
-					entries = Directory.EnumerateFiles( resolvedPath, searchPattern, searchOption );
-					break;
-				case SearchTarget.Directory:
-					entries = Directory.EnumerateDirectories( resolvedPath, searchPattern, searchOption );
-					break;
-				default: // Both
-					entries = Directory.EnumerateFileSystemEntries( resolvedPath, searchPattern, searchOption );
-					break;
-			}
-		}
-		catch ( DirectoryNotFoundException )
-		{
-			yield break;
-		}
-
-		foreach ( var entry in entries )
-		{
-			// Convert the resolved path back to the original casing
-			// e.g., /game/menu/Localization/en/file.json -> /game/menu/localization/en/file.json
-			var relativePart = entry.Substring( resolvedPath.Length );
-			var originalCasedPath = internalPath + relativePart;
-
-			// Convert back to UPath
-			var upath = ConvertPathFromInternal( originalCasedPath );
-			DebugLog( $"EnumerateWithOriginalCasing: '{entry}' -> '{originalCasedPath}' -> UPath='{upath}'" );
-			yield return upath;
-		}
-	}
-
-	protected override FileAttributes GetAttributesImpl( UPath path )
-	{
-		var internalPath = ConvertPathToInternal( path );
-		var resolvedPath = ResolveCaseInsensitive( internalPath );
-		DebugLog( $"GetAttributesImpl: UPath='{path}' -> internal='{internalPath}' -> resolved='{resolvedPath}'" );
-		return File.GetAttributes( resolvedPath );
+		_directoryCache.Clear();
+		_resolvedPathCache.Clear();
 	}
 }
-

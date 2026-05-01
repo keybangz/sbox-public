@@ -50,7 +50,7 @@ public partial class Texture : Resource, IDisposable
 
 	~Texture()
 	{
-		Dispose();
+		Destroy();
 	}
 
 	/// <summary>
@@ -66,14 +66,24 @@ public partial class Texture : Resource, IDisposable
 	/// </summary>
 	internal void CopyFrom( Texture texture )
 	{
-		// Important - dispose the old handle, we're done with it!
-		// if we don't do this, we'll leak memory!
-		Dispose();
+		if ( !native.IsNull )
+		{
+			var n = native;
+			native = IntPtr.Zero;
+
+			// Evict from NativeResourceCache so a new wrapper can be created
+			// if the same native pointer is reused (e.g. RenderTarget pool, TextBlock rebuild).
+			NativeResourceCache.Remove( n.GetBindingPtr().ToInt64() );
+
+			MainThread.Queue( () => n.DestroyStrongHandle() );
+		}
 
 		// Copy the handle from the other texture.
 		// Important - we can't just use the handle because when
 		// they release it, it'll be a hanging pointer!
 		native = texture.native.CopyStrongHandle();
+
+		UpdateSheetInfo();
 
 		gotdesc = false;
 		_desc = default;
@@ -146,13 +156,7 @@ public partial class Texture : Resource, IDisposable
 		}
 	}
 
-	/// <summary>
-	/// Will release the handle for this texture. If the texture isn't referenced by anything
-	/// else it'll be released properly. This will happen anyway because it's called in the destructor.
-	/// By calling it manually you're just telling the engine you're done with this texture right now
-	/// instead of waiting for the garbage collector.
-	/// </summary>
-	public void Dispose()
+	internal override void Destroy()
 	{
 		if ( !native.IsNull )
 		{
@@ -216,6 +220,19 @@ public partial class Texture : Resource, IDisposable
 				Log.Error( $"[Texture] Exception during texture disposal: {ex.Message}" );
 			}
 		}
+
+		base.Destroy();
+	}
+
+	/// <summary>
+	/// Will release the handle for this texture. If the texture isn't referenced by anything
+	/// else it'll be released properly. This will happen anyway because it's called in the destructor.
+	/// By calling it manually you're just telling the engine you're done with this texture right now
+	/// instead of waiting for the garbage collector.
+	/// </summary>
+	public void Dispose()
+	{
+		Destroy();
 	}
 
 	internal void TryReload( BaseFileSystem filesystem, string filename )
@@ -347,6 +364,14 @@ public partial class Texture : Resource, IDisposable
 		if ( texture is not null && texture != this )
 		{
 			this.CopyFrom( texture );
+
+			// update any animation instance (eg for gifs) to point to this as well
+			if ( Animations.FirstOrDefault( x => x.Texture.TryGetTarget( out var t ) && ReferenceEquals( t, texture ) ) is { } animation )
+			{
+				animation.Texture.SetTarget( this );
+			}
+
+			texture.Dispose();
 		}
 
 		IsLoaded = true;

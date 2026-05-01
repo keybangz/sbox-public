@@ -112,6 +112,7 @@ public partial class Package
 				{
 					await DownloadFileAsync( e, fs, progressCallback, token );
 				}
+				catch ( OperationCanceledException ) { }
 				catch ( Exception ex )
 				{
 					Log.Warning( ex, $"Error when downloading {FullIdent}/{e.File.Url}" );
@@ -278,8 +279,8 @@ public partial class Package
 	{
 		SentrySdk.AddBreadcrumb( $"Mounting {this.FullIdent}", "package.mount" );
 
-		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
-		var fs = await ServerPackages.Current.DownloadAndMount( FullIdent ).ConfigureAwait( false );
+		int? version = Revision?.VersionId > 0 ? (int)Revision.VersionId : null;
+		var fs = await ServerPackages.Current.DownloadAndMount( FormatIdent( Org.Ident, Ident, version, !IsRemote ) );
 		if ( fs is null ) return default;
 
 		if ( withCode )

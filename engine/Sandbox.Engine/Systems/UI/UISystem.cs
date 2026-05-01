@@ -3,7 +3,6 @@ using Sandbox.Internal;
 using Sandbox.Modals;
 using Sandbox.Rendering;
 using Sandbox.UI;
-using Sandbox.VR;
 using System.Threading;
 
 namespace Sandbox;
@@ -13,9 +12,9 @@ namespace Sandbox;
 /// </summary>
 internal class UISystem
 {
-	internal ThreadLocal<PanelRenderer> Renderer = new( () => new PanelRenderer() );
+	internal PanelRenderer Renderer = new();
 
-	internal PanelInput Input { get; } = new();
+	internal PanelInput Input { get; set; } = new();
 
 	internal readonly CommandList GlobalCommandList = new();
 
@@ -140,17 +139,17 @@ internal class UISystem
 			RunDeferredDeletion();
 		}
 
-		_simPhaseStopwatch.Restart();
-		using ( Performance.Scope( "Build Command Lists" ) )
+		using ( Performance.Scope( "Build Descriptors" ) )
 		{
-			BuildCommandLists();
+			BuildDescriptors();
 		}
 		if ( _simPhaseStopwatch.Elapsed.TotalMilliseconds > SimPhaseThresholdMs )
 			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] UI.BuildCommandLists took {_simPhaseStopwatch.Elapsed.TotalMilliseconds:F0}ms\n" );
 
-		using ( Performance.Scope( "Gather Command Lists" ) )
+		using ( Performance.Scope( "Build Command Lists" ) )
 		{
-			GatherCommandLists();
+			PanelRenderer.Stats.Reset();
+			BuildCommandLists();
 		}
 
 		using ( Performance.Scope( "Combine Command Lists" ) )
@@ -219,26 +218,28 @@ internal class UISystem
 		}
 	}
 
-	internal void BuildCommandLists()
+	internal void BuildDescriptors()
 	{
 		for ( int i = 0; i < RootPanels.Count; i++ )
 		{
 			var root = RootPanels[i];
 			if ( !root.IsValid ) continue;
 
-			root.BuildCommandLists();
+			root.BuildDescriptors();
 		}
 	}
 
-	internal void GatherCommandLists()
+	internal void BuildCommandLists()
 	{
+		Renderer.AdvanceFrame();
+
 		for ( int i = 0; i < RootPanels.Count; i++ )
 		{
 			var root = RootPanels[i];
 			if ( !root.IsValid ) continue;
 			if ( root.RenderedManually ) continue;
 
-			root.GatherCommandLists();
+			root.BuildCommandList();
 		}
 	}
 
@@ -435,22 +436,48 @@ internal class UISystem
 		}
 	}
 
+	internal void OnLanguageChanged()
+	{
+		for ( int i = 0; i < RootPanels.Count(); i++ )
+		{
+			if ( !RootPanels[i].IsValid ) continue;
+			RootPanels[i].LanguageChanged();
+		}
+	}
+
 	internal void Clear()
 	{
+		// Clear any dangling tooltip panel references before destroying the tree.
+		TooltipSystem.Clear();
+
+		// Use immediate deletion so child panels are recursively cleaned up
+		// right now. The default (deferred) path just queues an outro
+		// animation and adds to DeletionList — but during shutdown there
+		// is no next frame to process deferred deletions, so child panels
+		// and their owned textures (gradients, text blocks, avatars) would
+		// survive until GC, leaving native strong handles un-released.
 		foreach ( var rp in RootPanels.ToArray() )
 		{
 			try
 			{
-				rp.Delete();
+				rp.Delete( immediate: true );
 			}
 			catch ( System.Exception e )
 			{
 				Log.Warning( e );
 			}
-
-			rp.RemoveFromLists();
 		}
 
 		RootPanels.Clear();
+		DeletionList.Clear();
+
+		// Drop the entire input subsystem — replaces it wholesale so we
+		// don't need to chase individual panel references inside PanelInput,
+		// MouseButtonState, InputEventQueue, etc.
+		Input = new();
+		InputEventQueue = new();
+		Renderer = new();
+		CurrentFocus = null;
+		NextFocus = null;
 	}
 }

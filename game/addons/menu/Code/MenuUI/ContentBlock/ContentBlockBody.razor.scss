@@ -1,8 +1,13 @@
-﻿@import "/styles/_Theme.scss";
+@import "/styles/_theme.scss";
+
+$mask-w: 100px;
+$mask-w-padded: 132px; // + 32px
 
 ContentBlockBody
 {
 	position: relative;
+	width: 100%;
+	max-width: 100%;
 
 	&:hover
 	{
@@ -14,12 +19,54 @@ ContentBlockBody
 		}
 	}
 
+	> .content-wrapper
+	{
+		padding-top: 16px;
+		padding-bottom: 48px;
+	}
+
 	> .content
 	{
+		margin-left: -$mask-w;
+		margin-right: -$mask-w;
+		padding-left: $mask-w-padded;
+		padding-right: $mask-w-padded;
+		padding-top: 16px;
+		padding-bottom: 16px;
 		overflow-x: scroll;
 		overflow-y: hidden;
 		gap: 1rem;
-		padding: 0 32px;
+	}
+
+	> .overlay
+	{
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
+		z-index: 98;
+
+		.fade-left
+		{
+			position: absolute;
+			left: -$mask-w;
+			width: calc($mask-w + 38px);
+			height: 100%;
+			background-color: $default-950;
+			mask: linear-gradient( to left, black 0%, white 90%);
+		}
+
+		.fade-right
+		{
+			position: absolute;
+			right: -$mask-w;
+			width: calc($mask-w + 38px);
+			height: 100%;
+			background-color: $default-950;
+			mask: linear-gradient( to right, black 0%, white 90%);
+		}
 	}
 
 	> .nav-button
@@ -46,12 +93,12 @@ ContentBlockBody
 
 		&:active
 		{
-			sound-in: ui.button.press;
+			sound-in: "ui.button.press";
 		}
 
 		&:hover
 		{
-			sound-in: ui.button.over;
+			sound-in: "ui.button.over";
 			background-color: $default-800;
 
 			.icon
@@ -62,12 +109,12 @@ ContentBlockBody
 
 		&.left
 		{
-			left: 12px;
+			left: 16px;
 		}
 
 		&.right
 		{
-			right: 12px;
+			right: 16px;
 		}
 	}
 }

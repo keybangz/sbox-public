@@ -10,6 +10,11 @@ public class GameTags : ITagSet
 	private HashSet<uint> _lazyTokens;
 	private HashSet<string> _lazyTags;
 
+	// Cache all our tokens and ancestors when dirty.
+	HashSet<uint> _allTokens;
+	bool _tokensDirty = true;
+	GameObject _cachedParent;
+
 	private HashSet<uint> _tokens => _lazyTokens ??= new();
 	private HashSet<string> _tags => _lazyTags ??= new HashSet<string>( StringComparer.OrdinalIgnoreCase );
 
@@ -183,15 +188,16 @@ public class GameTags : ITagSet
 		if ( !target.IsValid )
 			return;
 
+		_tokensDirty = true;
+		_allTokens = null;
+
 		target.OnTagsUpdatedInternal();
 
-		// make all our children dirty too
 		foreach ( var c in target.Children )
 		{
 			c.Tags.MarkDirty();
 		}
 	}
-
 
 	[System.Obsolete( "No need to call this now, tags are set immediately" )]
 	public void Flush()
@@ -202,7 +208,54 @@ public class GameTags : ITagSet
 	/// <summary>
 	/// Returns a list of ints, representing the tags. These are used internally by the engine.
 	/// </summary>
-	public override IReadOnlySet<uint> GetTokens() => _lazyTokens ?? EmptyTokens;
+	public override IReadOnlySet<uint> GetTokens()
+	{
+		var parent = target.Parent;
+
+		if ( parent is null || parent is Scene )
+		{
+			if ( !_tokensDirty && _allTokens != null )
+				return _allTokens;
+
+			_allTokens = _lazyTokens;
+			_tokensDirty = false;
+
+			return _lazyTokens ?? EmptyTokens;
+		}
+
+		if ( parent != _cachedParent )
+		{
+			_cachedParent = parent;
+			_tokensDirty = true;
+		}
+
+		if ( !_tokensDirty && _allTokens is not null )
+			return _allTokens;
+
+		var parentTokens = parent.Tags.GetTokens();
+
+		if ( _lazyTokens is null || _lazyTokens.Count == 0 )
+		{
+			_tokensDirty = false;
+			return parentTokens;
+		}
+
+		if ( parentTokens.Count == 0 )
+		{
+			_allTokens = _lazyTokens;
+			_tokensDirty = false;
+			return _lazyTokens;
+		}
+
+		// Build into a local first so _allTokens is never visible to other threads in a
+		// partially-constructed state (a single reference write is atomic on all CLR platforms).
+		var merged = new HashSet<uint>( parentTokens );
+		merged.UnionWith( _lazyTokens );
+		_allTokens = merged;
+
+		_tokensDirty = false;
+		return merged;
+	}
 
 	/// <summary>
 	/// Get all potential suggested tags that someone might want to add to this set.

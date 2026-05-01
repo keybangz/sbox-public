@@ -24,6 +24,10 @@ class BinauralEffect : IDisposable
 
 	internal BinauralEffect()
 	{
+		// We self-compile Steam Audio with Binaural Effect on Windows, don't bother on other platforms for now
+		if ( !OperatingSystem.IsWindows() )
+			return;
+
 		if ( snd_steamaudio && _steamAudioAvailable )
 		{
 			_native = CBinauralEffect.Create();

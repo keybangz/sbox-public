@@ -86,7 +86,6 @@ public partial class TextEntry : BaseControl
 		set => Label.CaretPosition = value;
 	}
 
-	public override bool HasContent => true;
 
 	/// <summary>
 	/// Whether to allow automatic replacement of emoji codes with their actual unicode emoji characters. See <see cref="Emoji"/>.
@@ -242,6 +241,12 @@ public partial class TextEntry : BaseControl
 	{
 		// dont' send to parent
 		e.StopPropagation = true;
+	}
+
+	protected override void OnEscape( PanelEvent e )
+	{
+		Cancel();
+		e.StopPropagation();
 	}
 
 
@@ -411,14 +416,7 @@ public partial class TextEntry : BaseControl
 
 		if ( button == "escape" )
 		{
-			if ( AutoCompletePanel.IsValid() )
-			{
-				AutoCompleteCancel();
-				return;
-			}
-
-			Blur();
-			CreateEvent( "oncancel" );
+			Cancel();
 			return;
 		}
 
@@ -433,6 +431,18 @@ public partial class TextEntry : BaseControl
 		}
 
 		base.OnButtonTyped( e );
+	}
+
+	void Cancel()
+	{
+		if ( AutoCompletePanel.IsValid() )
+		{
+			AutoCompleteCancel();
+			return;
+		}
+
+		Blur();
+		CreateEvent( "oncancel" );
 	}
 
 	protected override void OnMouseDown( MousePanelEvent e )
@@ -531,7 +541,7 @@ public partial class TextEntry : BaseControl
 	}
 
 
-	public override void BuildContentCommandList( CommandList commandList, ref RenderState state )
+	public override void OnDraw()
 	{
 		Label.ShouldDrawSelection = HasFocus;
 
@@ -547,7 +557,7 @@ public partial class TextEntry : BaseControl
 			var color = ComputedStyle.CaretColor ?? ComputedStyle.FontColor ?? Color.Black;
 			color.a *= blink ? 1.0f : 0f;
 
-			commandList.DrawQuad( caret, Material.UI.Box, color );
+			Draw.Rect( caret, color );
 		}
 
 		MarkRenderDirty();

@@ -109,15 +109,9 @@ internal static partial class Api
 				_ = Sandbox.Services.Messaging.Initialize( result.MessagingEndpoint );
 			}
 		}
-		catch ( ApiException apiException )
-		{
-			Log.Warning( apiException, $"Error getting account information ({apiException.Message})" );
-		}
-		catch ( InvalidOperationException e )
+		catch ( Exception e )
 		{
 			Log.Warning( e, $"Error getting account information ({e.Message})" );
-
-			return default;
 		}
 		finally
 		{
@@ -127,11 +121,11 @@ internal static partial class Api
 		if ( result.Id == 0 )
 		{
 			Log.Warning( "No account information - starting in offline mode.." );
-			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
-			await Task.Delay( 1000 ).ConfigureAwait( false );
+			await Task.Delay( 1000 );
 			return default;
 		}
 
+		IsConnected = true;
 		return result;
 	}
 

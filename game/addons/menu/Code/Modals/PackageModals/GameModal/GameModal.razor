@@ -53,7 +53,7 @@
 
             @if (achList is not null)
             {
-                <h2>Achievements</h2>
+                <Label class="eyebrow">Achievements</Label>
                 <PortalButton Portal=@Portal>
                     <Button>
                         <AchievementSummary Package="@Package"></AchievementSummary>
@@ -97,8 +97,7 @@
 
     void OnLobbySelected ( LobbyInformation lobby )
     {
-        Networking.Connect(lobby.LobbyId);
-        CloseModal(true);
+        MenuUtility.Connect( lobby.LobbyId );
         OrganizationModal.LastOpened?.CloseModal( true );
     }
 

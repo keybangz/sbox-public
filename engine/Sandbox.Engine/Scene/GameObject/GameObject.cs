@@ -1,5 +1,4 @@
 ﻿using System.Runtime.CompilerServices;
-using Sandbox.ActionGraphs;
 using System.Threading;
 
 namespace Sandbox;
@@ -327,12 +326,21 @@ public partial class GameObject : IJsonConvert, IComponentLister, BytePack.ISeri
 		UpdateNetworkRoot();
 
 		//
+		// We might become (in)active now. oldParent is null during the constructor, we don't want
+		// to update enabled status there.
+		//
+		if ( oldParent is not null && Enabled && oldParent.Active != parent.Active )
+		{
+			UpdateEnabledStatus();
+		}
+
+		//
 		// Let components react to this
 		//
 		Components.ForEach( "OnParentChanged", false, c => c.OnParentChangedInternal( oldParent, parent ) );
 
 		// We should tell our children and they should tell their children, propogate it down
-		// as like a OnHeirachyChanged or something
+		// as like a OnHierarchyChanged or something
 	}
 
 	[ActionGraphInclude( AutoExpand = true )]
@@ -709,7 +717,7 @@ public partial class GameObject : IJsonConvert, IComponentLister, BytePack.ISeri
 	/// Get the GameObject after us,
 	/// </summary>
 	[ActionGraphInclude, Pure]
-	public GameObject GetNextSibling( bool enabledOnly, GameObjectFlags withoutFlags = GameObjectFlags.None )
+	public GameObject GetNextSibling( bool enabledOnly )
 	{
 		if ( Parent is null ) return null;
 		var myIndex = Parent.Children.IndexOf( this );
@@ -719,7 +727,6 @@ public partial class GameObject : IJsonConvert, IComponentLister, BytePack.ISeri
 		{
 			if ( Parent.Children[i] is null ) continue;
 			if ( enabledOnly && !Parent.Children[i].Enabled ) continue;
-			if ( withoutFlags != GameObjectFlags.None && (Parent.Children[i].Flags & withoutFlags) != 0 ) continue;
 			return Parent.Children[i];
 		}
 

@@ -36,6 +36,8 @@ internal static class Bootstrap
 		{
 			InitMinimal( EngineGlobal.GetGameRootFolder() );
 
+			DLLImportResolver.SetupResolvers();
+
 			StartupTiming = new Api.Events.EventRecord( $"StartupTiming.{(Application.IsEditor ? "Editor" : (Application.IsHeadless ? "Server" : "Game"))}" );
 			StartupTiming.StartTimer( "Time" );
 
@@ -191,18 +193,7 @@ internal static class Bootstrap
 			//
 			VRSystem.Init();
 
-			//
-			// Init common engine shit
-			//
-			{
-				Screen.UpdateFromEngine();
-				Material.UI.InitStatic();
-				Gizmo.GizmoDraw.InitStatic();
-				Model.InitStatic();
-				Texture.InitStatic();
-				CubemapRendering.InitStatic();
-				Graphics.InitStatic();
-			}
+			Screen.UpdateFromEngine();
 
 			if ( !Application.IsHeadless && !Application.IsStandalone )
 			{
@@ -225,7 +216,7 @@ internal static class Bootstrap
 				SyncContext.RunBlocking( IGameInstanceDll.Current.Initialize() );
 			}
 
-			if ( SteamClient.IsValid )
+			if ( SteamClient.IsValid && ErrorReporter.IsUsingSentry )
 			{
 				SentrySdk.ConfigureScope( scope =>
 				{

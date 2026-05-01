@@ -2,6 +2,7 @@
 @import '/styles/mainmenu.scss';
 
 .mainmenu {
+	position: relative;
     flex-direction: column;
     font-size: 14px;
     width: 100%;
@@ -10,9 +11,14 @@
 }
 
 .tooltip {
+    pointer-events: none;
     background-color: #656e7e;
     font-family: Poppins;
     border: none;
+
+    * {
+        pointer-events: none;
+    }
 }
 
 .page {
@@ -41,39 +47,23 @@ NavigationHost {
 
 .navigator-canvas {
     flex-grow: 1;
-
     z-index: 0;
 }
 
-card {
-    @include border;
-    background-color: $default-950;
-    border-radius: $rounding-default;
-    padding: 20px;
-    width: 100%;
-    max-width: 400px;
-    flex-direction: column;
+.overlay
+{
+	position: absolute;
+	left: 0;
+	right: 0;
+	height: 100%;
+	width: 100%;
 
-    .title {
-        font-size: $text-heading;
-        font-weight: 700;
-        color: $default-text;
-    }
-
-    .description {
-        font-size: $text-regular;
-        color: $default-text-light;
-        flex-grow: 1;
-    }
-
-    Button {
-        align-self: flex-start;
-        padding: 8px 12px;
-
-        &:hover {
-            cursor: pointer;
-            border-radius: $rounding-default;
-            background-color: $default-950;
-        }
-    }
+	> .overlay-container
+	{
+		position: relative;
+		max-width: $screen-w-xl;
+		margin: 0 auto;
+		width: 100%;
+		align-items: center;
+	}
 }

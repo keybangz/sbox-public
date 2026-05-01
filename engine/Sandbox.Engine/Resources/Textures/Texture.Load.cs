@@ -293,13 +293,18 @@ public partial class Texture
 	/// </summary>
 	public static async Task<Texture> LoadFromFileSystemAsync( string filepath, BaseFileSystem filesystem, bool warnOnMissing = true )
 	{
+		// Capture the context's cancellation token now, before awaiting.
+		// GlobalContext.Current is AsyncLocal and flows correctly here
+		// (before the first await), but may not be correct after awaiting
+		// if the scope was disposed by the caller.
+		var ct = GlobalContext.Current.CancellationTokenSource?.Token ?? default;
+
 		var t = LoadInternal( filesystem, filepath, warnOnMissing );
 		if ( t == null ) return null;
 
 		while ( !t.IsLoaded )
 		{
-			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
-			await Task.Delay( 10 ).ConfigureAwait( false );
+			await Task.Delay( 10, ct );
 		}
 
 		return t;
