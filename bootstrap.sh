@@ -115,9 +115,20 @@ cleanup_dotnet_processes() {
 echo "Pre-build cleanup..."
 cleanup_dotnet_processes
 
+mkdir -p $PWD/.wine
+WINEPREFIX=$PWD/.wine
+
+# wget https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.203/dotnet-sdk-10.0.203-win-x86.exe && \
+# 	wine dotnet-sdk-10.0.203-win-x86.exe /install /quiet && \
+# 	rm dotnet-sdk-10.0.203-win-x86.exe
+
+# winetricks -q powershell cmake mingw 7zip cabinet
+# winetricks -q d3dxof dxdiag dxvk dxvk_async dxvk_nvapi
+
 echo "Building..."
 dotnet run --project ./engine/Tools/SboxBuild/SboxBuild.csproj -- build --config Developer
-dotnet run --project ./engine/Tools/SboxBuild/SboxBuild.csproj -- build-shaders
+wine dotnet run --project ./engine/Tools/SboxBuild/SboxBuild.csproj -- build-shaders
+wine dotnet run --project ./engine/Tools/SboxBuild/SboxBuild.csproj -- build-content
 
 # Cleanup after build, before wine
 echo "Post-build cleanup (before wine)..."
@@ -125,6 +136,7 @@ cleanup_dotnet_processes
 
 #HACK: Currently Facepunch doesn't ship native binary for contentbuilder. Run this instead via wine.
 wine game/bin/win64/contentbuilder.exe -b game
+
 
 # Run DXC wrapper setup after build (needs libdxcompiler.so to exist first)
 setup_dxc_wrapper
