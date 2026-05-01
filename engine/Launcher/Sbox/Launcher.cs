@@ -5,20 +5,31 @@ namespace Sandbox;
 
 public static class Launcher
 {
+	private static bool FileDebugLoggingEnabled =>
+		string.Equals( Environment.GetEnvironmentVariable( "SBOX_LAUNCHER_DEBUG" ), "1", StringComparison.Ordinal );
+
+	private static void WriteDebugFileLine( string message )
+	{
+		if ( !FileDebugLoggingEnabled )
+			return;
+
+		System.IO.File.AppendAllText( "/tmp/launcher_debug.txt", $"{message}\n" );
+	}
+
 	public static int Main()
 	{
 		Console.WriteLine( "[Launcher] Starting GameAppSystem!" );
-		System.IO.File.AppendAllText( "/tmp/launcher_debug.txt", $"[Launcher] Starting GameAppSystem\n" );
+		WriteDebugFileLine( "[Launcher] Starting GameAppSystem" );
 
 		var appSystem = new GameAppSystem();
 
 		Console.WriteLine( "[Launcher] Calling appSystem.Run()!" );
-		System.IO.File.AppendAllText( "/tmp/launcher_debug.txt", $"[Launcher] Calling appSystem.Run()\n" );
+		WriteDebugFileLine( "[Launcher] Calling appSystem.Run()" );
 
 		appSystem.Run();
 
 		Console.WriteLine( "[Launcher] appSystem.Run() returned!" );
-		System.IO.File.AppendAllText( "/tmp/launcher_debug.txt", $"[Launcher] appSystem.Run() returned\n" );
+		WriteDebugFileLine( "[Launcher] appSystem.Run() returned" );
 
 		return 0;
 	}

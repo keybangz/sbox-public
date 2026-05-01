@@ -327,11 +327,11 @@ internal class DownloadPublicArtifacts( string name, bool nativeBinariesOnly = f
 		}
 		catch ( IOException ex )
 		{
-			// File is locked by another process - treat as matching since it exists
-			// and is actively in use (likely already correctly downloaded)
-			Log.Info( $"File {path} is locked by another process, assuming it matches: {ex.Message}" );
+			// File is locked or unreadable - treat as non-matching so it gets re-downloaded.
+			// Do not silently assume the file is correct; a locked/incomplete file should be retried.
+			Log.Warning( $"File {path} could not be read (locked or incomplete), will re-download: {ex.Message}" );
 			isLocked = true;
-			return true;
+			return false;
 		}
 		catch ( Exception ex )
 		{

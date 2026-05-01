@@ -341,20 +341,16 @@ internal class ExpirableSynchronizationContext : SynchronizationContext
 
 	private static int _postCount = 0;
 	private static int _globalOp = 0;
+	private static bool SyncDebugLogging => System.Environment.GetEnvironmentVariable( "SBOX_SYNC_DEBUG" ) == "1";
 
 	public override void Post( SendOrPostCallback d, object state )
 	{
-		_postCount++;
-		var op = System.Threading.Interlocked.Increment( ref _globalOp );
 		var target = GetCurrentContext();
 		if ( !CheckValid( state, out var isCancelled ) ) return;
 
 		var data = new Data( d, state, isCancelled ? this : target );
 
-		var writeResult = target.m_queue.Writer.TryWrite( data );
-		// Log all posts to help debug Linux freeze issues
-		var threadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
-		System.IO.File.AppendAllText( "/tmp/sync_ops_debug.txt", $"[OP#{op}] POST #{_postCount} TryWrite={writeResult} QueueCount={target.m_queue.Reader.Count} Thread={threadId}\n" );
+		target.m_queue.Writer.TryWrite( data );
 	}
 
 	public void Expire( ExpirableSynchronizationContext newInstance )
@@ -401,12 +397,6 @@ internal class ExpirableSynchronizationContext : SynchronizationContext
 	public void ProcessQueue()
 	{
 		_processQueueCount++;
-		var queueCount = m_queue.Reader.Count;
-		if ( _processQueueCount <= 5 || queueCount > 0 )
-		{
-			var op = System.Threading.Interlocked.Increment( ref _globalOp );
-			System.IO.File.AppendAllText( "/tmp/sync_ops_debug.txt", $"[OP#{op}] PROCESSQUEUE #{_processQueueCount} QueueCount={queueCount}\n" );
-		}
 		if ( _sCurrentProcessingContext != null )
 		{
 			return;
@@ -449,11 +439,14 @@ internal class ExpirableSynchronizationContext : SynchronizationContext
 				{
 					_callbackStopwatch.Restart();
 					data.Callback( data.State );
-					var elapsed = _callbackStopwatch.Elapsed.TotalMilliseconds;
-					if ( elapsed > CallbackThresholdMs )
+					if ( SyncDebugLogging )
 					{
-						var name = data.State is Delegate deleg ? deleg.ToSimpleString() : data.State?.GetType()?.Name ?? "unknown";
-						System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] SyncContext callback took {elapsed:F0}ms: {name}\n" );
+						var elapsed = _callbackStopwatch.Elapsed.TotalMilliseconds;
+						if ( elapsed > CallbackThresholdMs )
+						{
+							var name = data.State is Delegate deleg ? deleg.ToSimpleString() : data.State?.GetType()?.Name ?? "unknown";
+							System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] SyncContext callback took {elapsed:F0}ms: {name}\n" );
+						}
 					}
 				}
 				catch ( TaskCanceledException )

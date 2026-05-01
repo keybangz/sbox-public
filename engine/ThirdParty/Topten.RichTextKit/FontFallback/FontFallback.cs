@@ -67,7 +67,7 @@ namespace Topten.RichTextKit
 		/// <returns>A sequence of runs with unsupported code points replaced by a selected font fallback</returns>
 		public static IEnumerable<Run> GetFontRuns( Slice<int> codePoints, SKTypeface typeface, char replacementCharacter = '\0' )
 		{
-			// Ensure typeface is not null
+			// Ensure typeface is not null; track whether we created it so we can dispose it later
 			SKTypeface createdTypeface = null;
 			if ( typeface == null )
 			{
@@ -87,7 +87,9 @@ namespace Topten.RichTextKit
 				}
 			}
 
-			using var font = new SKFont( typeface );
+			try
+			{
+				using var font = new SKFont( typeface );
 
 			if ( replacementCharacter != '\0' )
 			{
@@ -205,6 +207,12 @@ namespace Topten.RichTextKit
 					Length = codePoints.Length - runStart,
 					Typeface = typeface,
 				};
+			}
+			}
+			finally
+			{
+				// Dispose the typeface we created (not the caller-supplied one)
+				createdTypeface?.Dispose();
 			}
 		}
 	}

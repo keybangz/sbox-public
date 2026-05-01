@@ -277,22 +277,25 @@ public sealed class PanelStyle : Styles
 		BackgroundImage = texture;
 	}
 
+	// Monotonically-increasing token: incremented each time a new image load is requested.
+	// The async callback only applies its result if the token hasn't advanced since the load started.
+	private int _backgroundImageVersion = 0;
+
 	public void SetBackgroundImage( string image )
 	{
-		// Use async loading to prevent blocking the main thread
-		// This is especially important for URL-based images
-		_ = SetBackgroundImageInternalAsync( image );
+		// Increment the version so any in-flight load for a previous image is ignored
+		var version = System.Threading.Interlocked.Increment( ref _backgroundImageVersion );
+		_ = SetBackgroundImageInternalAsync( image, version );
 	}
 
-	private async Task SetBackgroundImageInternalAsync( string image )
+	private async Task SetBackgroundImageInternalAsync( string image, int version )
 	{
 		try
 		{
-			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
 			var texture = await Texture.LoadAsync( image ).ConfigureAwait( false );
 
-			// Check if panel is still valid before setting
-			if ( panel != null && panel.IsValid )
+			// Only apply if this is still the most-recently requested image and the panel is valid
+			if ( _backgroundImageVersion == version && panel != null && panel.IsValid )
 			{
 				SetBackgroundImage( texture );
 			}
@@ -305,7 +308,6 @@ public sealed class PanelStyle : Styles
 
 	public async Task SetBackgroundImageAsync( string image )
 	{
-		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
 		var texture = await Texture.LoadAsync( image ).ConfigureAwait( false );
 		if ( panel != null && panel.IsValid )
 		{

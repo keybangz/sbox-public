@@ -144,11 +144,6 @@ class BackendHttpHandler : DelegatingHandler
 		eventRecord.SetValue( "method", request.Method.ToString() );
 		using var timer = eventRecord.ScopeTimer( "ms" );
 
-		// Debug: log HTTP request timing
-		var threadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
-		var isMainThread = ThreadSafe.IsMainThread;
-		System.IO.File.AppendAllText( "/tmp/http_debug.txt", $"[HTTP] START {request.Method} {url} Thread={threadId} IsMain={isMainThread}\n" );
-
 		if ( backend_debug )
 		{
 			Log.Info( $"[Api] [{request.Method}] {url}" );
@@ -161,10 +156,7 @@ class BackendHttpHandler : DelegatingHandler
 		AddHeaders( request );
 
 		tries++;
-		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
-		System.IO.File.AppendAllText( "/tmp/http_debug.txt", $"[HTTP] AWAIT START {url} Thread={System.Threading.Thread.CurrentThread.ManagedThreadId}\n" );
 		var response = await base.SendAsync( request, cancellationToken ).ConfigureAwait( false );
-		System.IO.File.AppendAllText( "/tmp/http_debug.txt", $"[HTTP] AWAIT COMPLETE {url} Thread={System.Threading.Thread.CurrentThread.ManagedThreadId} Status={response.StatusCode}\n" );
 
 		if ( backend_debug )
 		{

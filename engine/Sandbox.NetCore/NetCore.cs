@@ -19,6 +19,17 @@ using System.Runtime.InteropServices;
 
 internal static class NetCore
 {
+	private static bool DebugLoggingEnabled =>
+		string.Equals( System.Environment.GetEnvironmentVariable( "SBOX_NETCORE_DEBUG" ), "1", StringComparison.Ordinal );
+
+	private static void DebugLog( string message )
+	{
+		if ( !DebugLoggingEnabled )
+			return;
+
+		System.IO.File.AppendAllText( "/tmp/netcore_debug.txt", message + "\n" );
+	}
+
 	// Delegate type for the entry point
 	[UnmanagedFunctionPointer( CallingConvention.Cdecl )]
 	public delegate int InitializeEngineDelegate( IntPtr gameFolderPtr );
@@ -28,36 +39,36 @@ internal static class NetCore
 	{
 		try
 		{
-			System.IO.File.AppendAllText( "/tmp/netcore_debug.txt", "[NetCore] InitializeEngineImpl called\n" );
+			DebugLog( "[NetCore] InitializeEngineImpl called" );
 
 			var gameFolder = Marshal.PtrToStringUTF8( gameFolderPtr );
-			System.IO.File.AppendAllText( "/tmp/netcore_debug.txt", $"[NetCore] gameFolder={gameFolder}\n" );
+			DebugLog( $"[NetCore] gameFolder={gameFolder}" );
 
 			// Use Path.Combine for cross-platform compatibility
 			var managedFolder = System.IO.Path.Combine( gameFolder, "bin", "managed" );
-			System.IO.File.AppendAllText( "/tmp/netcore_debug.txt", $"[NetCore] managedFolder={managedFolder}\n" );
+			DebugLog( $"[NetCore] managedFolder={managedFolder}" );
 
 			var assemblyPath = System.IO.Path.Combine( managedFolder, "Sandbox.Engine.dll" );
-			System.IO.File.AppendAllText( "/tmp/netcore_debug.txt", $"[NetCore] Loading assembly: {assemblyPath}\n" );
+			DebugLog( $"[NetCore] Loading assembly: {assemblyPath}" );
 
 			var assembly = Assembly.LoadFrom( assemblyPath );
-			System.IO.File.AppendAllText( "/tmp/netcore_debug.txt", $"[NetCore] Assembly loaded: {assembly.FullName}\n" );
+			DebugLog( $"[NetCore] Assembly loaded: {assembly.FullName}" );
 
 			var type = assembly.GetTypes().Where( x => x.Name == "NetCore" ).FirstOrDefault();
-			System.IO.File.AppendAllText( "/tmp/netcore_debug.txt", $"[NetCore] Found type: {type?.FullName}\n" );
+			DebugLog( $"[NetCore] Found type: {type?.FullName}" );
 
 			var method = type.GetMethod( "InitializeInterop", BindingFlags.Static | BindingFlags.NonPublic );
-			System.IO.File.AppendAllText( "/tmp/netcore_debug.txt", $"[NetCore] Found method: {method?.Name}\n" );
+			DebugLog( $"[NetCore] Found method: {method?.Name}" );
 
-			System.IO.File.AppendAllText( "/tmp/netcore_debug.txt", "[NetCore] Invoking InitializeInterop...\n" );
+			DebugLog( "[NetCore] Invoking InitializeInterop..." );
 			method.Invoke( null, new object[] { gameFolder } );
-			System.IO.File.AppendAllText( "/tmp/netcore_debug.txt", "[NetCore] InitializeInterop completed\n" );
+			DebugLog( "[NetCore] InitializeInterop completed" );
 
 			return 0;
 		}
 		catch ( Exception ex )
 		{
-			System.IO.File.AppendAllText( "/tmp/netcore_debug.txt", $"[NetCore] ERROR: {ex}\n" );
+			DebugLog( $"[NetCore] ERROR: {ex}" );
 			return -1;
 		}
 	}
@@ -66,7 +77,7 @@ internal static class NetCore
 	[UnmanagedCallersOnly( CallConvs = new[] { typeof( System.Runtime.CompilerServices.CallConvCdecl ) } )]
 	public static int InitializeEngine( IntPtr gameFolderPtr )
 	{
-		System.IO.File.AppendAllText( "/tmp/netcore_debug.txt", "[NetCore] InitializeEngine called\n" );
+		DebugLog( "[NetCore] InitializeEngine called" );
 		return InitializeEngineImpl( gameFolderPtr );
 	}
 }

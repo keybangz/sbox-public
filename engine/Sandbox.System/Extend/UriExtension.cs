@@ -27,6 +27,23 @@ public static partial class SandboxSystemExtensions
 	};
 
 	/// <summary>
+	/// Returns true if <paramref name="host"/> is an exact match for or a subdomain of
+	/// <paramref name="domain"/>.  Requires a proper dot boundary so that, for example,
+	/// "evilfacepunch.com" is NOT treated as a subdomain of "facepunch.com".
+	/// </summary>
+	private static bool IsHostInDomain( string host, string domain )
+	{
+		if ( string.Equals( host, domain, StringComparison.OrdinalIgnoreCase ) )
+			return true;
+
+		// subdomain check: host must end with ".<domain>"
+		if ( host.EndsWith( "." + domain, StringComparison.OrdinalIgnoreCase ) )
+			return true;
+
+		return false;
+	}
+
+	/// <summary>
 	/// Does this Uri resolve to a private range IP address?
 	/// Uses caching to avoid slow repeated DNS lookups on Linux.
 	/// </summary>
@@ -34,10 +51,10 @@ public static partial class SandboxSystemExtensions
 	{
 		var host = uri.DnsSafeHost;
 
-		// Fast path: skip DNS for known public domains
+		// Fast path: skip DNS for known public domains (exact match or dot-boundary subdomain)
 		foreach ( var domain in _knownPublicDomains )
 		{
-			if ( host.EndsWith( domain, StringComparison.OrdinalIgnoreCase ) )
+			if ( IsHostInDomain( host, domain ) )
 				return false;
 		}
 
@@ -54,9 +71,9 @@ public static partial class SandboxSystemExtensions
 			var task = Dns.GetHostEntryAsync( host );
 			if ( !task.Wait( TimeSpan.FromSeconds( 2 ) ) )
 			{
-				// DNS lookup timed out - assume not private and cache
-				_dnsCache[host] = (false, DateTime.UtcNow);
-				return false;
+				// DNS lookup timed out - fail closed: treat as private to prevent SSRF
+				_dnsCache[host] = (true, DateTime.UtcNow);
+				return true;
 			}
 
 			var entry = task.Result;
@@ -66,9 +83,9 @@ public static partial class SandboxSystemExtensions
 		}
 		catch
 		{
-			// DNS lookup failed - cache as not private
-			_dnsCache[host] = (false, DateTime.UtcNow);
-			return false;
+			// DNS lookup failed - fail closed: treat as private to prevent SSRF
+			_dnsCache[host] = (true, DateTime.UtcNow);
+			return true;
 		}
 	}
 

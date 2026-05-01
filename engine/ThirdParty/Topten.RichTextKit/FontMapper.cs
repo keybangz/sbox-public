@@ -85,11 +85,8 @@ namespace Topten.RichTextKit
 			var weight = (SKFontStyleWeight)(style.FontWeight + extraWeight);
 			var slant = style.FontItalic ? SKFontStyleSlant.Italic : SKFontStyleSlant.Upright;
 
-			Console.Error.WriteLine( $"[FontMapper] TypefaceFromStyle called for family='{style.FontFamily}' weight={style.FontWeight}" );
-
 			// Try the requested font family first
 			var typeface = SKTypeface.FromFamilyName( style.FontFamily, weight, 0, slant );
-			Console.Error.WriteLine( $"[FontMapper] FromFamilyName('{style.FontFamily}') returned: {typeface?.FamilyName ?? "null"}" );
 			if ( IsTypefaceValid( typeface ) )
 				return typeface;
 
@@ -114,21 +111,15 @@ namespace Topten.RichTextKit
 			}
 
 			// Final fallback - use SkiaSharp's default which should always work
-			Console.Error.WriteLine( $"[FontMapper] Trying CreateDefault()..." );
 			typeface = SKTypeface.CreateDefault();
-			Console.Error.WriteLine( $"[FontMapper] CreateDefault() returned: {typeface?.FamilyName ?? "null"}" );
 			if ( typeface != null )
 				return typeface;
 
-			// Absolute last resort - this should never happen but just in case
-			// Try to get any installed font from the font manager
+			// Absolute last resort - try any installed font from the font manager
 			var fontManager = SKFontManager.Default;
-			Console.Error.WriteLine( $"[FontMapper] FontManager.Default: {fontManager}, FontFamilyCount: {fontManager?.FontFamilyCount ?? 0}" );
 			if ( fontManager != null && fontManager.FontFamilyCount > 0 )
 			{
-				var families = fontManager.FontFamilies;
-				Console.Error.WriteLine( $"[FontMapper] Available font families: {string.Join( ", ", families.Take( 10 ) )}" );
-				foreach ( var family in families )
+				foreach ( var family in fontManager.FontFamilies )
 				{
 					typeface = SKTypeface.FromFamilyName( family, weight, 0, slant );
 					if ( typeface != null )
@@ -136,8 +127,6 @@ namespace Topten.RichTextKit
 				}
 			}
 
-			// If we still have nothing, return the default (may be null)
-			Console.Error.WriteLine( $"[FontMapper] FAILED to find any font!" );
 			return SKTypeface.CreateDefault();
 		}
 
