@@ -26,9 +26,9 @@ if [ ! -d "$GAME_DIR" ]; then
 fi
 
 # Check if running from correct location
-if [ ! -f "$GAME_DIR/sbox" ]; then
-    echo "ERROR: sbox executable not found in $GAME_DIR"
-    echo "Make sure you're running this script from the sbox-public/linux directory"
+if [ ! -f "$GAME_DIR/sbox.dll" ]; then
+    echo "ERROR: sbox.dll not found in $GAME_DIR"
+    echo "Make sure you have run the Docker build first: cd .. && ./sbox-public-linux-docker/sbox-install.sh compile ./sbox-keybangz/"
     exit 1
 fi
 
@@ -277,48 +277,5 @@ echo "  ./sbox"
 echo ""
 echo "Or with this script (run.sh will be created):"
 
-# Create run script (only if it doesn't exist - preserve manual edits)
-if [ ! -f "$SCRIPT_DIR/run.sh" ]; then
-cat > "$SCRIPT_DIR/run.sh" << 'RUNEOF'
-#!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GAME_DIR="$(dirname "$SCRIPT_DIR")/game"
-BIN_DIR="$GAME_DIR/bin/linuxsteamrt64"
-export LD_LIBRARY_PATH="$BIN_DIR:$GAME_DIR:${LD_LIBRARY_PATH:-}"
-
-# Disable dotnet background processes that can cause file locking issues
-export DOTNET_CLI_TELEMETRY_OPTOUT=1
-export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
-export DOTNET_NOLOGO=1
-export DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1
-export UseSharedCompilation=false
-# Disable MSBuild node reuse (persistent worker processes)
-export MSBUILDDISABLENODEREUSE=1
-
-cd "$GAME_DIR"
-
-# Cleanup function for dotnet processes
-cleanup_processes() {
-    dotnet build-server shutdown 2>/dev/null || true
-    pkill -f "VBCSCompiler" 2>/dev/null || true
-    pkill -f "MSBuild.dll" 2>/dev/null || true
-}
-
-# Set up signal handlers for clean exit
-trap cleanup_processes EXIT
-trap 'cleanup_processes; exit 130' INT
-trap 'cleanup_processes; exit 143' TERM
-
-# Use dotnet to run the managed launcher instead of the native executable.
-# The native executable takes over the main loop and doesn't return control
-# to managed code for async task processing, causing initialization to hang.
-# Running via dotnet allows managed code to control the main loop properly.
-dotnet sbox.dll "$@"
-exit $?
-RUNEOF
-chmod +x "$SCRIPT_DIR/run.sh"
-echo "  Created: $SCRIPT_DIR/run.sh"
-else
-echo "  [OK] run.sh already exists"
-fi
+echo "  [OK] run.sh already exists at $SCRIPT_DIR/run.sh"
 echo ""

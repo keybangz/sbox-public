@@ -9,16 +9,36 @@ This fork contains fixes and modifications to run s&box natively on Linux.
 ### Quick Start (Linux)
 
 ```bash
-# Run setup once (creates required symlinks automatically)
-cd linux && ./setup.sh
+# Clone the repository
+git clone <repo-url> sbox-keybangz
+cd sbox-keybangz
+
+# Run the Docker build (this downloads all game files)
+cd .. && ./sbox-public-linux-docker/sbox-install.sh compile ./sbox-keybangz/
+cd sbox-keybangz
+
+# Restore patched files that Docker overwrites (REQUIRED after every Docker build)
+./linux/post-docker-deploy.sh
 
 # Run the game
-./run.sh
+cd linux && ./run.sh
+```
 
-# Or manually:
-cd game
-export LD_LIBRARY_PATH="$(pwd)/bin/linuxsteamrt64:$(pwd):${LD_LIBRARY_PATH:-}"
-dotnet sbox.dll
+### Post-Docker Redeployment (Required)
+
+**After every Docker build**, you **must** run `./linux/post-docker-deploy.sh` to restore patched files.
+
+Docker's install process overwrites our critical patches:
+
+| Patched File | Docker's Version | Our Patched Version |
+|--------------|------------------|---------------------|
+| `libdxcompiler.so` | 37MB broken DXC | 16KB thin shim wrapper |
+| `Sandbox.AppSystem.dll` | Broken SDL window registration | `RegisterWindowWithSDL` + `SetEngineState` fixes |
+| `Sandbox.Engine.dll` | Various runtime issues | `MainThread.Wait`, `Panel.Layer` guard, downloads folder fix |
+
+Run this after every Docker build:
+```bash
+./linux/post-docker-deploy.sh
 ```
 
 ### What's New: Linux Performance Optimizations (March 2026)
@@ -173,25 +193,22 @@ Major performance improvements for the Linux native client:
 
 ### DXC Shader Compiler Wrapper
 
-The DirectX Shader Compiler (DXC) on Linux expects UTF-32 encoded arguments, but s&box passes UTF-16. A wrapper library intercepts DXC calls and performs the conversion.
+The DirectX Shader Compiler (DXC) on Linux expects UTF-32 encoded arguments, but s&box passes UTF-16. A thin wrapper library intercepts DXC calls and performs the conversion.
 
-- **Wrapper:** `game/bin/linuxsteamrt64/libdxcompiler.so` (symlink to wrapper)
-- **Original:** `game/bin/linuxsteamrt64/libdxcompiler.so.real` (backed up original)
-- **Auto-setup:** The `bootstrap.sh` script automatically compiles and installs the wrapper after building
+- **Wrapper:** `game/bin/linuxsteamrt64/libdxcompiler_wrapper.so` (16KB thin shim)
+- **Symlink:** `game/bin/linuxsteamrt64/libdxcompiler.so → libdxcompiler_wrapper.so`
+- **Original:** `game/bin/linuxsteamrt64/libdxcompiler.so.real` (37MB Docker version - backed up)
+- **Build:** `cd linux && make` or run `./linux/post-docker-deploy.sh`
 
-### Symlinks (Automated)
+### Setup (Automated)
 
-The `linux/setup.sh` script automatically creates all required symlinks:
+The `linux/setup.sh` script automatically creates required symlinks:
 
 1. **Library soname symlinks** - Required by Linux dynamic linking (e.g., `libswscale.so.9 → libswscale.so.9.100`)
 2. **Engine library symlinks** - Required by native C++ `dlopen` calls (e.g., `libengine2.so → bin/linuxsteamrt64/libengine2.so`)
-3. **Case-sensitivity symlinks** - For addon folders referenced with different casing by native code:
-   - `assets → Assets`
-   - `transients → Transients`
-   - `code → Code`
-   - `localization → Localization`
+3. **Resource directory symlinks** - Links game resources from `addons/base/Assets/` to game root
 
-The managed C# code now handles most case-sensitivity automatically via `CaseInsensitivePhysicalFileSystem`, reducing the total symlinks from 441 to ~35.
+**Note:** Case-sensitivity symlinks have been removed. The filesystem uses a case-insensitive ext4 overlay, so symlinks like `assets→Assets` are no longer needed (and would conflict).
 
 #### Manual Setup (if needed)
 ```bash
