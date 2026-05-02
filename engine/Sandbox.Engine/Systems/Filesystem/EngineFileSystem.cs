@@ -121,6 +121,16 @@ internal static class EngineFileSystem
 		Root.CreateDirectory( $"{name}" );
 		Root.CreateDirectory( $"{name}/.sv" );
 		DownloadedFiles = Root.CreateSubSystem( $"{name}" );
+
+		// Linux: register download/assets/ as a native search path so plain-named
+		// extracted package files (prefab_c, vpcf_c, vsnd_c etc.) are visible to
+		// the resource system. On Windows this is handled by the VPK/gamecache
+		// overlay; on Linux the files are extracted flat with plain names.
+		var downloadAssetsPath = Root.GetFullPath( $"{name}/assets" );
+		if ( !string.IsNullOrWhiteSpace( downloadAssetsPath ) && System.IO.Directory.Exists( downloadAssetsPath ) )
+		{
+			AddAssetPath( "download_assets", downloadAssetsPath );
+		}
 	}
 
 	/// <summary>

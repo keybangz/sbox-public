@@ -389,6 +389,19 @@ public class AppSystem
 		System.IO.File.AppendAllText( "/tmp/initgame_debug.txt", "[InitGame] SourceEngineInit returned\n" );
 
 		Bootstrap.Init();
+
+		// Register SDL window with input system for standalone game client (Linux input fix)
+		if ( !createInfo.Flags.HasFlag( AppSystemFlags.IsEditor ) && !Application.IsHeadless )
+		{
+			IntPtr hwnd = _appSystem.GetAppWindow();
+			if ( hwnd != IntPtr.Zero )
+			{
+				NativeEngine.InputSystem.RegisterWindowWithSDL( hwnd );
+				var swapChain = _appSystem.GetAppWindowSwapChain();
+				g_pEngineServiceMgr.SetEngineState( hwnd, swapChain );
+			}
+		}
+
 		System.IO.File.AppendAllText( "/tmp/initgame_debug.txt", "[InitGame] Done\n" );
 	}
 

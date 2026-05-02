@@ -46,7 +46,8 @@ public partial class Package
 		// make sure manifest is downloaded
 		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
 		await rev.DownloadManifestAsync( token ).ConfigureAwait( false );
-
+		await MainThread.Wait(); // switch back to main thread - TryAddToDownloadQueue requires it
+		
 		if ( rev.Manifest == null ) return null;
 
 		var entries = rev.Manifest.Files ?? Array.Empty<ManifestSchema.File>();

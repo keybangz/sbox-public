@@ -3,7 +3,7 @@
 @using Sandbox.UI;
 @namespace Menu
 
-<root style="background-image: url(@(MapPackage?.ThumbWide ?? ""))">
+<root style="@(MapPackage?.ThumbWide != null ? $"background-image: url({MapPackage.ThumbWide})" : "")">
     <div class="bottom">
         <icon>map</icon>
         <h3>@(MapPackage?.Title ?? "Default Map")</h3>
