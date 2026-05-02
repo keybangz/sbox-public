@@ -25,6 +25,9 @@ internal static class EngineFileSystem
 
 	internal static BaseFileSystem DownloadedFiles { get; private set; }
 
+	// Stored for deferred mounting after SourceEngineInit
+	internal static string PendingDownloadAssetsPath { get; private set; }
+
 	/// <summary>
 	/// A place to write files temporarily. This is stored in memory so 
 	/// cleaning up after yourself is a good idea (!)
@@ -122,15 +125,70 @@ internal static class EngineFileSystem
 		Root.CreateDirectory( $"{name}/.sv" );
 		DownloadedFiles = Root.CreateSubSystem( $"{name}" );
 
-		// Linux: register download/assets/ as a native search path so plain-named
-		// extracted package files (prefab_c, vpcf_c, vsnd_c etc.) are visible to
-		// the resource system. On Windows this is handled by the VPK/gamecache
-		// overlay; on Linux the files are extracted flat with plain names.
+		// Store path for deferred mounting after SourceEngineInit initializes the native filesystem.
+		// MountDownloadedAssets must NOT be called here — NativeEngine.FullFileSystem is not ready yet.
 		var downloadAssetsPath = Root.GetFullPath( $"{name}/assets" );
 		if ( !string.IsNullOrWhiteSpace( downloadAssetsPath ) && System.IO.Directory.Exists( downloadAssetsPath ) )
 		{
-			AddAssetPath( "download_assets", downloadAssetsPath );
+			PendingDownloadAssetsPath = downloadAssetsPath;
 		}
+	}
+
+	/// <summary>
+	/// Scan download/assets/ and register AddSymLink for every CRC-hashed file,
+	/// mapping the plain name to the absolute CRC-hashed path.
+	/// This restores the native engine's file redirect table for assets that were
+	/// downloaded in a previous session.
+	/// </summary>
+	internal static void MountDownloadedAssets( string downloadAssetsAbsPath )
+	{
+		// CRC filenames have the format: sanitized_name.16hexchars.ext
+		// We detect the CRC by checking if the second-to-last dot-segment is exactly 16 hex chars.
+		var hexChars = new System.Collections.Generic.HashSet<char>( "0123456789abcdef" );
+
+		int mounted = 0;
+		int skipped = 0;
+
+		foreach ( var absFile in System.IO.Directory.EnumerateFiles( downloadAssetsAbsPath, "*", System.IO.SearchOption.AllDirectories ) )
+		{
+			var fileName = System.IO.Path.GetFileName( absFile );
+			var parts = fileName.Split( '.' );
+
+			// Need at least 3 parts: name, crc, ext  (e.g. "muzzle", "a3c54459b7e8ce16", "prefab_c")
+			// But ext may itself contain underscores — the last part is the extension suffix
+			// Format: {name_parts...}.{16hexcrc}.{ext}
+			// Find the CRC segment: exactly 16 chars, all hex
+			int crcIdx = -1;
+			for ( int i = parts.Length - 2; i >= 1; i-- )
+			{
+				if ( parts[i].Length == 16 && parts[i].All( c => hexChars.Contains( c ) ) )
+				{
+					crcIdx = i;
+					break;
+				}
+			}
+
+			if ( crcIdx < 0 )
+			{
+				skipped++;
+				continue; // Not a CRC-hashed file
+			}
+
+			// Reconstruct plain filename: everything before crcIdx + ext after crcIdx
+			var plainNameParts = parts[..crcIdx].Concat( parts[(crcIdx + 1)..] );
+			var plainFileName = string.Join( '.', plainNameParts );
+
+			// Get relative path from downloadAssetsAbsPath
+			var relFromAssets = System.IO.Path.GetRelativePath( downloadAssetsAbsPath, absFile );
+			var relDir = System.IO.Path.GetDirectoryName( relFromAssets )?.Replace( '\\', '/' ) ?? "";
+			var plainRelPath = string.IsNullOrEmpty( relDir ) ? plainFileName : $"{relDir}/{plainFileName}";
+
+			// Register with native engine: plain relative path -> absolute CRC-hashed file
+			NativeEngine.FullFileSystem.AddSymLink( plainRelPath, "GAME", absFile );
+			mounted++;
+		}
+
+		Log.Info( $"[EngineFileSystem] Mounted {mounted} downloaded assets from {downloadAssetsAbsPath} ({skipped} skipped)" );
 	}
 
 	/// <summary>

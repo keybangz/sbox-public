@@ -147,6 +147,15 @@ internal static class Bootstrap
 		EngineFileSystem.InitializeNativeSearchPaths();
 		System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] After InitializeNativeSearchPaths\n");
 
+		// Mount downloaded package assets now that SourceEngineInit has initialized the native filesystem.
+		// This must happen after SourceEngineInit — NativeEngine.FullFileSystem.AddSymLink is not valid before that.
+		if ( !string.IsNullOrEmpty( EngineFileSystem.PendingDownloadAssetsPath ) )
+		{
+			System.IO.File.AppendAllText("/tmp/initgame_debug.txt", $"[Bootstrap.Init] Mounting downloaded assets from {EngineFileSystem.PendingDownloadAssetsPath}\n");
+			EngineFileSystem.MountDownloadedAssets( EngineFileSystem.PendingDownloadAssetsPath );
+			System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] Done mounting downloaded assets\n");
+		}
+
 			IToolsDll.Current?.Spin();
 
 #pragma warning disable CS0612 // Type or member is obsolete
