@@ -3,6 +3,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GAME_DIR="$(dirname "$SCRIPT_DIR")/game"
 BIN_DIR="$GAME_DIR/bin/linuxsteamrt64"
 export LD_LIBRARY_PATH="$BIN_DIR:$GAME_DIR:${LD_LIBRARY_PATH:-}"
+export SBOX_BIN_DIR="$BIN_DIR"
 
 # Disable dotnet background processes that can cause file locking issues
 export DOTNET_CLI_TELEMETRY_OPTOUT=1
@@ -51,6 +52,18 @@ trap 'exit 143' TERM
 # ============================================================================
 # Interpose Libraries (optional debugging tools)
 # ============================================================================
+
+# OpenSSL symbol isolation: force RTLD_DEEPBIND on Valve engine libs
+# Prevents libengine2.so's bundled OpenSSL from colliding with system libcrypto
+if [ -f "$SCRIPT_DIR/interpose/libdeepbind_interpose.so" ]; then
+    export LD_PRELOAD="$SCRIPT_DIR/interpose/libdeepbind_interpose.so:${LD_PRELOAD:-}"
+fi
+
+# Permissive free interpose: prevent SIGABRT from invalid free() calls
+# (engine2 passes mmap'd/stack buffers to meshsystem which tries to free them)
+if [ -f "$SCRIPT_DIR/interpose/libpermissive_free_interpose.so" ]; then
+    export LD_PRELOAD="$SCRIPT_DIR/interpose/libpermissive_free_interpose.so:${LD_PRELOAD:-}"
+fi
 
 # Thread/library tracking: SBOX_INTERPOSE=1 ./run.sh
 if [ "$SBOX_INTERPOSE" = "1" ] && [ -f "$SCRIPT_DIR/interpose/libsbox_interpose.so" ]; then

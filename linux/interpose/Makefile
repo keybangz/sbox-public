@@ -10,7 +10,8 @@ LDFLAGS = -ldl -lpthread
 
 TARGETS = libsbox_interpose.so libaudio_interpose.so libvulkan_interpose.so \
           libframe_hook.so libmemory_interpose.so libtexture_interpose.so \
-          libscene_interpose.so
+          libscene_interpose.so libdeepbind_interpose.so \
+          libpermissive_free_interpose.so
 
 all: $(TARGETS)
 
@@ -47,6 +48,16 @@ libtexture_interpose.so: texture_interpose.cpp
 # Scene interpose - Track scene rendering and layer processing
 libscene_interpose.so: scene_interpose.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS) -rdynamic
+	@echo "Built $@"
+
+# Deepbind interpose - Force RTLD_DEEPBIND on Valve engine libs to isolate OpenSSL symbols
+libdeepbind_interpose.so: deepbind_interpose.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
+	@echo "Built $@"
+
+# Permissive free interpose - Validate free() pointers before calling glibc
+libpermissive_free_interpose.so: permissive_free_interpose.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
 	@echo "Built $@"
 
 clean:
