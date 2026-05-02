@@ -87,6 +87,9 @@ internal partial class ManagerWriter : BaseWriter
 			WriteLine( "[UnmanagedFunctionPointer( CallingConvention.Cdecl )]" );
 			WriteLine( "delegate void NetCoreImportDelegate( int hash, void* imports, void* exports, int* structSizes );" );
 			WriteLine();
+			WriteLine( "static bool _initialized;" );
+			WriteLine( "static IntPtr _nativeLibraryHandle;" );
+			WriteLine();
 
 			StartBlock( "internal static void Initialize()" );
 			{
@@ -241,6 +244,8 @@ internal partial class ManagerWriter : BaseWriter
 					WriteLine( "onError( $\"{___e.Message}\\n\\n{___e.StackTrace}\" );" );
 				}
 				EndBlock();
+				WriteLine();
+				WriteLine( "_initialized = true;" );
 			}
 			EndBlock();
 		}

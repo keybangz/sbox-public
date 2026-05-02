@@ -75,12 +75,48 @@ extern "C" void free(void* ptr) {
     if (!real_free)
         real_free = (void(*)(void*))dlsym(RTLD_NEXT, "free");
 
-    if (!is_valid_malloc_ptr(ptr)) {
-        if (g_log_enabled && g_log && ptr) {
-            fprintf(g_log, "[PERMFREE] Dropping invalid free(%p)\n", ptr);
+    if (!ptr) {
+        real_free(ptr);
+        return;
+    }
+
+    // Check if memory is mapped (msync check)
+    uintptr_t addr = (uintptr_t)ptr;
+    uintptr_t page = addr & ~(uintptr_t)(4095);
+    if (msync((void*)page, 4096, MS_ASYNC) != 0) {
+        // Not mapped memory - skip free
+        if (g_log_enabled && g_log) {
+            fprintf(g_log, "[PERMFREE] Dropping free of unmapped ptr %p\n", ptr);
             fflush(g_log);
         }
-        return; // Silently drop
+        return;
+    }
+
+    // Validate glibc malloc chunk header at ptr-8
+    // Chunk size field: low 3 bits are flags (PREV_INUSE, IS_MMAPPED, NON_MAIN_ARENA)
+    size_t chunk_size = *(size_t*)((char*)ptr - 8);
+    size_t real_size = chunk_size & ~(size_t)7;
+
+    // Basic sanity: must be plausible glibc chunk size
+    bool valid_chunk = (real_size >= 32) && (real_size < 0x10000000UL) && ((real_size & 0xF) == 0);
+
+    if (valid_chunk && !(chunk_size & 1)) {
+        // PREV_INUSE bit clear: glibc will check prev_size at ptr-16
+        // Validate prev_size is also plausible to avoid !prev abort
+        size_t prev_size = *(size_t*)((char*)ptr - 16);
+        size_t real_prev = prev_size & ~(size_t)7;
+        if (real_prev < 32 || real_prev >= 0x10000000UL || (real_prev & 0xF) != 0) {
+            valid_chunk = false;
+        }
+        // Note: we intentionally do NOT dereference prev_chunk itself (unsafe)
+    }
+
+    if (!valid_chunk) {
+        if (g_log) {
+            fprintf(g_log, "[PERMFREE] Skipping free of suspicious ptr %p (chunk_size=0x%zx)\n", ptr, chunk_size);
+            fflush(g_log);
+        }
+        return;
     }
 
     real_free(ptr);
@@ -91,12 +127,47 @@ extern "C" void* realloc(void* ptr, size_t size) {
     if (!real_realloc)
         real_realloc = (void*(*)(void*, size_t))dlsym(RTLD_NEXT, "realloc");
 
-    if (ptr && !is_valid_malloc_ptr(ptr)) {
+    if (!ptr) {
+        return real_realloc(nullptr, size);
+    }
+
+    // Check if memory is mapped (msync check)
+    uintptr_t addr = (uintptr_t)ptr;
+    uintptr_t page = addr & ~(uintptr_t)(4095);
+    if (msync((void*)page, 4096, MS_ASYNC) != 0) {
+        // Not mapped memory - allocate fresh
         if (g_log_enabled && g_log) {
-            fprintf(g_log, "[PERMFREE] realloc(%p, %zu): invalid ptr, allocating fresh\n", ptr, size);
+            fprintf(g_log, "[PERMFREE] realloc(%p, %zu): unmapped ptr, allocating fresh\n", ptr, size);
             fflush(g_log);
         }
-        // Can't realloc an invalid pointer - allocate fresh instead
+        return size ? malloc(size) : nullptr;
+    }
+
+    // Validate glibc malloc chunk header at ptr-8
+    // Chunk size field: low 3 bits are flags (PREV_INUSE, IS_MMAPPED, NON_MAIN_ARENA)
+    size_t chunk_size = *(size_t*)((char*)ptr - 8);
+    size_t real_size = chunk_size & ~(size_t)7;
+
+    // Basic sanity: must be plausible glibc chunk size
+    bool valid_chunk = (real_size >= 32) && (real_size < 0x10000000UL) && ((real_size & 0xF) == 0);
+
+    if (valid_chunk && !(chunk_size & 1)) {
+        // PREV_INUSE bit clear: glibc will check prev_size at ptr-16
+        // Validate prev_size is also plausible to avoid !prev abort
+        size_t prev_size = *(size_t*)((char*)ptr - 16);
+        size_t real_prev = prev_size & ~(size_t)7;
+        if (real_prev < 32 || real_prev >= 0x10000000UL || (real_prev & 0xF) != 0) {
+            valid_chunk = false;
+        }
+        // Note: we intentionally do NOT dereference prev_chunk itself (unsafe)
+    }
+
+    if (!valid_chunk) {
+        if (g_log) {
+            fprintf(g_log, "[PERMFREE] realloc(%p, %zu): suspicious ptr (chunk_size=0x%zx), allocating fresh\n", ptr, size, chunk_size);
+            fflush(g_log);
+        }
+        // Can't realloc a non-glibc pointer - allocate fresh instead
         return size ? malloc(size) : nullptr;
     }
 

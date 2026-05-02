@@ -210,6 +210,26 @@ static int32_t hooked_compile(
         ppResult           // Pass through unchanged - output pointer
     );
 
+    // Log to /tmp/dxc_debug.txt
+    FILE* f = fopen("/tmp/dxc_debug.txt", "a");
+    if (f) {
+        fprintf(f, "=== DXC Compile call ===\n");
+        fprintf(f, "argCount: %u\n", argCount);
+        if (converted_args) {
+            for (uint32_t i = 0; i < argCount; i++) {
+                if (converted_args[i]) {
+                    // Convert wchar_t to char for logging
+                    char buf[4096] = {0};
+                    wcstombs(buf, converted_args[i], sizeof(buf)-1);
+                    fprintf(f, "  arg[%u]: %s\n", i, buf);
+                }
+            }
+        }
+        fprintf(f, "HRESULT: 0x%08X\n", (unsigned)hr);
+        fprintf(f, "\n");
+        fclose(f);
+    }
+
     // Clean up converted arguments
     free(converted_buffer);
     free(converted_args);
@@ -223,17 +243,44 @@ static int32_t hooked_compile(
 
 __attribute__((constructor))
 static void init(void) {
-    // Get versioned dlopen - try newer version first
-    void* (*real_dlopen)(const char*, int) = dlvsym(RTLD_NEXT, "dlopen", "GLIBC_2.34");
-    if (!real_dlopen) {
-        real_dlopen = dlvsym(RTLD_NEXT, "dlopen", "GLIBC_2.2.5");
-    }
+    // Clear the debug log on startup
+    FILE* f = fopen("/tmp/dxc_debug.txt", "w");
+    if (f) { fprintf(f, "DXC wrapper initialized\n"); fclose(f); }
+
+    // Get dlopen from next in chain (no version needed - RTLD_NEXT handles it)
+    void* (*real_dlopen)(const char*, int) = dlsym(RTLD_NEXT, "dlopen");
     if (!real_dlopen) {
         return; // Cannot proceed without dlopen
     }
 
+    // Build path list - try SBOX_BIN_DIR first (absolute, most reliable)
+    char sbox_bin_path[4096] = {};
+    const char* sbox_bin_dir = getenv("SBOX_BIN_DIR");
+    if (sbox_bin_dir) {
+        snprintf(sbox_bin_path, sizeof(sbox_bin_path), "%s/libdxcompiler.so.real", sbox_bin_dir);
+    }
+
+    // Self-locate: find where this wrapper .so lives, look for .real next to it
+    char self_path[4096] = {};
+    Dl_info dl_info;
+    if (dladdr((void*)init, &dl_info) && dl_info.dli_fname) {
+        // dl_info.dli_fname = "/path/to/libdxcompiler_wrapper.so"
+        // We want "/path/to/libdxcompiler.so.real"
+        const char* fname = dl_info.dli_fname;
+        const char* slash = strrchr(fname, '/');
+        if (slash) {
+            size_t dir_len = (size_t)(slash - fname);
+            if (dir_len + 32 < sizeof(self_path)) {
+                memcpy(self_path, fname, dir_len);
+                strcpy(self_path + dir_len, "/libdxcompiler.so.real");
+            }
+        }
+    }
+
     // Try to load the real DXC library (must be named .real)
     const char* paths[] = {
+        self_path[0] ? self_path : NULL,       // Same dir as this wrapper (most reliable)
+        sbox_bin_path[0] ? sbox_bin_path : NULL, // From SBOX_BIN_DIR env var
         "./bin/linuxsteamrt64/libdxcompiler.so.real",
         "./libdxcompiler.so.real",
         "libdxcompiler.so.real",
@@ -241,7 +288,7 @@ static void init(void) {
         NULL
     };
 
-    for (int i = 0; paths[i] && !real_dxc_lib; i++) {
+    for (int i = 0; paths[i] && paths[i][0] && !real_dxc_lib; i++) {
         real_dxc_lib = real_dlopen(paths[i], RTLD_NOW | RTLD_LOCAL);
     }
 
@@ -250,13 +297,7 @@ static void init(void) {
     }
 
     // Get DxcCreateInstance from the real library
-    void* (*real_dlsym)(void*, const char*) = dlvsym(RTLD_NEXT, "dlsym", "GLIBC_2.34");
-    if (!real_dlsym) {
-        real_dlsym = dlvsym(RTLD_NEXT, "dlsym", "GLIBC_2.2.5");
-    }
-    if (real_dlsym) {
-        real_DxcCreateInstance = (DxcCreateInstanceFn)real_dlsym(real_dxc_lib, "DxcCreateInstance");
-    }
+    real_DxcCreateInstance = (DxcCreateInstanceFn)dlsym(real_dxc_lib, "DxcCreateInstance");
 }
 
 // ===========================================================================

@@ -5,6 +5,10 @@ BIN_DIR="$GAME_DIR/bin/linuxsteamrt64"
 export LD_LIBRARY_PATH="$BIN_DIR:$GAME_DIR:${LD_LIBRARY_PATH:-}"
 export SBOX_BIN_DIR="$BIN_DIR"
 
+# Force SDL3 to use X11 video driver — Wayland init fails silently causing render system
+# to exit immediately after Vulkan device init. X11 keeps the engine alive.
+export SDL_VIDEODRIVER=x11
+
 # Disable dotnet background processes that can cause file locking issues
 export DOTNET_CLI_TELEMETRY_OPTOUT=1
 export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
@@ -13,6 +17,8 @@ export DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1
 export UseSharedCompilation=false
 # Disable MSBuild node reuse (persistent worker processes)
 export MSBUILDDISABLENODEREUSE=1
+
+export VMOD="$GAME_DIR"
 
 cd "$GAME_DIR"
 
@@ -53,6 +59,12 @@ trap 'exit 143' TERM
 # Interpose Libraries (optional debugging tools)
 # ============================================================================
 
+# OpenSSL 3.x provider initialization: force-init system libcrypto before engine2 loads
+# Prevents crashes in EVP_KEYMGMT_is_a due to uninitialized provider store
+if [ -f "$SCRIPT_DIR/interpose/libopenssl_init_interpose.so" ]; then
+    export LD_PRELOAD="$SCRIPT_DIR/interpose/libopenssl_init_interpose.so:${LD_PRELOAD:-}"
+fi
+
 # OpenSSL symbol isolation: force RTLD_DEEPBIND on Valve engine libs
 # Prevents libengine2.so's bundled OpenSSL from colliding with system libcrypto
 if [ -f "$SCRIPT_DIR/interpose/libdeepbind_interpose.so" ]; then
@@ -63,6 +75,13 @@ fi
 # (engine2 passes mmap'd/stack buffers to meshsystem which tries to free them)
 if [ -f "$SCRIPT_DIR/interpose/libpermissive_free_interpose.so" ]; then
     export LD_PRELOAD="$SCRIPT_DIR/interpose/libpermissive_free_interpose.so:${LD_PRELOAD:-}"
+fi
+
+# SDL3 dynapi _REAL symbol redirect: intercept dlsym("SDL_Foo_REAL") -> dlsym("SDL_Foo")
+# Fixes render system Init failure: rendersystemvulkan uses dlsym to load 1,251 SDL_*_REAL
+# symbols which are hidden in all standard SDL3 builds.
+if [ -f "$SCRIPT_DIR/interpose/libsdl3_dynapi_interpose.so" ]; then
+    export LD_PRELOAD="$SCRIPT_DIR/interpose/libsdl3_dynapi_interpose.so:${LD_PRELOAD:-}"
 fi
 
 # Thread/library tracking: SBOX_INTERPOSE=1 ./run.sh
@@ -153,6 +172,50 @@ if [ "$SBOX_MALLOC_PERTURB" = "1" ]; then
 fi
 
 # ============================================================================
+# Native library bind-mounts into /usr/share/dotnet/
+# The .NET runtime's NativeLibrary.Load() searches /usr/share/dotnet/ first
+# (the runtime install dir) before LD_LIBRARY_PATH. We can't write there as
+# a normal user, but we CAN use unprivileged user+mount namespaces to
+# bind-mount our libs into that path without root.
+#
+# We create placeholder files in a tmpdir, bind-mount each one over the
+# missing path inside a private mount namespace, then exec the engine inside
+# that namespace so it sees the libs at the expected path.
+# ============================================================================
+
+# Libs the native engine requests from /usr/share/dotnet/
+DOTNET_LIBS=(
+    "librendersystemvulkan.so"
+    "librendersystemempty.so"
+)
+
+# Check if we're already inside the prepared namespace (avoid re-entering)
+if [ -z "${SBOX_NS_READY:-}" ]; then
+    echo "[ns] Entering private mount namespace for dotnet lib injection..."
+
+    # Build a tmpdir with the libs the .NET runtime looks for in /usr/share/dotnet/
+    NS_TMPDIR=$(mktemp -d /tmp/sbox_dotnet_ns.XXXXXX)
+    for LIB in librendersystemvulkan.so librendersystemempty.so; do
+        SRC="$BIN_DIR/$LIB"
+        if [ -f "$SRC" ]; then
+            ln -sf "$SRC" "$NS_TMPDIR/$LIB"
+            echo "[ns] staged: $LIB"
+        fi
+    done
+
+    # Use overlayfs: lower=real /usr/share/dotnet, upper=our tmpdir with extra libs
+    # This makes /usr/share/dotnet/ appear to contain our libs without touching the real dir.
+    OVERLAY_WORK=$(mktemp -d /tmp/sbox_dotnet_work.XXXXXX)
+    OVERLAY_MERGED=$(mktemp -d /tmp/sbox_dotnet_merged.XXXXXX)
+
+    export SBOX_NS_READY=1
+    export NS_TMPDIR OVERLAY_WORK OVERLAY_MERGED SCRIPT_DIR
+
+    exec unshare --user --mount --map-root-user \
+        bash "$SCRIPT_DIR/ns_launch.sh" "$@"
+fi
+
+# ============================================================================
 # Launch
 # ============================================================================
 
@@ -235,7 +298,7 @@ if [ "$SBOX_VALGRIND" = "1" ]; then
     export MALLOC_CHECK_=3
 
     # Run with Valgrind - instrument dotnet directly
-    valgrind "${VALGRIND_ARGS[@]}" dotnet sbox.dll "$@"
+    valgrind "${VALGRIND_ARGS[@]}" dotnet sbox.dll -game "$GAME_DIR" "$@"
     EXIT_CODE=$?
 
 # GDB debugging: SBOX_GDB=1 ./run.sh
@@ -290,7 +353,7 @@ elif [ "$SBOX_GDB" = "1" ]; then
     fi
 
     # Run with GDB
-    gdb "${GDB_ARGS[@]}" --args dotnet sbox.dll "$@"
+    gdb "${GDB_ARGS[@]}" --args dotnet sbox.dll -game "$GAME_DIR" "$@"
     EXIT_CODE=$?
 
 # AddressSanitizer: SBOX_ASAN=1 ./run.sh
@@ -328,11 +391,11 @@ elif [ "$SBOX_ASAN" = "1" ]; then
     echo "ASAN log: /tmp/sbox_asan.*"
     echo ""
 
-    dotnet sbox.dll "$@"
+    dotnet sbox.dll -game "$GAME_DIR" "$@"
     EXIT_CODE=$?
 
 else
-    dotnet sbox.dll "$@"
+    dotnet sbox.dll -game "$GAME_DIR" "$@"
     EXIT_CODE=$?
 fi
 

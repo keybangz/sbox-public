@@ -11,7 +11,8 @@ LDFLAGS = -ldl -lpthread
 TARGETS = libsbox_interpose.so libaudio_interpose.so libvulkan_interpose.so \
           libframe_hook.so libmemory_interpose.so libtexture_interpose.so \
           libscene_interpose.so libdeepbind_interpose.so \
-          libpermissive_free_interpose.so
+          libpermissive_free_interpose.so libopenssl_init_interpose.so \
+          libsdl3_dynapi_interpose.so
 
 all: $(TARGETS)
 
@@ -57,6 +58,17 @@ libdeepbind_interpose.so: deepbind_interpose.cpp
 
 # Permissive free interpose - Validate free() pointers before calling glibc
 libpermissive_free_interpose.so: permissive_free_interpose.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
+	@echo "Built $@"
+
+# OpenSSL init interpose - Force-init libcrypto before engine2 loads
+libopenssl_init_interpose.so: openssl_init_interpose.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
+	@echo "Built $@"
+
+# SDL3 dynapi interpose - Redirect dlsym("SDL_Foo_REAL") -> dlsym("SDL_Foo")
+# Fixes render system Init failure: rendersystemvulkan uses dlsym for 1,251 SDL_*_REAL symbols
+libsdl3_dynapi_interpose.so: sdl3_dynapi_interpose.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
 	@echo "Built $@"
 

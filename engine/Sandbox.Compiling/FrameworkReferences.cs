@@ -30,6 +30,8 @@ static class FrameworkReferences
 				All[resourceName] = meta;
 			}
 		}
+
+		System.IO.File.AppendAllText( "/tmp/frameworkrefs_debug.txt", $"[FrameworkReferences] Loaded {All.Count} embedded refs: {string.Join(", ", All.Keys)}\n" );
 	}
 
 	static Assembly FindLoadedAssembly( string name )
@@ -58,30 +60,37 @@ static class FrameworkReferences
 		if ( string.IsNullOrWhiteSpace( name ) )
 			throw new ArgumentException( $"cannot be null or empty", nameof( name ) );
 
+		System.IO.File.AppendAllText( "/tmp/frameworkrefs_debug.txt", $"[FindByName] Looking for: {name}\n" );
+
 		//
 		// Find a ref assembly
 		//
 		if ( All.TryGetValue( $"{name}.dll", out var frameworkReference ) )
 		{
+			System.IO.File.AppendAllText( "/tmp/frameworkrefs_debug.txt", $"[FindByName] Found in All: {name}\n" );
 			return frameworkReference;
 		}
 
+		System.IO.File.AppendAllText( "/tmp/frameworkrefs_debug.txt", $"[FindByName] Not in All, trying FindLoadedAssembly: {name}\n" );
+
 		//
 		// Find the assembly in our list of loaded assemblies
-		// We should really only do this for things like Sandbox.* ?
 		//
 		var assembly = FindLoadedAssembly( name );
 
 		if ( assembly == null )
 		{
+			System.IO.File.AppendAllText( "/tmp/frameworkrefs_debug.txt", $"[FindByName] FAILED - assembly null for: {name}\n" );
 			throw new System.Exception( $"Couldn't find {name}.dll" );
 		}
 
+		System.IO.File.AppendAllText( "/tmp/frameworkrefs_debug.txt", $"[FindByName] Found assembly: {name}, Location='{assembly.Location}'\n" );
+
 		if ( string.IsNullOrEmpty( assembly.Location ) )
 		{
+			System.IO.File.AppendAllText( "/tmp/frameworkrefs_debug.txt", $"[FindByName] FAILED - empty Location for: {name}\n" );
 			throw new System.Exception( $"Found assembly {name}.dll ({assembly}) - but can't find PortableExecutableReference" );
 		}
-
 
 		return MetadataReference.CreateFromFile( assembly.Location );
 	}

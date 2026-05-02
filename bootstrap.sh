@@ -1,7 +1,103 @@
 #!/bin/bash
 
+# =============================================================================
+# Project-Local Bootstrap Script
+# =============================================================================
+# This script is project-local only. It does NOT perform system-wide
+# installations. System-wide installs (sudo pip install, sudo apt install,
+# sudo dnf install, sudo yum install, brew install, etc.) are BLOCKED.
+#
+# For one-time setup requirements (wine, winetricks, etc.), see comments
+# in the "Manual Setup" section below.
+# =============================================================================
+
+# Safety guard: Detect and block system-wide installation attempts
+block_system_install() {
+    echo "[!] ERROR: System-wide installation detected. This script is project-local only."
+    echo "[!] Blocked command would have run: $*"
+    echo "[!] Install system dependencies manually if needed."
+    return 1
+}
+
+# Override dangerous system-wide install commands
+sudo() {
+    case "$*" in
+        *pip*install*|*apt*install*|*dnf*install*|*yum*install*)
+            block_system_install "$@"
+            return 1
+            ;;
+        *)
+            command sudo "$@"
+            ;;
+    esac
+}
+
+# Also block direct calls to package managers without sudo
+apt() { block_system_install "apt $*"; return 1; }
+dnf() { block_system_install "dnf $*"; return 1; }
+yum() { block_system_install "yum $*"; return 1; }
+brew() { block_system_install "brew $*"; return 1; }
+
+# =============================================================================
+# Download Helper - Skips if file already exists
+# =============================================================================
+download_if_missing() {
+    local url="$1"
+    local dest="$2"
+    if [ -f "$dest" ]; then
+        echo "  [SKIP] Already exists: $dest"
+        return 0
+    fi
+    echo "  Downloading: $dest"
+    wget -q -O "$dest" "$url" || { echo "  [!] Download failed: $url"; return 1; }
+}
+
+# =============================================================================
+# Wine Availability Check
+# =============================================================================
+require_wine() {
+    if ! command -v wine &>/dev/null; then
+        echo "  [!] wine is not installed. Skipping: $*"
+        echo "  [!] Install wine manually: https://www.winehq.org/"
+        return 1
+    fi
+    wine "$@"
+}
+
+# =============================================================================
+# Clean Build Flag Handling
+# =============================================================================
+CLEAN_BUILD=false
+for arg in "$@"; do
+    case "$arg" in
+        --clean) CLEAN_BUILD=true ;;
+    esac
+done
+
+if [ "$CLEAN_BUILD" = true ]; then
+    echo "Cleaning previous build artifacts..."
+    rm -rf ./engine/Sandbox.Engine/bin ./engine/Sandbox.Engine/obj
+    rm -rf ./engine/Sandbox.Menu/bin ./engine/Sandbox.Menu/obj
+    rm -rf ./engine/Sandbox.Compiling/bin ./engine/Sandbox.Compiling/obj
+    rm -rf ./engine/Sandbox.Services/bin ./engine/Sandbox.Services/obj
+else
+    echo "Skipping clean (pass --clean to force)"
+fi
+
+# Disable dotnet telemetry and build server caching to prevent background processes
+export DOTNET_CLI_TELEMETRY_OPTOUT=1
+export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
+export DOTNET_NOLOGO=1
+# Disable build servers entirely - they cause file locking issues
+export DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1
+export UseSharedCompilation=false
+# Disable MSBuild node reuse (persistent worker processes)
+export MSBUILDDISABLENODEREUSE=1
+
+# =============================================================================
 # Setup the DXC wrapper for Linux
 # The wrapper converts UTF-16 arguments to UTF-32 for Linux compatibility
+# =============================================================================
 setup_dxc_wrapper() {
     local WRAPPER_SRC="linux/dxc_wrapper.c"
     local WRAPPER_SO="linux/libdxcompiler_wrapper.so"
@@ -38,10 +134,21 @@ setup_dxc_wrapper() {
         fi
     fi
 
-    # Copy wrapper and create symlink in game directory
-    cp "$WRAPPER_SO" "$GAME_DIR/libdxcompiler_wrapper.so"
-    ln -sf libdxcompiler_wrapper.so "$GAME_DIR/libdxcompiler.so"
-    echo "  [OK] Installed DXC wrapper in $GAME_DIR"
+    # Only copy if source is newer than destination
+    if [ ! -f "$GAME_DIR/libdxcompiler_wrapper.so" ] || [ "$WRAPPER_SO" -nt "$GAME_DIR/libdxcompiler_wrapper.so" ]; then
+        cp "$WRAPPER_SO" "$GAME_DIR/libdxcompiler_wrapper.so"
+        echo "  [OK] Copied wrapper to $GAME_DIR"
+    else
+        echo "  [SKIP] Wrapper already up to date in $GAME_DIR"
+    fi
+
+    # Only create symlink if it doesn't exist
+    if [ ! -L "$GAME_DIR/libdxcompiler.so" ]; then
+        ln -sf libdxcompiler_wrapper.so "$GAME_DIR/libdxcompiler.so"
+        echo "  [OK] Created symlink in $GAME_DIR"
+    else
+        echo "  [SKIP] Symlink already exists in $GAME_DIR"
+    fi
 
     # Setup the wrapper in bin directory if it exists
     if [ -d "$BIN_DIR" ]; then
@@ -51,32 +158,30 @@ setup_dxc_wrapper() {
                 echo "  [OK] Backed up original to $BIN_DIR/libdxcompiler.so.real"
             fi
         fi
-        cp "$WRAPPER_SO" "$BIN_DIR/libdxcompiler_wrapper.so"
-        ln -sf libdxcompiler_wrapper.so "$BIN_DIR/libdxcompiler.so"
-        echo "  [OK] Installed DXC wrapper in $BIN_DIR"
+
+        # Only copy if source is newer than destination
+        if [ ! -f "$BIN_DIR/libdxcompiler_wrapper.so" ] || [ "$WRAPPER_SO" -nt "$BIN_DIR/libdxcompiler_wrapper.so" ]; then
+            cp "$WRAPPER_SO" "$BIN_DIR/libdxcompiler_wrapper.so"
+            echo "  [OK] Copied wrapper to $BIN_DIR"
+        else
+            echo "  [SKIP] Wrapper already up to date in $BIN_DIR"
+        fi
+
+        # Only create symlink if it doesn't exist
+        if [ ! -L "$BIN_DIR/libdxcompiler.so" ]; then
+            ln -sf libdxcompiler_wrapper.so "$BIN_DIR/libdxcompiler.so"
+            echo "  [OK] Created symlink in $BIN_DIR"
+        else
+            echo "  [SKIP] Symlink already exists in $BIN_DIR"
+        fi
     fi
 
     echo "  DXC wrapper setup complete"
 }
 
-# Force rebuild by removing bin/obj directories for key projects
-echo "Cleaning previous build artifacts..."
-rm -rf ./engine/Sandbox.Engine/bin ./engine/Sandbox.Engine/obj
-rm -rf ./engine/Sandbox.Menu/bin ./engine/Sandbox.Menu/obj
-rm -rf ./engine/Sandbox.Compiling/bin ./engine/Sandbox.Compiling/obj
-rm -rf ./engine/Sandbox.Services/bin ./engine/Sandbox.Services/obj
-
-# Disable dotnet telemetry and build server caching to prevent background processes
-export DOTNET_CLI_TELEMETRY_OPTOUT=1
-export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
-export DOTNET_NOLOGO=1
-# Disable build servers entirely - they cause file locking issues
-export DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1
-export UseSharedCompilation=false
-# Disable MSBuild node reuse (persistent worker processes)
-export MSBUILDDISABLENODEREUSE=1
-
+# =============================================================================
 # Function to cleanup all dotnet-related processes
+# =============================================================================
 cleanup_dotnet_processes() {
     echo "Cleaning up dotnet processes..."
 
@@ -115,28 +220,44 @@ cleanup_dotnet_processes() {
 echo "Pre-build cleanup..."
 cleanup_dotnet_processes
 
+# =============================================================================
+# Project-Local Wine Prefix Setup
+# This creates a wine prefix in the project directory, not the system wine prefix.
+# This keeps wine configuration isolated to this project.
+# =============================================================================
 mkdir -p $PWD/.wine
 WINEPREFIX=$PWD/.wine
 
-# wget https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.203/dotnet-sdk-10.0.203-win-x86.exe && \
-# 	wine dotnet-sdk-10.0.203-win-x86.exe /install /quiet && \
-# 	rm dotnet-sdk-10.0.203-win-x86.exe
+# =============================================================================
+# Manual Setup Section
+# The following commands are commented out and require manual one-time setup.
+# These install system-level dependencies that cannot be automated by this script.
+#
+# MANUAL SETUP REQUIRED:
+# 1. Install wine: https://www.winehq.org/
+# 2. Install winetricks: https://wiki.winehq.org/Winetricks
+# 3. Run the dotnet SDK installer via wine
+# 4. Run winetricks to install required Windows components
+# =============================================================================
+
+download_if_missing https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.203/dotnet-sdk-10.0.203-win-x86.exe $PWD && \
+ 	wine dotnet-sdk-10.0.203-win-x86.exe /install /quiet
+
 
 # winetricks -q powershell cmake mingw 7zip cabinet
 # winetricks -q d3dxof dxdiag dxvk dxvk_async dxvk_nvapi
 
 echo "Building..."
 dotnet run --project ./engine/Tools/SboxBuild/SboxBuild.csproj -- build --config Developer
-wine dotnet run --project ./engine/Tools/SboxBuild/SboxBuild.csproj -- build-shaders
-wine dotnet run --project ./engine/Tools/SboxBuild/SboxBuild.csproj -- build-content
+require_wine dotnet run --project ./engine/Tools/SboxBuild/SboxBuild.csproj -- build-shaders
+require_wine dotnet run --project ./engine/Tools/SboxBuild/SboxBuild.csproj -- build-content
 
 # Cleanup after build, before wine
 echo "Post-build cleanup (before wine)..."
 cleanup_dotnet_processes
 
 #HACK: Currently Facepunch doesn't ship native binary for contentbuilder. Run this instead via wine.
-wine game/bin/win64/contentbuilder.exe -b game
-
+require_wine game/bin/win64/contentbuilder.exe -b game
 
 # Run DXC wrapper setup after build (needs libdxcompiler.so to exist first)
 setup_dxc_wrapper

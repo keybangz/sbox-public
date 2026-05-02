@@ -91,6 +91,7 @@ public partial class Project
 			if ( compilerName == "local.toolbase" ) compilerName = "toolbase";
 
 			Log.Trace( $"Create Compiler `{compilerName}`" );
+			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[Project.Compiling] CreateCompiler name={compilerName} codePath={codePath} exists={System.IO.Directory.Exists(codePath)}\n" );
 
 			Compiler = CompileGroup.CreateCompiler( compilerName, codePath, compilerSettings );
 

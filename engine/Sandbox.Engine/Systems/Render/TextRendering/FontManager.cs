@@ -1,4 +1,4 @@
-﻿using Sandbox.Engine;
+using Sandbox.Engine;
 using SkiaSharp;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
@@ -36,12 +36,12 @@ internal class FontManager : FontMapper
 		}
 	}
 
-	struct LoadedTypeface
+	internal struct LoadedTypeface
 	{
 		public SKTypeface Typeface;
 		public bool IsMenu;
 	}
-	Dictionary<int, LoadedTypeface> LoadedFonts = new();
+	internal Dictionary<int, LoadedTypeface> LoadedFonts = new();
 	Dictionary<int, SKTypeface> Cache = new();
 
 	private void Load( System.IO.Stream stream )
@@ -61,25 +61,30 @@ internal class FontManager : FontMapper
 				return;
 			}
 
-		bool isMenu = GlobalContext.Current == GlobalContext.Menu;
+			bool isMenu = GlobalContext.Current == GlobalContext.Menu;
 
-		var hash = HashCode.Combine( face.FamilyName, face.FontWeight, face.FontSlant );
-		lock ( LoadedFonts )
-		{
-			if ( LoadedFonts.ContainsKey( hash ) )
+			var hash = HashCode.Combine( face.FamilyName, face.FontWeight, face.FontSlant );
+			lock ( LoadedFonts )
 			{
-				face.Dispose();
-				return;
+				if ( LoadedFonts.ContainsKey( hash ) )
+				{
+					face.Dispose();
+					return;
+				}
+
+				LoadedFonts[hash] = new()
+				{
+					Typeface = face,
+					IsMenu = isMenu
+				};
 			}
 
-			LoadedFonts[hash] = new()
-			{
-				Typeface = face,
-				IsMenu = isMenu
-			};
+			Log.Trace( $"Loaded font {face.FamilyName} weight {face.FontWeight} (IsMenu: {isMenu})" );
 		}
-
-		Log.Trace( $"Loaded font {face.FamilyName} weight {face.FontWeight} (IsMenu: {isMenu})" );
+		catch ( System.Exception ex )
+		{
+			Log.Error( $"[FontManager] Error loading font from stream: {ex.Message}" );
+		}
 	}
 
 	List<FileWatch> watchers = new();
@@ -93,17 +98,14 @@ internal class FontManager : FontMapper
 		}
 
 		var fontFiles = fileSystem.FindFile( "/fonts/", "*.ttf", true )
-			.Union( fileSystem.FindFile( "/fonts/", "*.otf", true ) );
+			.Union( fileSystem.FindFile( "/fonts/", "*.otf", true ) )
+			.ToList();
 
-		Parallel.ForEach( fontFiles, ( string font ) =>
+		Log.Info( $"[FontManager] Found {fontFiles.Count} font files in /fonts/" );
+
+		try
 		{
-			var fontFiles = fileSystem.FindFile( "/fonts/", "*.ttf" )
-				.Union( fileSystem.FindFile( "/fonts/", "*.otf" ) )
-				.ToList();
-
-			Log.Info( $"[FontManager] Found {fontFiles.Count} font files in /fonts/" );
-
-			foreach ( var font in fontFiles )
+			Parallel.ForEach( fontFiles, ( string font ) =>
 			{
 				Log.Info( $"[FontManager] Loading font: {font}" );
 				try
@@ -122,14 +124,14 @@ internal class FontManager : FontMapper
 				{
 					Log.Error( $"[FontManager] Error loading font {font}: {ex.Message}" );
 				}
-			}
-
-			Log.Info( $"[FontManager] Loaded {LoadedFonts.Count} fonts total" );
+			} );
 		}
 		catch ( System.Exception ex )
 		{
 			Log.Error( $"[FontManager] Error finding font files: {ex.Message}" );
 		}
+
+		Log.Info( $"[FontManager] Loaded {LoadedFonts.Count} fonts total" );
 
 		// Load any new fonts
 		try
@@ -220,7 +222,7 @@ internal class FontManager : FontMapper
 					// Try to get first loaded font as absolute fallback
 					if ( LoadedFonts.Count > 0 )
 					{
-						f = LoadedFonts.Values.First();
+						f = LoadedFonts.Values.First().Typeface;
 						Log.Warning( $"[FontManager] Using fallback font: {f?.FamilyName}" );
 					}
 				}
@@ -270,4 +272,3 @@ internal class FontManager : FontMapper
 		}
 	}
 }
-

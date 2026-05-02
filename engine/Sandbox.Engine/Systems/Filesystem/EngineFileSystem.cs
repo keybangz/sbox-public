@@ -160,7 +160,38 @@ internal static class EngineFileSystem
 
 	internal static void AddAssetPath( string ident, string path )
 	{
-		Mounted.Mount( new LocalFileSystem( path ) );
+		Mounted?.Mount( new LocalFileSystem( path ) );
 		NativeEngine.FullFileSystem.AddProjectPath( "xxx", path );
+	}
+
+	/// <summary>
+	/// Add native filesystem search paths for core content.
+	/// Called after SourceEngineInit has set up the native filesystem.
+	/// On case-insensitive filesystems (ext4 overlay) this is a no-op.
+	/// </summary>
+	internal static void InitializeNativeSearchPaths()
+	{
+		// The filesystem overlay handles case-insensitivity natively.
+		// No additional search path manipulation is required.
+	}
+
+	/// <summary>
+	/// Attempt to resolve a path with case-insensitive matching using a prebuilt cache.
+	/// On a case-insensitive filesystem this always returns the input unchanged.
+	/// </summary>
+	internal static string ResolvePathCase( string path )
+	{
+		// Case-insensitive ext4 overlay — no resolution needed.
+		return path;
+	}
+
+	/// <summary>
+	/// Find a file case-insensitively and return both the resolved relative path and the full absolute path.
+	/// On a case-insensitive filesystem this always returns (path, null) — the caller handles null fullPath.
+	/// </summary>
+	internal static (string resolvedPath, string fullPath) FindFileCaseInsensitiveWithFullPath( string path )
+	{
+		// Case-insensitive ext4 overlay — no resolution needed.
+		return (path, null);
 	}
 }

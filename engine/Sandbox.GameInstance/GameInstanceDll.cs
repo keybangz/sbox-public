@@ -863,6 +863,66 @@ internal partial class GameInstanceDll : Engine.IGameInstanceDll
 		if ( Application.IsEditor )
 			return;
 
+		// On Linux (and any platform), if the ident is a local filesystem path, resolve it to a
+		// proper package ident by loading the project directly — same as the dedicated server path.
+		var isLocalPath = gameIdent.StartsWith( "/" ) || gameIdent.StartsWith( "./" ) ||
+		                  ( gameIdent.Length > 2 && gameIdent[1] == ':' ); // Windows drive letter
+		if ( !Application.IsDedicatedServer && isLocalPath )
+		{
+			// If the path is a directory, find the actual .sbproj file inside it.
+			// The engine passes -game <dir> at startup which has no .sbproj at root —
+			// in that case, skip the local-path branch entirely.
+			if ( Directory.Exists( gameIdent ) && !gameIdent.EndsWith( ".sbproj" ) )
+			{
+				var sbprojFiles = Directory.GetFiles( gameIdent, "*.sbproj" );
+				if ( sbprojFiles.Length == 0 )
+				{
+					// No project here — this is the engine game dir, not a user project. Skip.
+					goto skipLocalPath;
+				}
+				gameIdent = sbprojFiles[0];
+			}
+
+			await Project.InitializeBuiltIn( false );
+
+			var project = Project.AddFromFile( gameIdent );
+
+			var assetsPath = project.GetAssetsPath();
+			if ( OperatingSystem.IsWindows() )
+			{
+				assetsPath = assetsPath.ToLowerInvariant();
+			}
+			NativeEngine.FullFileSystem.AddProjectPath( gameIdent, assetsPath );
+
+			var libraries = Path.Combine( project.RootDirectory.FullName, "Libraries" );
+			if ( Directory.Exists( libraries ) )
+			{
+				foreach ( var folder in Directory.EnumerateDirectories( libraries ) )
+				{
+					var configs = Directory.EnumerateFiles( folder, "*.sbproj" ).ToArray();
+					if ( configs.Length != 1 ) continue;
+					Project.AddFromFile( configs[0] );
+				}
+			}
+
+			project.Load();
+			await Project.CompileAsync();
+
+			if ( !project.Active )
+			{
+				Log.Error( $"Unable to load local project {gameIdent}" );
+				return;
+			}
+
+			gameIdent = project.Package.FullIdent;
+		}
+
+		skipLocalPath:
+		// If we jumped here because the path was the engine game dir (no .sbproj found),
+		// gameIdent is still a raw filesystem path — not a valid package ident. Bail out.
+		if ( isLocalPath && (gameIdent.StartsWith( "/" ) || gameIdent.StartsWith( "./" ) || ( gameIdent.Length > 2 && gameIdent[1] == ':' )) )
+			return;
+
 		// We can load and run projects if we're a Dedicated Server.
 		if ( Application.IsDedicatedServer && gameIdent.ToLower().Contains( ".sbproj" ) )
 		{

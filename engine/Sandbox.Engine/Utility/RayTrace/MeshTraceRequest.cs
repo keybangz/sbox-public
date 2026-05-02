@@ -106,7 +106,7 @@ public partial struct MeshTraceRequest
 		{
 			if ( filterCallback is not null )
 			{
-				r.filterDelegate = (IntPtr)((delegate* unmanaged< int, byte >)&FilterFunctionInternal);
+				r.filterDelegate = GetFilterFunctionPtr();
 				_currentfilterCallback = filterCallback;
 			}
 

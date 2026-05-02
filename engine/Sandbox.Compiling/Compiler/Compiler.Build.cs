@@ -30,6 +30,7 @@ partial class Compiler
 	/// </summary>
 	public void UpdateFromArchive( CodeArchive a )
 	{
+		System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[UpdateFromArchive] {Name} archive.CompilerName={a?.CompilerName} SyntaxTrees={a?.SyntaxTrees.Count} caller={new System.Diagnostics.StackTrace(1, false).GetFrame(0)?.GetMethod()?.DeclaringType?.Name}.{new System.Diagnostics.StackTrace(1, false).GetFrame(0)?.GetMethod()?.Name}\n" );
 		_currentArchive = a;
 
 		CopyReferencesFromArchive( a );
@@ -120,6 +121,7 @@ partial class Compiler
 	{
 		if ( _currentArchive is not null )
 		{
+			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildArchive] {Name} EARLY RETURN _currentArchive SyntaxTrees={_currentArchive.SyntaxTrees.Count} FileMap={_currentArchive.FileMap.Count} CompilerName={_currentArchive.CompilerName}\n" );
 			output.Archive = _currentArchive;
 			return _currentArchive;
 		}
@@ -215,11 +217,13 @@ partial class Compiler
 			ilHotloadSupported = processor.ILHotloadSupported;
 			beforeIlHotloadProcessingTrees = processor.BeforeILHotloadProcessingTrees;
 
-			// If you have any errors in codegen don't bother compiling, developer should sort it out
-			if ( processor.Diagnostics.Any( x => x.Severity == DiagnosticSeverity.Error ) )
-			{
-				return;
-			}
+		// If you have any errors in codegen don't bother compiling, developer should sort it out
+		if ( processor.Diagnostics.Any( x => x.Severity == DiagnosticSeverity.Error ) )
+		{
+			foreach ( var d in processor.Diagnostics.Where( x => x.Severity == DiagnosticSeverity.Error ) )
+				System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildInternal] {Name} PROCESSOR ERROR: {d}\n" );
+			return;
+		}
 		}
 
 		// check for blacklisted methods/types used in compilation
@@ -229,11 +233,13 @@ partial class Compiler
 		{
 			RunBlacklistWalker( compiler, modifiedSyntaxTrees, output );
 
-			// Errors, fail
-			if ( output.Diagnostics.Any( x => x.Severity == DiagnosticSeverity.Error ) )
-			{
-				return;
-			}
+		// Errors, fail
+		if ( output.Diagnostics.Any( x => x.Severity == DiagnosticSeverity.Error ) )
+		{
+			foreach ( var d in output.Diagnostics.Where( x => x.Severity == DiagnosticSeverity.Error ) )
+				System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildInternal] {Name} BLACKLIST ERROR: {d}\n" );
+			return;
+		}
 		}
 
 		using ( var xmlStream = new System.IO.MemoryStream() )
@@ -242,7 +248,11 @@ partial class Compiler
 			var emitOptions = new EmitOptions()
 				.WithDebugInformationFormat( DebugInformationFormat.Embedded );
 
+			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildInternal] {Name} SyntaxTrees={compiler.SyntaxTrees.Length} DefineConstants={_config.DefineConstants}\n" );
 			BuildResult = compiler.Emit( peStream: peStream, xmlDocumentationStream: xmlStream, options: emitOptions );
+			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildInternal] {Name} Emit done: Success={BuildResult.Success}, DiagCount={BuildResult.Diagnostics.Length}\n" );
+		foreach ( var d in BuildResult.Diagnostics )
+			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildInternal] {Name} DIAG [{d.Severity}]: {d}\n" );
 
 			if ( BuildResult.Success )
 			{
@@ -273,12 +283,18 @@ partial class Compiler
 
 			output.AssemblyData = peStream.ToArray();
 			output.XmlDocumentation = System.Text.Encoding.UTF8.GetString( xmlStream.ToArray() );
+			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildInternal] {Name} AssemblyData.Length={output.AssemblyData.Length}\n" );
+			if ( Name == "base" && output.AssemblyData.Length > 0 )
+				System.IO.File.WriteAllBytes( "/tmp/base_assembly_dump.dll", output.AssemblyData );
 		}
 
 		output.Diagnostics.AddRange( BuildResult.Diagnostics );
 
 		if ( !BuildResult.Success )
 		{
+			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildInternal] {Name} EMIT FAILED: BuildResult.Success=false, DiagCount={BuildResult.Diagnostics.Length}\n" );
+			foreach ( var d in BuildResult.Diagnostics )
+				System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildInternal] {Name} DIAG [{d.Severity}]: {d}\n" );
 			return;
 		}
 

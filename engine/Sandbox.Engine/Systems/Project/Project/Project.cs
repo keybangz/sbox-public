@@ -186,14 +186,10 @@ public sealed partial class Project
 			return System.IO.Path.Combine( parentPath, dirName );
 		}
 
-		// Try exact match first
-		var exactPath = System.IO.Path.Combine( parentPath, dirName );
-		if ( System.IO.Directory.Exists( exactPath ) )
-		{
-			return exactPath;
-		}
-
-		// Search case-insensitively
+		// On Linux, always enumerate to get the real on-disk casing.
+		// Do NOT use Directory.Exists( exactPath ) as a shortcut — on a case-insensitive
+		// overlay (e.g. ext4 with case-folding or overlayfs) it returns true for wrong-cased
+		// paths, but the real directory name may differ, causing SubFileSystem root mismatches.
 		try
 		{
 			var dirs = System.IO.Directory.GetDirectories( parentPath );
@@ -202,7 +198,7 @@ public sealed partial class Project
 				var name = System.IO.Path.GetFileName( dir );
 				if ( string.Equals( name, dirName, StringComparison.OrdinalIgnoreCase ) )
 				{
-					return dir;
+					return dir; // real on-disk path with correct casing
 				}
 			}
 		}
@@ -211,7 +207,8 @@ public sealed partial class Project
 			// Directory doesn't exist or access denied
 		}
 
-		return exactPath;
+		// Not found — return the path as-given (caller will handle missing dir)
+		return System.IO.Path.Combine( parentPath, dirName );
 	}
 
 	/// <summary>

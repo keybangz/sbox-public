@@ -24,6 +24,7 @@ public static partial class SandboxSystemExtensions
 		"githubusercontent.com",
 		"github.com",
 		"s3.amazonaws.com",
+		"sbox.game",
 	};
 
 	/// <summary>

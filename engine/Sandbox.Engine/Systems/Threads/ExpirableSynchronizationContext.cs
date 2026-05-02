@@ -339,8 +339,10 @@ internal class ExpirableSynchronizationContext : SynchronizationContext
 		d( state );
 	}
 
+#pragma warning disable CS0414 // assigned but value never used — intentional debug fields
 	private static int _postCount = 0;
 	private static int _globalOp = 0;
+#pragma warning restore CS0414
 	private static bool SyncDebugLogging => System.Environment.GetEnvironmentVariable( "SBOX_SYNC_DEBUG" ) == "1";
 
 	public override void Post( SendOrPostCallback d, object state )

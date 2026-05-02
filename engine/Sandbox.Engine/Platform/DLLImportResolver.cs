@@ -27,7 +27,15 @@ internal static class DLLImportResolver
 		if ( !registeredAssemblies.Add( assembly.FullName ) )
 			return;
 
-		NativeLibrary.SetDllImportResolver( assembly, ResolveFromNativePath );
+		try
+		{
+			NativeLibrary.SetDllImportResolver( assembly, ResolveFromNativePath );
+		}
+		catch ( InvalidOperationException )
+		{
+			// A resolver was already registered for this assembly (e.g. after hotload).
+			// Safe to ignore — the existing resolver is still active.
+		}
 	}
 
 	private static IntPtr ResolveFromNativePath( string libraryName, Assembly assembly, DllImportSearchPath? searchPath )

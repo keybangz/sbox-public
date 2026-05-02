@@ -325,8 +325,11 @@ public class BaseFileSystem
 
 		// On Linux, resolve the path to the actual casing on disk so that
 		// SubFileSystem's path validation works correctly when our delegate
-		// returns paths with the actual casing
-		if ( OperatingSystem.IsLinux() && system is CaseInsensitivePhysicalFileSystem ciFs )
+		// returns paths with the actual casing.
+		// Apply to ALL filesystem types (not just CaseInsensitivePhysicalFileSystem)
+		// because AggregateFileSystem and SubFileSystem can also wrap case-sensitive
+		// underlying filesystems on Linux.
+		if ( OperatingSystem.IsLinux() )
 		{
 			var resolvedPath = ResolvePathCaseInsensitive( fixedPath );
 			if ( resolvedPath != null )

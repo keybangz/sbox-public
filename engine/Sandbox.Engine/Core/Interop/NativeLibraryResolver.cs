@@ -15,6 +15,51 @@ public static class NativeLibraryResolver
 	private static readonly object _initLock = new();
 
 	/// <summary>
+	/// Linux-specific dlopen/derror P/Invokes for loading libraries with RTLD_DEEPBIND.
+	/// Prevents symbol collisions between bundled OpenSSL and system libraries.
+	/// </summary>
+	private static class LinuxDlOpen
+	{
+		[DllImport( "libdl.so.2", EntryPoint = "dlopen" )]
+		private static extern IntPtr dlopen_raw( string filename, int flags );
+
+		[DllImport( "libdl.so.2", EntryPoint = "dlerror" )]
+		private static extern IntPtr dlerror_raw();
+
+		private const int RTLD_NOW = 0x2;
+		private const int RTLD_LOCAL = 0x0;      // Linux x86-64: LOCAL=0 (default)
+		private const int RTLD_DEEPBIND = 0x8;   // Linux x86-64: DEEPBIND=8
+
+		/// <summary>
+		/// Loads a native library with RTLD_DEEPBIND to prevent symbol pollution.
+		/// This ensures bundled OpenSSL symbols don't leak into the global namespace.
+		/// </summary>
+		public static IntPtr dlopen( string filename, int flags ) => dlopen_raw( filename, flags );
+
+		public static IntPtr dlerror() => dlerror_raw();
+
+		public static int GetDeepBindFlags() => RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND;
+	}
+
+	/// <summary>
+	/// Loads a library with RTLD_DEEPBIND on Linux to prevent OpenSSL symbol collisions.
+	/// Falls back to NativeLibrary.TryLoad on other platforms.
+	/// </summary>
+	private static bool TryLoadWithDeepBind( string fullPath, out IntPtr handle )
+	{
+		if ( OperatingSystem.IsLinux() )
+		{
+			handle = LinuxDlOpen.dlopen( fullPath, LinuxDlOpen.GetDeepBindFlags() );
+			if ( handle != IntPtr.Zero )
+			{
+				return true;
+			}
+			return false;
+		}
+		return NativeLibrary.TryLoad( fullPath, out handle );
+	}
+
+	/// <summary>
 	/// Known library name mappings from Windows names to Linux names.
 	/// </summary>
 	private static readonly Dictionary<string, string[]> LibraryMappings = new( StringComparer.OrdinalIgnoreCase )
@@ -132,7 +177,7 @@ public static class NativeLibraryResolver
 			foreach ( var candidate in candidates )
 			{
 				var fullPath = Path.Combine( path, candidate );
-				if ( NativeLibrary.TryLoad( fullPath, out var handle ) )
+				if ( TryLoadWithDeepBind( fullPath, out var handle ) )
 					return handle;
 			}
 		}
@@ -246,12 +291,12 @@ public static class NativeLibraryResolver
 			foreach ( var candidate in candidates )
 			{
 				var fullPath = Path.Combine( path, candidate );
-				if ( NativeLibrary.TryLoad( fullPath, out handle ) )
+				if ( TryLoadWithDeepBind( fullPath, out handle ) )
 					return true;
 			}
 		}
 
-		// Try direct load
+		// Try direct load (fallback - keep RTLD_GLOBAL behavior here as it's last-resort)
 		return NativeLibrary.TryLoad( libraryName, out handle );
 	}
 }

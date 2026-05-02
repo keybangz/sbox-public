@@ -3,8 +3,10 @@
 # This script sets up the environment for running s&box on Linux
 # WITHOUT requiring manual symlinks (the engine now handles case-insensitivity internally)
 #
-# NOTE: Library soname symlinks are still needed (these are standard Linux library versioning,
-# not related to case sensitivity). This script creates them automatically.
+# NOTE: Case-sensitivity symlinks have been removed. The filesystem uses a case-insensitive
+# ext4 overlay, so symlinks like assets->Assets are no longer needed (and would conflict).
+# Library soname symlinks are still created (standard Linux library versioning).
+# Resource and engine library path symlinks are still created (path resolution, not case).
 
 set -e
 
@@ -149,155 +151,6 @@ echo "Creating library soname symlinks..."
 # These are REQUIRED for Linux shared library versioning (not case-sensitivity related)
 create_soname_symlinks "$BIN_DIR"
 create_soname_symlinks "$GAME_DIR"
-
-echo ""
-echo "Creating case-sensitivity symlinks for native engine..."
-
-# The native C++ engine's filesystem is case-sensitive and some directories
-# have uppercase names but are referenced with lowercase. Create symlinks.
-create_case_symlink() {
-    local dir=$1
-    local uppercase=$2
-    local lowercase=$3
-
-    local uppercase_path="$dir/$uppercase"
-    local lowercase_path="$dir/$lowercase"
-
-    if [ -d "$uppercase_path" ] && [ ! -e "$lowercase_path" ]; then
-        ln -sf "$uppercase" "$lowercase_path"
-        echo "  Created: $lowercase_path -> $uppercase"
-    fi
-}
-
-# Fix case sensitivity in addons - Assets and Transients folders are referenced as lowercase
-# by the native engine but exist as uppercase on disk
-for addon_dir in "$GAME_DIR/addons"/*; do
-    if [ -d "$addon_dir/Assets" ] && [ ! -e "$addon_dir/assets" ]; then
-        ln -sf "Assets" "$addon_dir/assets"
-        echo "  Created: $addon_dir/assets -> Assets"
-    fi
-    if [ -d "$addon_dir/Transients" ] && [ ! -e "$addon_dir/transients" ]; then
-        ln -sf "Transients" "$addon_dir/transients"
-        echo "  Created: $addon_dir/transients -> Transients"
-    fi
-    if [ -d "$addon_dir/Code" ] && [ ! -e "$addon_dir/code" ]; then
-        ln -sf "Code" "$addon_dir/code"
-        echo "  Created: $addon_dir/code -> Code"
-    fi
-    if [ -d "$addon_dir/Localization" ] && [ ! -e "$addon_dir/localization" ]; then
-        ln -sf "Localization" "$addon_dir/localization"
-        echo "  Created: $addon_dir/localization -> Localization"
-    fi
-done
-
-# Fix case sensitivity within addons/base/Assets
-BASE_ASSETS="$GAME_DIR/addons/base/Assets"
-if [ -d "$BASE_ASSETS" ]; then
-    create_case_symlink "$BASE_ASSETS/shaders/common" "DDGI" "ddgi"
-    create_case_symlink "$BASE_ASSETS/shaders/common/classes" "Math" "math"
-    create_case_symlink "$BASE_ASSETS/shaders" "Hud" "hud"
-    create_case_symlink "$BASE_ASSETS/postprocess" "ObjectHighlight" "objecthighlight"
-fi
-
-# Fix colorgrading shader path - engine looks for colorgrading.shader_c in core root
-if [ -f "$GAME_DIR/core/shaders/colorgrading.shader_c" ] && [ ! -e "$GAME_DIR/core/colorgrading.shader_c" ]; then
-    ln -sf "shaders/colorgrading.shader_c" "$GAME_DIR/core/colorgrading.shader_c"
-    echo "  Created: core/colorgrading.shader_c -> shaders/colorgrading.shader_c"
-fi
-
-# Fix DDGI textures case sensitivity (Indirect Light -> indirect light)
-DDGI_DIR="$GAME_DIR/addons/menu/Assets/scenes/menu-main_scene_data/ddgi"
-if [ -d "$DDGI_DIR" ]; then
-    for f in "$DDGI_DIR/Indirect Light"*; do
-        if [ -f "$f" ]; then
-            lower=$(echo "$(basename "$f")" | tr '[:upper:]' '[:lower:]')
-            if [ ! -e "$DDGI_DIR/$lower" ]; then
-                ln -sf "$(basename "$f")" "$DDGI_DIR/$lower"
-                echo "  Created: ddgi/$lower -> $(basename "$f")"
-            fi
-        fi
-    done
-fi
-
-# Fix case sensitivity for Models/Model/Textures directories in citizen assets
-# These directories are referenced with lowercase in .clothing and .vmdl files
-# but exist with uppercase on disk. Create symlinks so native engine can find them.
-echo ""
-echo "Creating case-sensitivity symlinks for citizen clothing assets..."
-
-create_nested_case_symlinks() {
-    local base_dir=$1
-    local dir_name=$2
-    local link_name=$3
-    local count=0
-
-    if [ ! -d "$base_dir" ]; then
-        return
-    fi
-
-    # Find all directories named $dir_name and create lowercase symlinks
-    while IFS= read -r -d '' dir; do
-        local parent_dir=$(dirname "$dir")
-        local link_path="$parent_dir/$link_name"
-        if [ ! -e "$link_path" ]; then
-            ln -sf "$dir_name" "$link_path"
-            ((count++)) || true
-        fi
-    done < <(find "$base_dir" -type d -name "$dir_name" -print0 2>/dev/null)
-
-    if [ $count -gt 0 ]; then
-        echo "  Created $count symlinks: $dir_name -> $link_name"
-    fi
-}
-
-# Create lowercase symlinks for ALL directories with uppercase characters
-# This is needed because clothing files reference paths with lowercase names
-# but the actual directories may have mixed case (e.g., Headphones, Trapper_Hat)
-create_all_lowercase_symlinks() {
-    local base_dir=$1
-    local count=0
-
-    if [ ! -d "$base_dir" ]; then
-        return
-    fi
-
-    # Find all directories and create lowercase symlinks where needed
-    while IFS= read -r -d '' dir; do
-        local dir_name=$(basename "$dir")
-        local lower_name=$(echo "$dir_name" | tr '[:upper:]' '[:lower:]')
-
-        # Only create symlink if the lowercase version is different
-        if [ "$dir_name" != "$lower_name" ]; then
-            local parent_dir=$(dirname "$dir")
-            local link_path="$parent_dir/$lower_name"
-            if [ ! -e "$link_path" ]; then
-                ln -sf "$dir_name" "$link_path"
-                ((count++)) || true
-            fi
-        fi
-    done < <(find "$base_dir" -type d -print0 2>/dev/null)
-
-    if [ $count -gt 0 ]; then
-        echo "  Created $count lowercase symlinks in $base_dir"
-    fi
-}
-
-CITIZEN_ASSETS="$GAME_DIR/addons/citizen/Assets"
-if [ -d "$CITIZEN_ASSETS" ]; then
-    create_all_lowercase_symlinks "$CITIZEN_ASSETS"
-fi
-
-# Also fix in base assets if needed
-BASE_ASSETS="$GAME_DIR/addons/base/Assets"
-if [ -d "$BASE_ASSETS" ]; then
-    create_all_lowercase_symlinks "$BASE_ASSETS"
-fi
-
-# Fix menu assets as well
-MENU_ASSETS="$GAME_DIR/addons/menu/Assets"
-if [ -d "$MENU_ASSETS" ]; then
-    create_all_lowercase_symlinks "$MENU_ASSETS"
-fi
 
 echo ""
 echo "Creating native engine resource symlinks..."
@@ -469,4 +322,3 @@ else
 echo "  [OK] run.sh already exists"
 fi
 echo ""
-

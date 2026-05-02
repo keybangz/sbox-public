@@ -327,6 +327,21 @@ public class AppSystem
 		commandLine ??= System.Environment.CommandLine;
 		commandLine = commandLine.Replace( ".dll", ".exe" ); // uck
 
+		// On Linux, argv[0] from Environment.CommandLine points to sbox.dll in game/,
+		// but the native engine parses argv[0] to find the bin dir (bin/linuxsteamrt64).
+		// Rewrite argv[0] to the absolute bin dir path so the engine can locate itself.
+		var sboxBinDir = System.Environment.GetEnvironmentVariable( "SBOX_BIN_DIR" );
+		if ( !string.IsNullOrEmpty( sboxBinDir ) && System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform( System.Runtime.InteropServices.OSPlatform.Linux ) )
+		{
+			var fakeArgv0 = System.IO.Path.Combine( sboxBinDir, "sbox.exe" );
+			// commandLine starts with the original argv[0] (possibly quoted)
+			// Replace just the first token (argv[0])
+			var spaceIdx = commandLine.IndexOf( ' ' );
+			var rest = spaceIdx >= 0 ? commandLine.Substring( spaceIdx ) : "";
+			commandLine = fakeArgv0 + rest;
+			System.IO.File.AppendAllText( "/tmp/initgame_debug.txt", $"[InitGame] Rewrote commandLine argv[0] to: {fakeArgv0}\n" );
+		}
+
 		_appSystem = CMaterialSystem2AppSystemDict.Create( createInfo.ToMaterialSystem2AppSystemDictCreateInfo() );
 
 		if ( createInfo.Flags.HasFlag( AppSystemFlags.IsEditor ) )

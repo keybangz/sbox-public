@@ -243,7 +243,7 @@ internal sealed class TextBlock : IDisposable
 			var fallbacks = new[] { "Poppins", "Liberation Sans", "DejaVu Sans", "Noto Sans", "Ubuntu", "Arial" };
 			foreach ( var fb in fallbacks )
 			{
-				if ( FontManager.LoadedFonts.Values.Any( f => f.FamilyName.Equals( fb, StringComparison.OrdinalIgnoreCase ) ) )
+				if ( FontManager.Instance.LoadedFonts.Values.Any( f => f.Typeface.FamilyName.Equals( fb, StringComparison.OrdinalIgnoreCase ) ) )
 				{
 					fontFamily = fb;
 					break;
