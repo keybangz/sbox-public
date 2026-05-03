@@ -153,16 +153,10 @@ internal static class EngineLoop
 		g_pInputService.Pump();
 
 #if !WIN
-		// On Linux, the native engine doesn't call managed input callbacks,
-		// so we poll X11 events directly from managed code
-		try
-		{
-			Sandbox.Systems.Render.Multimedia.LinuxSDLInput.PollEvents();
-		}
-		catch ( System.Exception )
-		{
-			// Silently ignore input polling errors
-		}
+		// On Linux, initialize SDL3 event watch once (events arrive via callback)
+		// PollEvents is now a no-op - kept for API compatibility
+		Sandbox.Systems.Render.Multimedia.LinuxSDLInput.Initialize();
+		Sandbox.Systems.Render.Multimedia.LinuxSDLInput.PollEvents();
 #endif
 	}
 

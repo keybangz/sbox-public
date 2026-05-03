@@ -6,424 +6,347 @@ using System.Text;
 namespace Sandbox.Systems.Render.Multimedia
 {
 #if !WIN
-	/// <summary>
-	/// Linux SDL3 input polling - uses SDL_PollEvent for proper input handling
-	/// since the native engine doesn't call managed input callbacks on Linux.
-	/// </summary>
-	public static class LinuxSDLInput
-	{
-		// SDL3 P/Invoke declarations
-		[DllImport("libSDL3.so.0", CallingConvention = CallingConvention.Cdecl)]
-		private static extern int SDL_PollEvent(out SDL_Event evt);
+    /// <summary>
+    /// Linux SDL3 input — uses SDL_AddEventWatch to intercept events BEFORE
+    /// the native engine's Pump() consumes them from the SDL event queue.
+    /// </summary>
+    public static class LinuxSDLInput
+    {
+        // SDL3 P/Invoke
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate void SDL_EventFilterDelegate(IntPtr userdata, IntPtr eventPtr);
 
-		[DllImport("libSDL3.so.0", CallingConvention = CallingConvention.Cdecl)]
-		private static extern int SDL_GetRelativeMouseMode(); // returns SDL_bool (0 or 1)
+        [DllImport("libSDL3.so.0", CallingConvention = CallingConvention.Cdecl)]
+        private static extern void SDL_AddEventWatch(SDL_EventFilterDelegate filter, IntPtr userdata);
 
-		// SDL3 event type constants
-		private const uint SDL_EVENT_QUIT = 0x100;
-		private const uint SDL_EVENT_KEY_DOWN = 0x300;
-		private const uint SDL_EVENT_KEY_UP = 0x301;
-		private const uint SDL_EVENT_TEXT_INPUT = 0x303;
-		private const uint SDL_EVENT_MOUSE_MOTION = 0x400;
-		private const uint SDL_EVENT_MOUSE_BUTTON_DOWN = 0x401;
-		private const uint SDL_EVENT_MOUSE_BUTTON_UP = 0x402;
-		private const uint SDL_EVENT_MOUSE_WHEEL = 0x403;
-		private const uint SDL_EVENT_WINDOW_FOCUS_GAINED = 0x204;
-		private const uint SDL_EVENT_WINDOW_FOCUS_LOST = 0x205;
+        [DllImport("libSDL3.so.0", CallingConvention = CallingConvention.Cdecl)]
+        private static extern void SDL_RemoveEventWatch(SDL_EventFilterDelegate filter, IntPtr userdata);
 
-		// SDL3 mouse button constants
-		private const byte SDL_BUTTON_LEFT = 1;
-		private const byte SDL_BUTTON_MIDDLE = 2;
-		private const byte SDL_BUTTON_RIGHT = 3;
-		private const byte SDL_BUTTON_X1 = 4;
-		private const byte SDL_BUTTON_X2 = 5;
+        // SDL3 event type constants (verified from SDL3 source SDL_events.h)
+        private const uint SDL_EVENT_KEY_DOWN              = 0x300;
+        private const uint SDL_EVENT_KEY_UP                = 0x301;
+        private const uint SDL_EVENT_TEXT_INPUT            = 0x303;
+        private const uint SDL_EVENT_MOUSE_MOTION          = 0x400;
+        private const uint SDL_EVENT_MOUSE_BUTTON_DOWN     = 0x401;
+        private const uint SDL_EVENT_MOUSE_BUTTON_UP       = 0x402;
+        private const uint SDL_EVENT_MOUSE_WHEEL           = 0x403;
+        private const uint SDL_EVENT_WINDOW_FOCUS_GAINED   = 0x214;  // SDL3: 0x214 not 0x204
+        private const uint SDL_EVENT_WINDOW_FOCUS_LOST     = 0x215;  // SDL3: 0x215 not 0x205
 
-		// SDL3 event struct (union layout)
-		[StructLayout(LayoutKind.Explicit, Size = 128)]
-		private struct SDL_Event
-		{
-			[FieldOffset(0)] public uint type;
-			[FieldOffset(0)] public SDL_KeyboardEvent key;
-			[FieldOffset(0)] public SDL_MouseMotionEvent motion;
-			[FieldOffset(0)] public SDL_MouseButtonEvent button;
-			[FieldOffset(0)] public SDL_MouseWheelEvent wheel;
-			[FieldOffset(0)] public SDL_WindowEvent window;
-			[FieldOffset(0)] public SDL_TextInputEvent text;
-		}
+        // SDL3 mouse button constants
+        private const byte SDL_BUTTON_LEFT   = 1;
+        private const byte SDL_BUTTON_MIDDLE = 2;
+        private const byte SDL_BUTTON_RIGHT  = 3;
+        private const byte SDL_BUTTON_X1    = 4;
+        private const byte SDL_BUTTON_X2    = 5;
 
-		[StructLayout(LayoutKind.Sequential)]
-		private struct SDL_KeyboardEvent
-		{
-			public uint type;
-			public uint reserved;
-			public ulong timestamp;
-			public uint windowID;
-			public uint which;
-			public uint scancode;   // SDL_Scancode
-			public uint key;        // SDL_Keycode
-			public ushort mod;
-			public ushort raw;
-			public byte down;       // SDL_bool (1=down, 0=up)
-			public byte repeat;     // SDL_bool
-		}
+        // MUST be stored in static field — GC collection of delegate causes native crash
+        private static readonly SDL_EventFilterDelegate _eventWatch = EventWatchCallback;
+        private static bool _initialized = false;
 
-		[StructLayout(LayoutKind.Sequential)]
-		private struct SDL_MouseMotionEvent
-		{
-			public uint type;
-			public uint reserved;
-			public ulong timestamp;
-			public uint windowID;
-			public uint which;
-			public uint state;
-			public float x;
-			public float y;
-			public float xrel;
-			public float yrel;
-		}
+        // SDL3 struct layouts — all use explicit FieldOffset (verified from SDL3 headers)
+        // SDL_KeyboardEvent: type(0) reserved(4) timestamp(8) windowID(16) which(20) scancode(24) key(28) mod(32) raw(34) down(36) repeat(37)
+        [StructLayout(LayoutKind.Explicit, Size = 40)]
+        private struct SDL_KeyboardEvent
+        {
+            [FieldOffset(0)]  public uint   type;
+            [FieldOffset(4)]  public uint   reserved;
+            [FieldOffset(8)]  public ulong  timestamp;
+            [FieldOffset(16)] public uint   windowID;
+            [FieldOffset(20)] public uint   which;
+            [FieldOffset(24)] public uint   scancode;
+            [FieldOffset(28)] public uint   key;
+            [FieldOffset(32)] public ushort mod;
+            [FieldOffset(34)] public ushort raw;
+            [FieldOffset(36)] public byte   down;
+            [FieldOffset(37)] public byte   repeat;
+        }
 
-		[StructLayout(LayoutKind.Sequential)]
-		private struct SDL_MouseButtonEvent
-		{
-			public uint type;
-			public uint reserved;
-			public ulong timestamp;
-			public uint windowID;
-			public uint which;
-			public byte button;
-			public byte down;       // SDL_bool
-			public byte clicks;
-			public byte padding;
-			public float x;
-			public float y;
-		}
+        // SDL_MouseMotionEvent: type(0) reserved(4) timestamp(8) windowID(16) which(20) state(24) x(28) y(32) xrel(36) yrel(40)
+        [StructLayout(LayoutKind.Explicit, Size = 48)]
+        private struct SDL_MouseMotionEvent
+        {
+            [FieldOffset(0)]  public uint  type;
+            [FieldOffset(4)]  public uint  reserved;
+            [FieldOffset(8)]  public ulong timestamp;
+            [FieldOffset(16)] public uint  windowID;
+            [FieldOffset(20)] public uint  which;
+            [FieldOffset(24)] public uint  state;
+            [FieldOffset(28)] public float x;
+            [FieldOffset(32)] public float y;
+            [FieldOffset(36)] public float xrel;
+            [FieldOffset(40)] public float yrel;
+        }
 
-		[StructLayout(LayoutKind.Sequential)]
-		private struct SDL_MouseWheelEvent
-		{
-			public uint type;
-			public uint reserved;
-			public ulong timestamp;
-			public uint windowID;
-			public uint which;
-			public float x;
-			public float y;
-			public uint direction;
-			public float mouse_x;
-			public float mouse_y;
-		}
+        // SDL_MouseButtonEvent: type(0) reserved(4) timestamp(8) windowID(16) which(20) button(24) down(25) clicks(26) padding(27) x(28) y(32)
+        [StructLayout(LayoutKind.Explicit, Size = 36)]
+        private struct SDL_MouseButtonEvent
+        {
+            [FieldOffset(0)]  public uint  type;
+            [FieldOffset(4)]  public uint  reserved;
+            [FieldOffset(8)]  public ulong timestamp;
+            [FieldOffset(16)] public uint  windowID;
+            [FieldOffset(20)] public uint  which;
+            [FieldOffset(24)] public byte  button;
+            [FieldOffset(25)] public byte  down;
+            [FieldOffset(26)] public byte  clicks;
+            [FieldOffset(27)] public byte  padding;
+            [FieldOffset(28)] public float x;
+            [FieldOffset(32)] public float y;
+        }
 
-		[StructLayout(LayoutKind.Sequential)]
-		private struct SDL_WindowEvent
-		{
-			public uint type;
-			public uint reserved;
-			public ulong timestamp;
-			public uint windowID;
-			public int data1;
-			public int data2;
-		}
+        // SDL_MouseWheelEvent: type(0) reserved(4) timestamp(8) windowID(16) which(20) x(24) y(28) direction(32) mouse_x(36) mouse_y(40) integer_x(44) integer_y(48)
+        [StructLayout(LayoutKind.Explicit, Size = 52)]
+        private struct SDL_MouseWheelEvent
+        {
+            [FieldOffset(0)]  public uint  type;
+            [FieldOffset(4)]  public uint  reserved;
+            [FieldOffset(8)]  public ulong timestamp;
+            [FieldOffset(16)] public uint  windowID;
+            [FieldOffset(20)] public uint  which;
+            [FieldOffset(24)] public float x;
+            [FieldOffset(28)] public float y;
+            [FieldOffset(32)] public uint  direction;
+            [FieldOffset(36)] public float mouse_x;
+            [FieldOffset(40)] public float mouse_y;
+            [FieldOffset(44)] public int   integer_x;
+            [FieldOffset(48)] public int   integer_y;
+        }
 
-		[StructLayout(LayoutKind.Explicit, Size = 128)]
-		private unsafe struct SDL_TextInputEvent
-		{
-			[FieldOffset(0)] public uint type;
-			[FieldOffset(4)] public uint reserved;
-			[FieldOffset(8)] public ulong timestamp;
-			[FieldOffset(16)] public uint windowID;
-			[FieldOffset(20)] public byte* text; // pointer to UTF-8 string
-		}
+        // SDL_TextInputEvent: type(0) reserved(4) timestamp(8) windowID(16) [4 bytes pad] text*(24) on 64-bit
+        [StructLayout(LayoutKind.Explicit, Size = 32)]
+        private struct SDL_TextInputEvent
+        {
+            [FieldOffset(0)]  public uint   type;
+            [FieldOffset(4)]  public uint   reserved;
+            [FieldOffset(8)]  public ulong  timestamp;
+            [FieldOffset(16)] public uint   windowID;
+            // On 64-bit Linux: pointer alignment pads to offset 24
+            [FieldOffset(24)] public IntPtr text;
+        }
 
-		// Scancode to ButtonCode lookup table
-		// SDL3 scancodes max is around 256, so use array for O(1) lookup
-		private static readonly ButtonCode[] ScancodeToButtonCode = BuildScancodeTable();
+        // Scancode → ButtonCode lookup (512 entries to cover SDL3 media keys)
+        private static readonly ButtonCode[] ScancodeTable = BuildScancodeTable();
 
-		private static ButtonCode[] BuildScancodeTable()
-		{
-			var table = new ButtonCode[256];
-			for (int i = 0; i < 256; i++)
-				table[i] = ButtonCode.BUTTON_CODE_INVALID;
+        private static ButtonCode[] BuildScancodeTable()
+        {
+            var t = new ButtonCode[512];
+            for (int i = 0; i < 512; i++) t[i] = ButtonCode.BUTTON_CODE_INVALID;
 
-			// Letters
-			table[4] = ButtonCode.KEY_A;
-			table[5] = ButtonCode.KEY_B;
-			table[6] = ButtonCode.KEY_C;
-			table[7] = ButtonCode.KEY_D;
-			table[8] = ButtonCode.KEY_E;
-			table[9] = ButtonCode.KEY_F;
-			table[10] = ButtonCode.KEY_G;
-			table[11] = ButtonCode.KEY_H;
-			table[12] = ButtonCode.KEY_I;
-			table[13] = ButtonCode.KEY_J;
-			table[14] = ButtonCode.KEY_K;
-			table[15] = ButtonCode.KEY_L;
-			table[16] = ButtonCode.KEY_M;
-			table[17] = ButtonCode.KEY_N;
-			table[18] = ButtonCode.KEY_O;
-			table[19] = ButtonCode.KEY_P;
-			table[20] = ButtonCode.KEY_Q;
-			table[21] = ButtonCode.KEY_R;
-			table[22] = ButtonCode.KEY_S;
-			table[23] = ButtonCode.KEY_T;
-			table[24] = ButtonCode.KEY_U;
-			table[25] = ButtonCode.KEY_V;
-			table[26] = ButtonCode.KEY_W;
-			table[27] = ButtonCode.KEY_X;
-			table[28] = ButtonCode.KEY_Y;
-			table[29] = ButtonCode.KEY_Z;
+            // Letters A-Z (SDL scancode 4-29)
+            t[4]=ButtonCode.KEY_A; t[5]=ButtonCode.KEY_B; t[6]=ButtonCode.KEY_C;
+            t[7]=ButtonCode.KEY_D; t[8]=ButtonCode.KEY_E; t[9]=ButtonCode.KEY_F;
+            t[10]=ButtonCode.KEY_G; t[11]=ButtonCode.KEY_H; t[12]=ButtonCode.KEY_I;
+            t[13]=ButtonCode.KEY_J; t[14]=ButtonCode.KEY_K; t[15]=ButtonCode.KEY_L;
+            t[16]=ButtonCode.KEY_M; t[17]=ButtonCode.KEY_N; t[18]=ButtonCode.KEY_O;
+            t[19]=ButtonCode.KEY_P; t[20]=ButtonCode.KEY_Q; t[21]=ButtonCode.KEY_R;
+            t[22]=ButtonCode.KEY_S; t[23]=ButtonCode.KEY_T; t[24]=ButtonCode.KEY_U;
+            t[25]=ButtonCode.KEY_V; t[26]=ButtonCode.KEY_W; t[27]=ButtonCode.KEY_X;
+            t[28]=ButtonCode.KEY_Y; t[29]=ButtonCode.KEY_Z;
 
-			// Numbers
-			table[30] = ButtonCode.KEY_1;
-			table[31] = ButtonCode.KEY_2;
-			table[32] = ButtonCode.KEY_3;
-			table[33] = ButtonCode.KEY_4;
-			table[34] = ButtonCode.KEY_5;
-			table[35] = ButtonCode.KEY_6;
-			table[36] = ButtonCode.KEY_7;
-			table[37] = ButtonCode.KEY_8;
-			table[38] = ButtonCode.KEY_9;
-			table[39] = ButtonCode.KEY_0;
+            // Numbers 1-9, 0 (SDL 30-39)
+            t[30]=ButtonCode.KEY_1; t[31]=ButtonCode.KEY_2; t[32]=ButtonCode.KEY_3;
+            t[33]=ButtonCode.KEY_4; t[34]=ButtonCode.KEY_5; t[35]=ButtonCode.KEY_6;
+            t[36]=ButtonCode.KEY_7; t[37]=ButtonCode.KEY_8; t[38]=ButtonCode.KEY_9;
+            t[39]=ButtonCode.KEY_0;
 
-			// Special keys
-			table[40] = ButtonCode.KEY_ENTER;
-			table[41] = ButtonCode.KEY_ESCAPE;
-			table[42] = ButtonCode.KEY_BACKSPACE;
-			table[43] = ButtonCode.KEY_TAB;
-			table[44] = ButtonCode.KEY_SPACE;
-			table[45] = ButtonCode.KEY_MINUS;
-			table[46] = ButtonCode.KEY_EQUAL;
-			table[47] = ButtonCode.KEY_LBRACKET;
-			table[48] = ButtonCode.KEY_RBRACKET;
-			table[49] = ButtonCode.KEY_BACKSLASH;
-			table[51] = ButtonCode.KEY_SEMICOLON;
-			table[52] = ButtonCode.KEY_APOSTROPHE;
-			table[53] = ButtonCode.KEY_BACKQUOTE;
-			table[54] = ButtonCode.KEY_COMMA;
-			table[55] = ButtonCode.KEY_PERIOD;
-			table[56] = ButtonCode.KEY_SLASH;
-			table[57] = ButtonCode.KEY_CAPSLOCK;
+            // Special keys
+            t[40]=ButtonCode.KEY_ENTER;    t[41]=ButtonCode.KEY_ESCAPE;
+            t[42]=ButtonCode.KEY_BACKSPACE; t[43]=ButtonCode.KEY_TAB;
+            t[44]=ButtonCode.KEY_SPACE;    t[45]=ButtonCode.KEY_MINUS;
+            t[46]=ButtonCode.KEY_EQUAL;    t[47]=ButtonCode.KEY_LBRACKET;
+            t[48]=ButtonCode.KEY_RBRACKET; t[49]=ButtonCode.KEY_BACKSLASH;
+            t[51]=ButtonCode.KEY_SEMICOLON; t[52]=ButtonCode.KEY_APOSTROPHE;
+            t[53]=ButtonCode.KEY_BACKQUOTE; t[54]=ButtonCode.KEY_COMMA;
+            t[55]=ButtonCode.KEY_PERIOD;   t[56]=ButtonCode.KEY_SLASH;
+            t[57]=ButtonCode.KEY_CAPSLOCK;
 
-			// Function keys F1-F12
-			table[58] = ButtonCode.KEY_F1;
-			table[59] = ButtonCode.KEY_F2;
-			table[60] = ButtonCode.KEY_F3;
-			table[61] = ButtonCode.KEY_F4;
-			table[62] = ButtonCode.KEY_F5;
-			table[63] = ButtonCode.KEY_F6;
-			table[64] = ButtonCode.KEY_F7;
-			table[65] = ButtonCode.KEY_F8;
-			table[66] = ButtonCode.KEY_F9;
-			table[67] = ButtonCode.KEY_F10;
-			table[68] = ButtonCode.KEY_F11;
-			table[69] = ButtonCode.KEY_F12;
+            // F1-F12 (SDL 58-69)
+            t[58]=ButtonCode.KEY_F1;  t[59]=ButtonCode.KEY_F2;  t[60]=ButtonCode.KEY_F3;
+            t[61]=ButtonCode.KEY_F4;  t[62]=ButtonCode.KEY_F5;  t[63]=ButtonCode.KEY_F6;
+            t[64]=ButtonCode.KEY_F7;  t[65]=ButtonCode.KEY_F8;  t[66]=ButtonCode.KEY_F9;
+            t[67]=ButtonCode.KEY_F10; t[68]=ButtonCode.KEY_F11; t[69]=ButtonCode.KEY_F12;
 
-			// PrintScreen, ScrollLock, Pause
-			table[70] = ButtonCode.KEY_PRINTSCREEN;
-			table[71] = ButtonCode.KEY_SCROLLLOCK;
-			table[72] = ButtonCode.KEY_BREAK; // Pause/Break
+            // PrintScreen(70), ScrollLock(71), Pause(72)
+            t[70]=ButtonCode.KEY_PRINTSCREEN;
+            t[71]=ButtonCode.KEY_SCROLLLOCK;
+            t[72]=ButtonCode.KEY_BREAK;
 
-			// Insert, Home, PageUp
-			table[73] = ButtonCode.KEY_INSERT;
-			table[74] = ButtonCode.KEY_HOME;
-			table[75] = ButtonCode.KEY_PAGEUP;
+            // Insert(73), Home(74), PageUp(75), Delete(76), End(77), PageDown(78)
+            t[73]=ButtonCode.KEY_INSERT;  t[74]=ButtonCode.KEY_HOME;
+            t[75]=ButtonCode.KEY_PAGEUP;  t[76]=ButtonCode.KEY_DELETE;
+            t[77]=ButtonCode.KEY_END;     t[78]=ButtonCode.KEY_PAGEDOWN;
 
-			// Delete, End, PageDown
-			table[76] = ButtonCode.KEY_DELETE;
-			table[77] = ButtonCode.KEY_END;
-			table[78] = ButtonCode.KEY_PAGEDOWN;
+            // Arrow keys: Right(79), Left(80), Down(81), Up(82)
+            t[79]=ButtonCode.KEY_RIGHT; t[80]=ButtonCode.KEY_LEFT;
+            t[81]=ButtonCode.KEY_DOWN;  t[82]=ButtonCode.KEY_UP;
 
-			// Arrow keys
-			table[79] = ButtonCode.KEY_RIGHT;
-			table[80] = ButtonCode.KEY_LEFT;
-			table[81] = ButtonCode.KEY_DOWN;
-			table[82] = ButtonCode.KEY_UP;
+            // Numpad
+            t[83]=ButtonCode.KEY_NUMLOCK;      t[84]=ButtonCode.KEY_PAD_DIVIDE;
+            t[85]=ButtonCode.KEY_PAD_MULTIPLY; t[86]=ButtonCode.KEY_PAD_MINUS;
+            t[87]=ButtonCode.KEY_PAD_PLUS;     t[88]=ButtonCode.KEY_PAD_ENTER;
+            t[89]=ButtonCode.KEY_PAD_1; t[90]=ButtonCode.KEY_PAD_2;
+            t[91]=ButtonCode.KEY_PAD_3; t[92]=ButtonCode.KEY_PAD_4;
+            t[93]=ButtonCode.KEY_PAD_5; t[94]=ButtonCode.KEY_PAD_6;
+            t[95]=ButtonCode.KEY_PAD_7; t[96]=ButtonCode.KEY_PAD_8;
+            t[97]=ButtonCode.KEY_PAD_9; t[98]=ButtonCode.KEY_PAD_0;
+            t[99]=ButtonCode.KEY_PAD_DECIMAL;
 
-			// Numpad
-			table[83] = ButtonCode.KEY_NUMLOCK;
-			table[84] = ButtonCode.KEY_PAD_DIVIDE;
-			table[85] = ButtonCode.KEY_PAD_MULTIPLY;
-			table[86] = ButtonCode.KEY_PAD_MINUS;
-			table[87] = ButtonCode.KEY_PAD_PLUS;
-			table[88] = ButtonCode.KEY_PAD_ENTER;
-			table[89] = ButtonCode.KEY_PAD_1;
-			table[90] = ButtonCode.KEY_PAD_2;
-			table[91] = ButtonCode.KEY_PAD_3;
-			table[92] = ButtonCode.KEY_PAD_4;
-			table[93] = ButtonCode.KEY_PAD_5;
-			table[94] = ButtonCode.KEY_PAD_6;
-			table[95] = ButtonCode.KEY_PAD_7;
-			table[96] = ButtonCode.KEY_PAD_8;
-			table[97] = ButtonCode.KEY_PAD_9;
-			table[98] = ButtonCode.KEY_PAD_0;
-			table[99] = ButtonCode.KEY_PAD_DECIMAL;
+            // Application key (101)
+            t[101]=ButtonCode.KEY_APP;
 
-			// Application key
-			table[101] = ButtonCode.KEY_APP;
+            // Modifier keys (224-231)
+            t[224]=ButtonCode.KEY_LCONTROL; t[225]=ButtonCode.KEY_LSHIFT;
+            t[226]=ButtonCode.KEY_LALT;     t[227]=ButtonCode.KEY_LWIN;
+            t[228]=ButtonCode.KEY_RCONTROL; t[229]=ButtonCode.KEY_RSHIFT;
+            t[230]=ButtonCode.KEY_RALT;     t[231]=ButtonCode.KEY_RWIN;
 
-			// Left and right modifiers
-			table[224] = ButtonCode.KEY_LCONTROL;
-			table[225] = ButtonCode.KEY_LSHIFT;
-			table[226] = ButtonCode.KEY_LALT;
-			table[227] = ButtonCode.KEY_LWIN;
-			table[228] = ButtonCode.KEY_RCONTROL;
-			table[229] = ButtonCode.KEY_RSHIFT;
-			table[230] = ButtonCode.KEY_RALT;
-			table[231] = ButtonCode.KEY_RWIN;
+            return t;
+        }
 
-			return table;
-		}
+        /// <summary>
+        /// Register the SDL3 event watch. Call once at startup, before any Pump() calls.
+        /// </summary>
+        public static void Initialize()
+        {
+            if (_initialized) return;
+            try
+            {
+                SDL_AddEventWatch(_eventWatch, IntPtr.Zero);
+                _initialized = true;
+                Log.Info("[LinuxSDLInput] SDL3 event watch registered successfully");
+            }
+            catch (DllNotFoundException ex)
+            {
+                Log.Error($"[LinuxSDLInput] SDL3 library not found: {ex.Message}");
+            }
+            catch (EntryPointNotFoundException ex)
+            {
+                Log.Error($"[LinuxSDLInput] SDL3 entry point missing: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"[LinuxSDLInput] Failed to register event watch: {ex.Message}");
+            }
+        }
 
-		/// <summary>
-		/// Poll SDL3 events and forward to InputRouter.
-		/// Should be called every frame from UpdateInput().
-		/// </summary>
-		public static unsafe void PollEvents()
-		{
-			while (SDL_PollEvent(out SDL_Event evt) != 0)
-			{
-				switch (evt.type)
-				{
-					case SDL_EVENT_KEY_DOWN:
-					case SDL_EVENT_KEY_UP:
-						HandleKeyboardEvent(evt.key);
-						break;
+        /// <summary>
+        /// Called every frame — no-op now, events arrive via watch callback.
+        /// Kept for API compatibility with EngineLoop.cs.
+        /// </summary>
+        public static void PollEvents()
+        {
+            // Events are now handled in EventWatchCallback (SDL_AddEventWatch).
+            // This method intentionally left empty.
+        }
 
-					case SDL_EVENT_TEXT_INPUT:
-						HandleTextInputEvent(evt.text);
-						break;
+        // SDL_AddEventWatch callback — fires for EVERY SDL event before queue consumption.
+        // CRITICAL: May be called from a non-main thread. InputRouter calls must be safe.
+        // CRITICAL: This delegate is stored in _eventWatch static field to prevent GC.
+        private static void EventWatchCallback(IntPtr userdata, IntPtr eventPtr)
+        {
+            if (eventPtr == IntPtr.Zero) return;
 
-					case SDL_EVENT_MOUSE_MOTION:
-						HandleMouseMotionEvent(evt.motion);
-						break;
+            try
+            {
+                uint type = (uint)Marshal.ReadInt32(eventPtr);
 
-					case SDL_EVENT_MOUSE_BUTTON_DOWN:
-					case SDL_EVENT_MOUSE_BUTTON_UP:
-						HandleMouseButtonEvent(evt.button);
-						break;
+                switch (type)
+                {
+                    case SDL_EVENT_KEY_DOWN:
+                    case SDL_EVENT_KEY_UP:
+                    {
+                        var ev = Marshal.PtrToStructure<SDL_KeyboardEvent>(eventPtr);
+                        uint sc = ev.scancode;
+                        bool down = ev.down != 0;
+                        bool repeat = ev.repeat != 0;
+                        if (sc < (uint)ScancodeTable.Length)
+                        {
+                            var bc = ScancodeTable[sc];
+                            if (bc != ButtonCode.BUTTON_CODE_INVALID)
+                                InputRouter.OnKey(bc, bc, down, repeat, 0);
+                        }
+                        break;
+                    }
 
-					case SDL_EVENT_MOUSE_WHEEL:
-						HandleMouseWheelEvent(evt.wheel);
-						break;
+                    case SDL_EVENT_TEXT_INPUT:
+                    {
+                        var ev = Marshal.PtrToStructure<SDL_TextInputEvent>(eventPtr);
+                        if (ev.text != IntPtr.Zero)
+                        {
+                            string text = Marshal.PtrToStringUTF8(ev.text);
+                            if (text != null)
+                            {
+                                // Decode each UTF-32 codepoint
+                                var enumerator = System.Globalization.StringInfo.GetTextElementEnumerator(text);
+                                while (enumerator.MoveNext())
+                                {
+                                    string elem = enumerator.GetTextElement();
+                                    int cp = char.ConvertToUtf32(elem, 0);
+                                    if (cp > 0)
+                                        InputRouter.OnText((uint)cp);
+                                }
+                            }
+                        }
+                        break;
+                    }
 
-					case SDL_EVENT_WINDOW_FOCUS_GAINED:
-						InputRouter.OnWindowActive(true);
-						break;
+                    case SDL_EVENT_MOUSE_MOTION:
+                    {
+                        var ev = Marshal.PtrToStructure<SDL_MouseMotionEvent>(eventPtr);
+                        // Use native engine's relative mouse mode query (no global SDL3 equivalent)
+                        bool relMode = NativeEngine.InputSystem.GetRelativeMouseMode();
+                        if (relMode)
+                            InputRouter.OnMouseMotion(ev.xrel, ev.yrel);
+                        else
+                            InputRouter.OnMousePositionChange(ev.x, ev.y, ev.xrel, ev.yrel);
+                        break;
+                    }
 
-					case SDL_EVENT_WINDOW_FOCUS_LOST:
-						InputRouter.OnWindowActive(false);
-						break;
-				}
-			}
-		}
+                    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+                    case SDL_EVENT_MOUSE_BUTTON_UP:
+                    {
+                        var ev = Marshal.PtrToStructure<SDL_MouseButtonEvent>(eventPtr);
+                        bool down = ev.down != 0;
+                        var bc = ev.button switch
+                        {
+                            SDL_BUTTON_LEFT   => ButtonCode.MouseLeft,
+                            SDL_BUTTON_RIGHT  => ButtonCode.MouseRight,
+                            SDL_BUTTON_MIDDLE => ButtonCode.MouseMiddle,
+                            SDL_BUTTON_X1     => ButtonCode.MouseBack,
+                            SDL_BUTTON_X2     => ButtonCode.MouseForward,
+                            _                 => ButtonCode.BUTTON_CODE_INVALID
+                        };
+                        if (bc != ButtonCode.BUTTON_CODE_INVALID)
+                            InputRouter.OnMouseButton(bc, down, 0);
+                        break;
+                    }
 
-		private static void HandleKeyboardEvent(SDL_KeyboardEvent keyEvent)
-		{
-			uint scancode = keyEvent.scancode;
-			bool down = keyEvent.down != 0;
-			bool repeat = keyEvent.repeat != 0;
+                    case SDL_EVENT_MOUSE_WHEEL:
+                    {
+                        var ev = Marshal.PtrToStructure<SDL_MouseWheelEvent>(eventPtr);
+                        // Use integer_x/integer_y if available (SDL3 newer), else cast float
+                        int wx = ev.integer_x != 0 ? ev.integer_x : (int)ev.x;
+                        int wy = ev.integer_y != 0 ? ev.integer_y : (int)ev.y;
+                        InputRouter.OnMouseWheel(wx, wy, 0);
+                        break;
+                    }
 
-			ButtonCode buttonCode = ButtonCode.BUTTON_CODE_INVALID;
-			if (scancode < ScancodeToButtonCode.Length)
-			{
-				buttonCode = ScancodeToButtonCode[scancode];
-			}
+                    case SDL_EVENT_WINDOW_FOCUS_GAINED:
+                        InputRouter.OnWindowActive(true);
+                        break;
 
-			if (buttonCode != ButtonCode.BUTTON_CODE_INVALID)
-			{
-				// Pass ButtonCode for both scanCode and keyCode parameters
-				InputRouter.OnKey(buttonCode, buttonCode, down, repeat, 0);
-			}
-		}
-
-		private static unsafe void HandleTextInputEvent(SDL_TextInputEvent textEvent)
-		{
-			if (textEvent.text == null)
-				return;
-
-			// Decode first UTF-8 character
-			byte* text = textEvent.text;
-			uint codepoint = 0;
-
-			if ((text[0] & 0x80) == 0)
-			{
-				// Single byte (ASCII)
-				codepoint = text[0];
-			}
-			else if ((text[0] & 0xE0) == 0xC0)
-			{
-				// Two bytes
-				codepoint = (uint)((text[0] & 0x1F) << 6) | (uint)(text[1] & 0x3F);
-			}
-			else if ((text[0] & 0xF0) == 0xE0)
-			{
-				// Three bytes
-				codepoint = (uint)((text[0] & 0x0F) << 12) | (uint)((text[1] & 0x3F) << 6) | (uint)(text[2] & 0x3F);
-			}
-			else if ((text[0] & 0xF8) == 0xF0)
-			{
-				// Four bytes
-				codepoint = (uint)((text[0] & 0x07) << 18) | (uint)((text[1] & 0x3F) << 12) | (uint)((text[2] & 0x3F) << 6) | (uint)(text[3] & 0x3F);
-			}
-
-			if (codepoint > 0)
-			{
-				InputRouter.OnText(codepoint);
-			}
-		}
-
-		private static void HandleMouseMotionEvent(SDL_MouseMotionEvent motionEvent)
-		{
-			float x = motionEvent.x;
-			float y = motionEvent.y;
-			float xrel = motionEvent.xrel;
-			float yrel = motionEvent.yrel;
-
-			bool relativeMode = SDL_GetRelativeMouseMode() != 0;
-
-			if (relativeMode)
-			{
-				// In relative mode, only send motion delta
-				InputRouter.OnMouseMotion(xrel, yrel);
-			}
-			else
-			{
-				// In absolute mode, send position change
-				InputRouter.OnMousePositionChange(x, y, xrel, yrel);
-			}
-		}
-
-		private static void HandleMouseButtonEvent(SDL_MouseButtonEvent buttonEvent)
-		{
-			ButtonCode buttonCode = MapSDLButtonToButtonCode(buttonEvent.button);
-			bool down = buttonEvent.down != 0;
-
-			if (buttonCode != ButtonCode.BUTTON_CODE_INVALID)
-			{
-				InputRouter.OnMouseButton(buttonCode, down, 0);
-			}
-		}
-
-		private static void HandleMouseWheelEvent(SDL_MouseWheelEvent wheelEvent)
-		{
-			int x = (int)wheelEvent.x;
-			int y = (int)wheelEvent.y;
-
-			InputRouter.OnMouseWheel(x, y, 0);
-		}
-
-		private static ButtonCode MapSDLButtonToButtonCode(byte sdlButton)
-		{
-			return sdlButton switch
-			{
-				SDL_BUTTON_LEFT => ButtonCode.MouseLeft,
-				SDL_BUTTON_RIGHT => ButtonCode.MouseRight,
-				SDL_BUTTON_MIDDLE => ButtonCode.MouseMiddle,
-				SDL_BUTTON_X1 => ButtonCode.MouseBack,
-				SDL_BUTTON_X2 => ButtonCode.MouseForward,
-				_ => ButtonCode.BUTTON_CODE_INVALID
-			};
-		}
-	}
+                    case SDL_EVENT_WINDOW_FOCUS_LOST:
+                        InputRouter.OnWindowActive(false);
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"[LinuxSDLInput] EventWatchCallback exception: {ex.Message}");
+            }
+        }
+    }
 
 	/// <summary>
 	/// Linux cursor capture implementation using X11 (stub implementation)
