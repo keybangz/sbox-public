@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Threading;
 using NativeEngine;
 using Sandbox.Engine;
 using System.Text;
@@ -17,7 +18,6 @@ namespace Sandbox.Systems.Render.Multimedia
         private static IntPtr _display = IntPtr.Zero;
         private static ulong _engineWindow = 0;
         private static bool _initialized = false;
-        private static bool _windowFound = false;
         
         // Mouse tracking for relative mode
         private static float _lastX = 0;
@@ -216,7 +216,7 @@ namespace Sandbox.Systems.Render.Multimedia
 
         /// <summary>
         /// Recursively search for the engine window starting from the root window.
-        /// Looks for windows with SDL class hint or s&box/sbox in name.
+        /// Looks for windows with SDL class hint or sbox in name.
         /// </summary>
         private static ulong FindEngineWindow(IntPtr display, ulong root, int depth = 0)
         {
@@ -258,7 +258,7 @@ namespace Sandbox.Systems.Render.Multimedia
                                         if (resName.Contains("sbox", StringComparison.OrdinalIgnoreCase) ||
                                             resName.Contains("s&box", StringComparison.OrdinalIgnoreCase))
                                         {
-                                            Log.Info($"[LinuxSDLInput] Found engine window via res_name: 0x{child:X} (name={resName})");
+                                                        Log.Info($"[LinuxSDLInput] Found engine window via res_name: 0x{child:X} (name={resName})");
                                             return child;
                                         }
                                     }
@@ -349,9 +349,7 @@ namespace Sandbox.Systems.Render.Multimedia
                     return;
                 }
 
-                _windowFound = true;
-
-                // Subscribe to input events
+                        // Subscribe to input events
                 long eventMask = KeyPressMask | KeyReleaseMask | ButtonPressMask | 
                                ButtonReleaseMask | PointerMotionMask | FocusChangeMask;
                 
