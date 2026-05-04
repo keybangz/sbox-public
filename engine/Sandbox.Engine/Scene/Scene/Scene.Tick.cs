@@ -270,7 +270,8 @@ public partial class Scene : GameObject
 
 	}
 
-	Input.Context FixedUpdateInputContext { get; set; } = Input.Context.Create( "Scene.FixedUpdate" );
+	Input.Context _fixedUpdateInputContext;
+	Input.Context FixedUpdateInputContext => _fixedUpdateInputContext ??= Input.Context.Create( "Scene.FixedUpdate" );
 
 	static Superluminal _fixedUpdateTimer = new Superluminal( "Scene.FixedUpdate", Color.Cyan );
 	static Superluminal _processDeletesTimer = new Superluminal( "ProcessDeletes", Color.Orange );

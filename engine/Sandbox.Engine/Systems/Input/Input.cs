@@ -8,6 +8,7 @@ namespace Sandbox;
 /// </summary>
 public static partial class Input
 {
+	static RealTimeSince _lastProcessLog;
 	/// <summary>
 	/// Virtual Reality specific input data.
 	/// </summary>
@@ -19,7 +20,6 @@ public static partial class Input
 	public static Vector2 MouseDelta
 	{
 		get => Suppressed ? default : CurrentContext.MouseDelta;
-		set => CurrentContext.MouseDelta = value;
 	}
 
 	/// <summary>
@@ -64,8 +64,19 @@ public static partial class Input
 	}
 
 
+	private static int _addMouseMovementCount = 0;
 	internal static void AddMouseMovement( Vector2 delta )
 	{
+		_addMouseMovementCount++;
+		if ( _addMouseMovementCount <= 5 )
+		{
+			Log.Info( $"[AddMouseMovement] #{_addMouseMovementCount} delta={delta}" );
+		}
+
+		// Write to ALL contexts, not just CurrentContext.
+		// This mirrors AddMouseWheel behavior and ensures Linux X11 input (which runs
+		// outside any game context Push scope) reaches all consumers regardless of
+		// which context is current when PollEvents() fires.
 		foreach ( var e in Contexts )
 		{
 			e.AccumMouseDelta += delta;
@@ -104,11 +115,22 @@ public static partial class Input
 		var halfDim = MathF.Max( Screen.Width, Screen.Height ) * 0.5f;
 		if ( halfDim < 1.0f ) halfDim = 1.0f;
 
-		AnalogLook = new( (MouseDelta.y / halfDim) * mouseSensitivity, (-MouseDelta.x / halfDim) * mouseSensitivity, 0 );
+		// Read MouseDelta (post-Flip committed value) not AccumMouseDelta (cleared by Flip).
+		// AddMouseMovement writes to AccumMouseDelta; Flip() promotes it to MouseDelta and clears AccumMouseDelta.
+		// Process() runs after Flip(), so we must read MouseDelta.
+		var rawDelta = CurrentContext?.MouseDelta ?? default;
+		AnalogLook = new( (rawDelta.y / halfDim) * mouseSensitivity, (-rawDelta.x / halfDim) * mouseSensitivity, 0 );
 
 		if ( MouseCursorVisible )
 		{
 			AnalogLook = default;
+		}
+
+		if ( _lastProcessLog > 1.0f )
+		{
+			_lastProcessLog = 0;
+			var allContextNames = string.Join(",", Contexts.Select(c => $"{c.Name}(MD={c.MouseDelta},Acc={c.AccumMouseDelta})"));
+			Log.Info( $"[Input.Process] rawDelta={rawDelta} MouseDelta={CurrentContext?.MouseDelta} AccumDelta={CurrentContext?.AccumMouseDelta} MouseCursorVisible={MouseCursorVisible} AnalogLook={AnalogLook} Context={CurrentContext?.Name} AllContexts=[{allContextNames}]" );
 		}
 
 		Actions = CurrentContext.ActionsCurrent;

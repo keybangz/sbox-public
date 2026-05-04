@@ -11,6 +11,14 @@ internal static partial class InputRouter
 		SetButtonState( button, down );
 
 		var mouse = Contexts.FirstOrDefault( x => x.MouseState != InputContext.InputState.Ignore );
+#if !WIN
+// Linux: UISystem runs after input events, so MouseState may still be Ignore.
+// If game has capture (set in Frame()), route button to game context directly.
+if ( mouse is null && _mouseCaptureMode )
+{
+    mouse = IGameInstanceDll.Current?.InputContext;
+}
+#endif
 
 		if ( Environment.GetEnvironmentVariable( "SBOX_INPUT_DEBUG" ) == "1" )
 		{
@@ -103,6 +111,14 @@ internal static partial class InputRouter
 
 		// game or mouse capture
 		var mouse = Contexts.FirstOrDefault( x => x.MouseState != InputContext.InputState.Ignore );
+#if !WIN
+// Linux: UISystem runs after input events, so MouseState may still be Ignore.
+// If game has capture (set in Frame()), route motion to game context directly.
+if ( mouse is null && _mouseCaptureMode )
+{
+    mouse = IGameInstanceDll.Current?.InputContext;
+}
+#endif
 		if ( mouse is not null )
 		{
 			mouse.In_MousePosition( MouseCursorPosition, delta );
@@ -141,6 +157,14 @@ internal static partial class InputRouter
 		}
 
 		var mouse = Contexts.FirstOrDefault( x => x.MouseState != InputContext.InputState.Ignore );
+#if !WIN
+		// Linux: UISystem runs after input events, so MouseState may still be Ignore.
+		// If game has capture (set in Frame()), route position change to game context directly.
+		if ( mouse is null && _mouseCaptureMode )
+		{
+			mouse = IGameInstanceDll.Current?.InputContext;
+		}
+#endif
 		if ( mouse is not null )
 		{
 			mouse.In_MousePosition( MouseCursorPosition, delta );
@@ -312,6 +336,23 @@ internal static partial class InputRouter
 		}
 
 		var keyboard = Contexts.FirstOrDefault( x => x.KeyboardState != InputContext.InputState.Ignore );
+
+#if !WIN
+		// When game has mouse capture, prefer game context for keyboard over menu context.
+		// Do NOT use .Skip(1) — MenuDll may be absent, making the game context index 0.
+		// Instead: find the GameInstanceDll context directly by checking IGameInstanceDll.Current.
+		{
+			bool capture = IGameInstance.Current != null &&
+						   Contexts.Any(c => c.MouseState == InputContext.InputState.Game || c.MouseCapture);
+			if (capture)
+			{
+				var gameCtx = IGameInstanceDll.Current?.InputContext;
+				if (gameCtx is not null)
+					keyboard = gameCtx;
+			}
+		}
+#endif
+
 		if ( keyboard is not null )
 		{
 			keyboard.IN_Button( down, scanButtonCode, keyButtonCode, repeat, modifiers );

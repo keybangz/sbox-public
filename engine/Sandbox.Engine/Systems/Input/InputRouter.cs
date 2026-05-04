@@ -1,5 +1,6 @@
 ﻿using NativeEngine;
 using Sandbox.Internal;
+using Sandbox.Systems.Render.Multimedia;
 using Sandbox.UI;
 
 namespace Sandbox.Engine;
@@ -15,6 +16,15 @@ internal static partial class InputRouter
 	/// True if the cursor is visible
 	/// </summary>
 	public static bool MouseCursorVisible { get; private set; }
+
+	/// <summary>
+	/// Linux: True when the game is running and no context is actively requesting UI mouse.
+	/// Computed fresh each call — safe to read from PollEvents() before Frame() runs.
+	/// Avoids the 1-frame lag of reading MouseCursorVisible (which is set in Frame()).
+	/// </summary>
+	internal static bool GameWantsCapture =>
+		IGameInstance.Current != null &&
+		(IGameInstanceDll.Current?.InputContext?.MouseState != InputContext.InputState.UI);
 
 	/// <summary>
 	/// The mouse cursor position. Or the last position if it's now invisible.
@@ -35,6 +45,16 @@ internal static partial class InputRouter
 	/// The position in which we entered capture/relative mode
 	/// </summary>
 	static Vector2? mouseCapturePosition;
+
+    /// <summary>
+    /// True when the game has captured the mouse (relative/game mode).
+    /// </summary>
+    public static bool IsMouseCaptured => mouseCapturePosition is not null;
+
+    /// <summary>
+    /// Cached mouse capture mode state from Frame() for use in OnKey()
+    /// </summary>
+    private static bool _mouseCaptureMode = false;
 
 	/// <summary>
 	/// True if an "exit game" button is pressed, escape on keyboard
@@ -122,8 +142,48 @@ internal static partial class InputRouter
 		bool mouseCaptureMode = activeMouse is not null && activeMouse.MouseState == InputContext.InputState.Game;
 		mouseCaptureMode = mouseCaptureMode || (activeMouse?.MouseCapture ?? false);
 
+		#if !WIN
+		// Linux: If in-game and no context explicitly wants UI mouse, force capture.
+		// MouseState is set by UISystem.Simulate() which runs AFTER this frame's input.
+		// On Linux, game panels may not explicitly set MouseInput=Game, so MouseState stays Ignore.
+		// We default to capture when a game is running and no context is actively requesting UI mouse.
+		// ESC/menu: the menu InputContext will have MouseState=UI, so anyUI=true → no capture.
+		if (!mouseCaptureMode && IGameInstance.Current is not null)
+		{
+			// Only check the game context's MouseState — not the menu context.
+			// MenuDll intermittently sets MouseState=UI during gameplay (tooltip hover, panel focus),
+			// which would incorrectly suppress game mouse capture.
+			var gameCtx = IGameInstanceDll.Current?.InputContext;
+			bool gameWantsUI = gameCtx != null && gameCtx.MouseState == InputContext.InputState.UI;
+			mouseCaptureMode = !gameWantsUI;
+		}
+#endif
+
+		// Cache for OnKey() to use for keyboard context selection
+		_mouseCaptureMode = mouseCaptureMode;
+
 		MouseCursorVisible = !mouseCaptureMode && (activeMouse is not null && activeMouse.MouseState == InputContext.InputState.UI);
-		if ( !InputSystem.HasMouseFocus() ) MouseCursorVisible = true;
+
+#if !WIN
+		// Linux: if capture is active (from Any() override), cursor must be hidden regardless of activeMouse state
+		if (mouseCaptureMode)
+		{
+			MouseCursorVisible = false;
+		}
+#endif
+
+		// Periodic debug log for MouseCursorVisible
+		if (Environment.GetEnvironmentVariable("SBOX_INPUT_DEBUG") == "1")
+		{
+			if (_frameCount % 300 == 0) // ~5s at 60fps
+			{
+#if !WIN
+				Log.Info($"[InputRouter.Frame] MouseCursorVisible={MouseCursorVisible} HasX11Focus={LinuxSDLInput.HasX11Focus} IGameInstance={IGameInstance.Current != null} activeMouse={activeMouse?.Name ?? "null"} MouseState={activeMouse?.MouseState}");
+#else
+				Log.Info($"[InputRouter.Frame] MouseCursorVisible={MouseCursorVisible} IGameInstance={IGameInstance.Current != null} activeMouse={activeMouse?.Name ?? "null"} MouseState={activeMouse?.MouseState}");
+#endif
+			}
+		}
 
 		if ( mouseCaptureMode )
 		{
@@ -133,16 +193,20 @@ internal static partial class InputRouter
 				mouseCapturePosition = MouseCursorPosition;
 			}
 
+#if WIN
 			NativeEngine.InputSystem.SetRelativeMouseMode( true );
+#endif
 		}
 		else
 		{
+#if WIN
 			NativeEngine.InputSystem.SetRelativeMouseMode( false );
+#endif
 
 			// restore cursor position
-			if ( mouseCapturePosition is not null )
+			if (mouseCapturePosition is not null)
 			{
-				SetCursorPosition( mouseCapturePosition.Value );
+				SetCursorPosition(mouseCapturePosition.Value);
 				mouseCapturePosition = null;
 			}
 		}
@@ -177,7 +241,9 @@ internal static partial class InputRouter
 	static void SetCursorPosition( Vector2 pos )
 	{
 		if ( !g_pInputService.IsAppActive() ) return;
-		if ( !InputSystem.HasMouseFocus() ) return;
+#if !WIN
+		if ( !LinuxSDLInput.HasX11Focus ) return;
+#endif
 
 		g_pInputService.SetCursorPosition( (int)pos.x, (int)pos.y );
 	}

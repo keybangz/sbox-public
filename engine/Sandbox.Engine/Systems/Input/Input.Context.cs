@@ -95,11 +95,17 @@ public static partial class Input
 			this.Name = name;
 		}
 
+		private static int _flipCount = 0;
 		/// <summary>
 		/// Copy accumulated values. Flip previous actions to current actions etc.
 		/// </summary>
 		public void Flip()
 		{
+			_flipCount++;
+			if ( _flipCount <= 20 && (AccumMouseDelta.x != 0 || AccumMouseDelta.y != 0 || MouseDelta.x != 0 || MouseDelta.y != 0) )
+			{
+				Log.Info( $"[Context.Flip] #{_flipCount} context='{Name}' AccumMouseDelta={AccumMouseDelta} MouseDelta(before)={MouseDelta}" );
+			}
 			// Accumulate and reset mouse input
 			MouseDelta = AccumMouseDelta;
 			AccumMouseDelta = default;

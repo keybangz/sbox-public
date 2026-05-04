@@ -6,6 +6,7 @@ namespace Sandbox.Engine;
 
 internal sealed class InputContext
 {
+	static int _mousePosLogCount = 0;
 	/// <summary>
 	/// The name of this context, for debugging purposes
 	/// </summary>
@@ -151,9 +152,14 @@ internal sealed class InputContext
 	{
 		if ( delta.Length == 0 ) return;
 
+		// Log first 3 calls
+		if ( _mousePosLogCount++ < 3 )
+			Log.Info( $"[InputContext.In_MousePosition] delta={delta} MouseState={MouseState} MouseCapture={MouseCapture}" );
+
 		if ( MouseState == InputState.Game || MouseCapture )
 		{
 			OnMouseMotion?.Invoke( delta );
+			Sandbox.Input.AddMouseMovement( delta );
 			return;
 		}
 
@@ -380,9 +386,10 @@ internal sealed class InputContext
 			}
 		}
 
-		// always allow the actions to "release" when UI pops up,
-		// but don't allow new presses
-		if ( KeyboardState == InputState.Game || !down )
+		// Fire OnGameButton when keyboard isn't explicitly Ignored.
+		// On Linux, PollEvents() runs before SimulateUI() sets KeyboardState=Game,
+		// so gating on ==Game drops first-frame key-downs (WASD never accumulates).
+		if ( KeyboardState != InputState.Ignore || !down )
 		{
 			var name = InputSystem.CodeToString( scanButtonCode );
 			if ( !string.IsNullOrWhiteSpace( name ) )

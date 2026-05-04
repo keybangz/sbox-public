@@ -5,6 +5,7 @@ namespace Sandbox;
 
 public static partial class Input
 {
+	static int _onButtonLogCount = 0;
 	/// <summary>
 	/// Was the last button pressed a game controller button?
 	/// </summary>
@@ -186,6 +187,11 @@ public static partial class Input
 	/// </summary>
 	internal static void OnButton( ButtonCode code, string button, bool down )
 	{
+		if ( _onButtonLogCount++ < 5 )
+		{
+			Log.Info( $"[Input.OnButton] code={code} button={button} down={down} InputActions={(InputActions == null ? "NULL" : InputActions.Count.ToString())}" );
+		}
+
 		if ( InputActions == null )
 		{
 			activeButtons.Clear();

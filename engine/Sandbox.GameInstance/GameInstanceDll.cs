@@ -8,6 +8,7 @@ using Sandbox.Utility;
 using Sandbox.VR;
 using System;
 using System.IO;
+using System.Linq;
 
 namespace Sandbox;
 
@@ -401,6 +402,7 @@ internal partial class GameInstanceDll : Engine.IGameInstanceDll
 	}
 
 	internal Input.Context _perFrameInput = Input.Context.Create( "ClientPerFrame" );
+	private IDisposable _perFrameInputScope;
 
 	public void Tick()
 	{
@@ -431,7 +433,20 @@ internal partial class GameInstanceDll : Engine.IGameInstanceDll
 			//
 			{
 				_perFrameInput.Flip();
-				_perFrameInput.Push();
+				// Dispose previous frame's scope first, then push fresh.
+				// Holding the disposable prevents GC from restoring the previous context
+				// mid-frame and zeroing CurrentContext reads in Input.Process().
+				_perFrameInputScope?.Dispose();
+				_perFrameInputScope = _perFrameInput.Push();
+
+				// ADD THIS (log once per second):
+				if (RealTime.Now % 2.0f < Time.Delta)
+				{
+					var ctxNames = string.Join(",", Sandbox.Input.Contexts.Select(c => c.Name));
+					var perFrameInList = Sandbox.Input.Contexts.Any(c => c == _perFrameInput);
+					Log.Info($"[GameInstanceDll.Tick] Input.Contexts=[{ctxNames}] perFrameInList={perFrameInList} perFrameName={_perFrameInput.Name}");
+				}
+
 				Input.Process();
 			}
 
@@ -1029,12 +1044,54 @@ internal partial class GameInstanceDll : Engine.IGameInstanceDll
 		input.TargetUISystem = uiSystem;
 		input.OnGameMouseWheel += Sandbox.Input.AddMouseWheel;
 		input.OnMouseMotion += Sandbox.Input.AddMouseMovement;
-		input.OnGameButton += Input.OnButton;
+		input.OnGameButton += (scanCode, name, down) =>
+		{
+			if (down)
+				Log.Info($"[OnGameButton] scanCode={scanCode} name={name} down={down} InputActions={(Sandbox.Input.InputActions == null ? "NULL" : Sandbox.Input.InputActions.Count.ToString())}");
+
+			// Use InputActions if available, fall back to CommonInputs so WASD works before ReadConfig is called
+			var actionList = Sandbox.Input.InputActions ?? Engine.Input.CommonInputs;
+
+			// Strip KEY_ prefix from name for comparison (CodeToString may return "KEY_W" while KeyboardCode is "W")
+			var nameStripped = name?.StartsWith("KEY_", System.StringComparison.OrdinalIgnoreCase) == true
+				? name.Substring(4)
+				: name;
+
+			var action = actionList.FirstOrDefault(x =>
+				string.Equals(x.KeyboardCode, name, StringComparison.OrdinalIgnoreCase) ||
+				string.Equals(x.KeyboardCode, nameStripped, StringComparison.OrdinalIgnoreCase) ||
+				(System.Enum.TryParse<NativeEngine.ButtonCode>(x.KeyboardCode, true, out var parsedCode) && parsedCode == scanCode) ||
+				(System.Enum.TryParse<NativeEngine.ButtonCode>("KEY_" + x.KeyboardCode, true, out var parsedKey) && parsedKey == scanCode));
+
+			if (down)
+				Log.Info($"[OnGameButton] action={action?.Name ?? "NONE"} KeyboardCode={action?.KeyboardCode ?? "N/A"} nameStripped={nameStripped}");
+
+			if (action is not null)
+			{
+				var i = Sandbox.Input.GetActionIndex(action);
+				if (i >= 0)
+				{
+					foreach (var e in Sandbox.Input.Contexts)
+					{
+						if (down)
+							e.AccumActionsPressed |= 1UL << i;
+						else
+							e.AccumActionsReleased |= 1UL << i;
+					}
+				}
+			}
+
+			// Also fire the standard bind collection path so InputBinds.FindCollection works on Linux
+			Sandbox.Input.OnButton(scanCode, name, down);
+		};
 
 		InputContext = input;
 
 		GlobalContext.Current.UISystem = uiSystem;
 		GlobalContext.Current.InputContext = input;
+
+		// _perFrameInput is auto-registered by Input.Context.Create() via WeakReference list.
+		// Sandbox.Input.Contexts is IEnumerable — do not attempt to call .Add() on it.
 	}
 
 	/// <summary>

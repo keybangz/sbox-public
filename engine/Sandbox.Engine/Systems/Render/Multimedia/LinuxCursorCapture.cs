@@ -20,29 +20,16 @@ namespace Sandbox.Systems.Render.Multimedia
         private static bool _initialized = false;
         
         // Mouse tracking for relative mode
-        private static float _lastX = 0;
-        private static float _lastY = 0;
         private static bool _firstMotion = true;
 
-        // X11 event size (XEvent union is 192 bytes on 64-bit Linux)
-        private const int X_EVENT_SIZE = 192;
+        // Relative mode state tracking
+        private static bool _relModeActive = false;
 
-        // X11 event type constants
-        private const int KeyPress = 2;
-        private const int KeyRelease = 3;
-        private const int ButtonPress = 4;
-        private const int ButtonRelease = 5;
-        private const int MotionNotify = 6;
-        private const int FocusIn = 9;
-        private const int FocusOut = 10;
+        // X11 event size no longer needed (state polling replaces event reading)
+        // private const int X_EVENT_SIZE = 192;
 
-        // X11 event mask constants
-        private const long KeyPressMask = 0x00000001L;
-        private const long KeyReleaseMask = 0x00000002L;
-        private const long ButtonPressMask = 0x00000004L;
-        private const long ButtonReleaseMask = 0x00000008L;
-        private const long PointerMotionMask = 0x00000040L;
-        private const long FocusChangeMask = 0x00200000L;
+        // X11 event type constants (kept for reference)
+        // private const int KeyPress = 2; ...
 
         // X11 structs
         [StructLayout(LayoutKind.Sequential)]
@@ -96,15 +83,6 @@ namespace Sandbox.Systems.Render.Multimedia
         private static extern int XFree(IntPtr data);
 
         [DllImport("libX11.so.6", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int XSelectInput(IntPtr display, ulong w, long event_mask);
-
-        [DllImport("libX11.so.6", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int XPending(IntPtr display);
-
-        [DllImport("libX11.so.6", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int XNextEvent(IntPtr display, IntPtr event_return);
-
-        [DllImport("libX11.so.6", CallingConvention = CallingConvention.Cdecl)]
         private static extern int XGetClassHint(IntPtr display, ulong w, out XClassHint class_hint_return);
 
         [DllImport("libX11.so.6", CallingConvention = CallingConvention.Cdecl)]
@@ -115,6 +93,98 @@ namespace Sandbox.Systems.Render.Multimedia
 
         [DllImport("libX11.so.6", CallingConvention = CallingConvention.Cdecl)]
         private static extern int XGetWindowAttributes(IntPtr display, ulong w, out XWindowAttributes window_attributes_return);
+
+        // XQueryKeymap: fills keys_return[32] with bitmask of currently pressed keycodes
+        [DllImport("libX11.so.6", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int XQueryKeymap(IntPtr display, byte* keys_return);
+
+        // XQueryPointer: returns pointer position and button state
+        [DllImport("libX11.so.6", CallingConvention = CallingConvention.Cdecl)]
+        private static extern bool XQueryPointer(IntPtr display, ulong w,
+            out ulong root_return, out ulong child_return,
+            out int root_x_return, out int root_y_return,
+            out int win_x_return, out int win_y_return,
+            out uint mask_return);
+
+        // XGetInputFocus: returns the window that currently has keyboard focus
+        [DllImport("libX11.so.6", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int XGetInputFocus(IntPtr display, out ulong focus_return, out int revert_to_return);
+
+        // XWarpPointer: move the cursor to an absolute position within a window
+        [DllImport("libX11.so.6", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int XWarpPointer(IntPtr display, ulong src_w, ulong dest_w,
+            int src_x, int src_y, uint src_width, uint src_height,
+            int dest_x, int dest_y);
+
+        // XFlush: flush output buffer to X server
+        [DllImport("libX11.so.6", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int XFlush(IntPtr display);
+
+        // XSync: flush output buffer synchronously to X server
+        [DllImport("libX11.so.6", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int XSync(IntPtr display, bool discard);
+
+        // XDefaultScreen: get the default screen number for a display
+        [DllImport("libX11.so.6", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int XDefaultScreen(IntPtr display);
+
+        // XDisplayWidth/Height: get screen dimensions
+        [DllImport("libX11.so.6", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int XDisplayWidth(IntPtr display, int screen_number);
+
+        [DllImport("libX11.so.6", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int XDisplayHeight(IntPtr display, int screen_number);
+
+        private static bool _ownRelativeMode = false;
+
+        // Screen dimensions for root-window warp-to-center
+        private static int _screenWidth = 0;
+        private static int _screenHeight = 0;
+
+        // Number of consecutive frames where relMode wants to be false.
+        // RelMode only actually drops after this exceeds the threshold (hysteresis).
+        private static int _relModeDropFrames = 0;
+        private const int RelModeDropThreshold = 4; // ~4 frames at 60fps ≈ 66ms
+
+        /// <summary>
+        /// Returns true if 'candidate' is 'ancestor' or any descendant of 'ancestor'.
+        /// Used to handle X11 focus going to child windows (e.g. SDL3 rendering subwindow).
+        /// </summary>
+        private static bool IsWindowOrDescendant(ulong ancestor, ulong candidate, int depth = 0)
+        {
+            if (candidate == 0 || ancestor == 0) return false;
+            if (candidate == ancestor) return true;
+            if (depth > 6) return false; // limit recursion
+
+            if (XQueryTree(_display, candidate, out _, out ulong parent, out IntPtr children, out uint nchildren) == 0)
+                return false;
+
+            if (children != IntPtr.Zero) XFree(children);
+
+            if (parent == ancestor) return true;
+            if (parent == 0 || parent == XDefaultRootWindow(_display)) return false;
+
+            return IsWindowOrDescendant(ancestor, parent, depth + 1);
+        }
+
+        // State polling: previous frame keyboard/mouse state for edge detection
+        private static readonly bool[] _prevKeyState = new bool[256];
+        private static readonly bool[] _prevButtonState = new bool[6]; // buttons 1-5
+        private static int _prevMouseX = 0;
+        private static int _prevMouseY = 0;
+        private static bool _hasFocus = false;
+
+        /// <summary>
+        /// True when the X11 engine window has keyboard/mouse focus.
+        /// Used by InputRouter to replace the broken SDL3 HasMouseFocus() native call.
+        /// </summary>
+        public static bool HasX11Focus => _hasFocus;
+
+        /// <summary>
+        /// True when Linux X11 relative/capture mode is active.
+        /// Used by InputRouter to replace the SDL3-based IsMouseCaptured on Linux.
+        /// </summary>
+        public static bool IsInRelativeMode => _ownRelativeMode;
 
         // X11 keycode to ButtonCode lookup table
         // X11 keycodes are hardware-dependent but on standard Linux/X11 with evdev driver:
@@ -343,27 +413,24 @@ namespace Sandbox.Systems.Render.Multimedia
 
                 if (_engineWindow == 0)
                 {
-                    Log.Error("[LinuxSDLInput] Could not find engine window after 10 attempts");
-                    XCloseDisplay(_display);
-                    _display = IntPtr.Zero;
-                    return;
+                    Log.Warning("[LinuxSDLInput] Could not find engine window after 10 attempts — continuing with _engineWindow=0 (will assume focus)");
+                    // Do NOT close display or return — we still need the display for keyboard/mouse polling
+                    // HasX11Focus will default to true when _engineWindow==0
                 }
 
-                        // Subscribe to input events
-                long eventMask = KeyPressMask | KeyReleaseMask | ButtonPressMask | 
-                               ButtonReleaseMask | PointerMotionMask | FocusChangeMask;
-                
-                if (XSelectInput(_display, _engineWindow, eventMask) == 0)
-                {
-                    Log.Error("[LinuxSDLInput] XSelectInput failed");
-                    XCloseDisplay(_display);
-                    _display = IntPtr.Zero;
-                    _engineWindow = 0;
-                    return;
-                }
+                // State polling — no XSelectInput needed
+
+                // Initialize screen dimensions for root-window warp-to-center
+                int screen = XDefaultScreen(_display);
+                _screenWidth = XDisplayWidth(_display, screen);
+                _screenHeight = XDisplayHeight(_display, screen);
+                Log.Info($"[LinuxSDLInput] Screen dimensions: {_screenWidth}x{_screenHeight}");
 
                 _initialized = true;
-                Log.Info($"[LinuxSDLInput] Successfully initialized. Window: 0x{_engineWindow:X}, Events: key/mouse/focus");
+                Log.Info($"[LinuxSDLInput] Successfully initialized. Window: 0x{_engineWindow:X}");
+                // Log initial focus state
+                XGetInputFocus(_display, out ulong initFocus, out _);
+                Log.Info($"[LinuxSDLInput] Initial focus window: 0x{initFocus:X}, engineWindow: 0x{_engineWindow:X}, match={initFocus == _engineWindow}");
             }
             catch (Exception ex)
             {
@@ -377,7 +444,9 @@ namespace Sandbox.Systems.Render.Multimedia
         }
 
         /// <summary>
-        /// Poll X11 events. Called every frame from EngineLoop.
+        /// Poll X11 input state every frame using XQueryKeymap + XQueryPointer.
+        /// State polling works from any Display connection — no event subscription needed.
+        /// Edge detection (press/release) is done by comparing to previous frame state.
         /// </summary>
         public static void PollEvents()
         {
@@ -385,42 +454,162 @@ namespace Sandbox.Systems.Render.Multimedia
 
             try
             {
-                while (XPending(_display) > 0)
+                // --- Focus check ---
+                // When we own relative mode (pointer is grabbed), skip XGetInputFocus.
+                // A grabbed pointer means we have effective focus — XGetInputFocus reports
+                // grab-related pseudo-windows that are not in our window tree, causing false
+                // focus-loss detection and RelMode oscillation.
+                bool hasFocus;
+                if (_ownRelativeMode)
                 {
-                    // Allocate event buffer on stack
-                    byte* eventBuf = stackalloc byte[X_EVENT_SIZE];
-                    
-                    if (XNextEvent(_display, (IntPtr)eventBuf) != 0)
-                        continue;
+                    hasFocus = true;
+                }
+                else if (_engineWindow == 0)
+                {
+                    // Window not found during init — assume focus to prevent MouseCursorVisible=true lockout
+                    hasFocus = true;
+                }
+                else
+                {
+                    XGetInputFocus(_display, out ulong focusWindow, out _);
+                    // Check if focused window is our engine window OR any of its descendants.
+                    // SDL3 creates child windows for rendering; focus goes to the deepest accepting window.
+                    hasFocus = IsWindowOrDescendant(_engineWindow, focusWindow);
+                }
+                if (hasFocus != _hasFocus)
+                {
+                    Log.Info($"[LinuxSDLInput] Focus changed: hasFocus={hasFocus} _ownRelativeMode={_ownRelativeMode} engineWindow=0x{_engineWindow:X}");
+                    _hasFocus = hasFocus;
+                    InputRouter.OnWindowActive(hasFocus);
+                }
 
-                    // Read event type from offset 0
-                    int eventType = *(int*)eventBuf;
+                // --- Keyboard state ---
+                byte* keys = stackalloc byte[32];
+                XQueryKeymap(_display, keys);
 
-                    switch (eventType)
+                for (int kc = 8; kc < 256; kc++)
+                {
+                    bool isDown = (keys[kc >> 3] & (1 << (kc & 7))) != 0;
+                    bool wasDown = _prevKeyState[kc];
+
+                    if (isDown != wasDown)
                     {
-                        case KeyPress:
-                        case KeyRelease:
-                            HandleKeyEvent(eventBuf, eventType == KeyPress);
-                            break;
-
-                        case ButtonPress:
-                        case ButtonRelease:
-                            HandleButtonEvent(eventBuf, eventType == ButtonPress);
-                            break;
-
-                        case MotionNotify:
-                            HandleMotionEvent(eventBuf);
-                            break;
-
-                        case FocusIn:
-                            InputRouter.OnWindowActive(true);
-                            break;
-
-                        case FocusOut:
-                            InputRouter.OnWindowActive(false);
-                            break;
+                        _prevKeyState[kc] = isDown;
+                        var bc = _keycodeTable[kc];
+                        if (bc != ButtonCode.BUTTON_CODE_INVALID)
+                            InputRouter.OnKey(bc, bc, isDown, false, 0);
                     }
                 }
+
+                // --- Mouse state ---
+                ulong queryWindow = _engineWindow != 0 ? _engineWindow : XDefaultRootWindow(_display);
+                XQueryPointer(_display, queryWindow,
+                    out _, out _,
+                    out _, out _,
+                    out int winX, out int winY,
+                    out uint buttonMask);
+
+		// Capture when: we have X11 focus, a game is running, and no context is actively requesting UI mouse.
+		// Use InputRouter.GameWantsCapture instead of MouseCursorVisible to avoid 1-frame lag.
+		// MouseCursorVisible is set in Frame() which runs AFTER PollEvents() — reading it here
+		// would always use the previous frame's value. GameWantsCapture is computed fresh each call.
+		bool wantsRelMode = _hasFocus && InputRouter.GameWantsCapture;
+
+                // Hysteresis: only drop RelMode after wantsRelMode has been false for several consecutive frames.
+                // This absorbs transient MouseCursorVisible=True spikes from UI panels briefly wanting mouse
+                // (e.g. tooltip hover, panel focus change) without permanently dropping capture.
+                // Entering RelMode is immediate (no delay needed — false positives here are harmless).
+                bool relMode;
+                if (wantsRelMode)
+                {
+                    _relModeDropFrames = 0;
+                    relMode = true;
+                }
+                else if (_ownRelativeMode)
+                {
+                    _relModeDropFrames++;
+                    relMode = _relModeDropFrames >= RelModeDropThreshold ? false : true;
+                }
+                else
+                {
+                    _relModeDropFrames = 0;
+                    relMode = false;
+                }
+
+                // Track transitions for logging
+                if (relMode != _ownRelativeMode)
+                {
+                    Log.Info($"[LinuxSDLInput] RelMode changed: {_ownRelativeMode} → {relMode} (hasFocus={_hasFocus}, MouseCursorVisible={InputRouter.MouseCursorVisible}, dropFrames={_relModeDropFrames})");
+                    _ownRelativeMode = relMode;
+                    if (!relMode)
+                    {
+                        _firstMotion = true;
+                        _relModeDropFrames = 0;
+                    }
+                    else
+                    {
+                        // Entering relative mode: reset state
+                        _firstMotion = true;
+                    }
+                }
+
+                if (relMode)
+                {
+                    ulong rootWindow = XDefaultRootWindow(_display);
+                    int cx = _screenWidth / 2;
+                    int cy = _screenHeight / 2;
+
+                    XQueryPointer(_display, rootWindow, out _, out _, out int rx, out int ry, out _, out _, out _);
+
+                    if (!_relModeActive)
+                    {
+                        // First frame after entering rel mode: warp only, no delta (re-entry guard)
+                        _relModeActive = true;
+                    }
+                    else
+                    {
+                        int dx = rx - cx;
+                        int dy = ry - cy;
+                        const int MaxDelta = 500; // Clamp pathological frames (alt-tab race, SDL re-grab)
+			if (Math.Abs(dx) < MaxDelta && Math.Abs(dy) < MaxDelta && (dx != 0 || dy != 0))
+			{
+				Input.AddMouseMovement(new Vector2(dx, dy));
+			}
+                    }
+
+                    XWarpPointer(_display, 0, rootWindow, 0, 0, 0, 0, cx, cy);
+                    XSync(_display, false);
+                }
+                else
+                {
+                    _relModeActive = false;
+
+                    // UI/menu mode: report absolute position + delta
+                    if (_firstMotion)
+                    {
+                        _prevMouseX = winX;
+                        _prevMouseY = winY;
+                        _firstMotion = false;
+                    }
+
+                    int dx = winX - _prevMouseX;
+                    int dy = winY - _prevMouseY;
+
+                    if (dx != 0 || dy != 0)
+                    {
+                        InputRouter.OnMousePositionChange(winX, winY, dx, dy);
+                        _prevMouseX = winX;
+                        _prevMouseY = winY;
+                    }
+                }
+
+                // Mouse buttons: mask bits — Button1Mask=0x100, Button2Mask=0x200, Button3Mask=0x400
+                // Button4/5 (wheel) appear transiently — not reliably pollable; skip for now
+                CheckMouseButton(buttonMask, 1, 0x100, ButtonCode.MouseLeft);
+                CheckMouseButton(buttonMask, 2, 0x200, ButtonCode.MouseMiddle);
+                CheckMouseButton(buttonMask, 3, 0x400, ButtonCode.MouseRight);
+                CheckMouseButton(buttonMask, 4, 0x800, ButtonCode.MouseBack);
+                CheckMouseButton(buttonMask, 5, 0x1000, ButtonCode.MouseForward);
             }
             catch (Exception ex)
             {
@@ -428,82 +617,14 @@ namespace Sandbox.Systems.Render.Multimedia
             }
         }
 
-        private static void HandleKeyEvent(byte* eventBuf, bool isDown)
+        private static void CheckMouseButton(uint mask, int btnIndex, uint btnMask, ButtonCode bc)
         {
-            // XKeyEvent: keycode is at offset 84 (uint)
-            uint keycode = *(uint*)(eventBuf + 84);
-            
-            if (keycode < _keycodeTable.Length)
+            bool isDown = (mask & btnMask) != 0;
+            bool wasDown = _prevButtonState[btnIndex];
+            if (isDown != wasDown)
             {
-                var bc = _keycodeTable[keycode];
-                if (bc != ButtonCode.BUTTON_CODE_INVALID)
-                {
-                    InputRouter.OnKey(bc, bc, isDown, false, 0);
-                }
-            }
-        }
-
-        private static void HandleButtonEvent(byte* eventBuf, bool isDown)
-        {
-            // XButtonEvent: button is at offset 88 (uint)
-            uint button = *(uint*)(eventBuf + 88);
-
-            // Mouse wheel is sent as button 4 (up) and 5 (down)
-            if (button == 4 || button == 5)
-            {
-                if (isDown) // Only process press, not release
-                {
-                    int delta = (button == 4) ? 1 : -1;
-                    InputRouter.OnMouseWheel(0, delta, 0);
-                }
-                return;
-            }
-
-            ButtonCode bc = button switch
-            {
-                1 => ButtonCode.MouseLeft,
-                2 => ButtonCode.MouseMiddle,
-                3 => ButtonCode.MouseRight,
-                8 => ButtonCode.MouseBack,
-                9 => ButtonCode.MouseForward,
-                _ => ButtonCode.BUTTON_CODE_INVALID
-            };
-
-            if (bc != ButtonCode.BUTTON_CODE_INVALID)
-            {
+                _prevButtonState[btnIndex] = isDown;
                 InputRouter.OnMouseButton(bc, isDown, 0);
-            }
-        }
-
-        private static void HandleMotionEvent(byte* eventBuf)
-        {
-            // XMotionEvent: x(64,int) y(68,int) x_root(72,int) y_root(76,int)
-            int x = *(int*)(eventBuf + 64);
-            int y = *(int*)(eventBuf + 68);
-            int xRoot = *(int*)(eventBuf + 72);
-            int yRoot = *(int*)(eventBuf + 76);
-
-            if (_firstMotion)
-            {
-                _lastX = x;
-                _lastY = y;
-                _firstMotion = false;
-            }
-
-            float dx = x - _lastX;
-            float dy = y - _lastY;
-            _lastX = x;
-            _lastY = y;
-
-            bool relativeMode = NativeEngine.InputSystem.GetRelativeMouseMode();
-            
-            if (relativeMode)
-            {
-                InputRouter.OnMouseMotion(dx, dy);
-            }
-            else
-            {
-                InputRouter.OnMousePositionChange(x, y, dx, dy);
             }
         }
     }
