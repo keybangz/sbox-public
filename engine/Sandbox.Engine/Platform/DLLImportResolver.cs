@@ -40,8 +40,7 @@ internal static class DLLImportResolver
 
 	private static IntPtr ResolveFromNativePath( string libraryName, Assembly assembly, DllImportSearchPath? searchPath )
 	{
-		// Specifically for fucking steam_api without using a preprocessor if statement on Platform.cs
-		// should try to aim to have one set of "managed" binaries without platform specific variants
+		// Remap steam_api64 → libsteam_api on non-Windows
 		if ( libraryName == "steam_api64" && !OperatingSystem.IsWindows() )
 		{
 			libraryName = "libsteam_api";
@@ -55,7 +54,15 @@ internal static class DLLImportResolver
 			_ => libraryName
 		};
 
-		if ( NativeLibrary.TryLoad( Path.Combine( NetCore.NativeDllPath, nativeName ), out var handle ) )
+		// Resolve NativeDllPath to absolute at call time — it may be relative ("bin/linuxsteamrt64/")
+		// and Environment.CurrentDirectory can change during bootstrap (InitMinimal resets it).
+		var nativeDllDir = NetCore.NativeDllPath;
+		if ( !Path.IsPathRooted( nativeDllDir ) )
+		{
+			nativeDllDir = Path.GetFullPath( Path.Combine( Environment.CurrentDirectory, nativeDllDir ) );
+		}
+
+		if ( NativeLibrary.TryLoad( Path.Combine( nativeDllDir, nativeName ), out var handle ) )
 		{
 			return handle;
 		}
