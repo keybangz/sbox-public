@@ -174,6 +174,8 @@ internal static partial class InputRouter
 		}
 #endif
 
+		bool captureStateChanged = mouseCaptureMode != _mouseCaptureMode;
+
 		if ( mouseCaptureMode )
 		{
 			// save the cursor position
@@ -183,19 +185,25 @@ internal static partial class InputRouter
 				InputLog.Trace( $"[InputRouter.Frame] Capture acquired at {mouseCapturePosition}" );
 			}
 
+			if ( captureStateChanged )
+			{
 #if WIN
-			NativeEngine.InputSystem.SetRelativeMouseMode( true );
+				NativeEngine.InputSystem.SetRelativeMouseMode( true );
 #else
-			LinuxSDLInput.SetRelativeMouseMode( true );
+				LinuxSDLInput.SetRelativeMouseMode( true );
 #endif
+			}
 		}
 		else
 		{
+			if ( captureStateChanged )
+			{
 #if WIN
-			NativeEngine.InputSystem.SetRelativeMouseMode( false );
+				NativeEngine.InputSystem.SetRelativeMouseMode( false );
 #else
-			LinuxSDLInput.SetRelativeMouseMode( false );
+				LinuxSDLInput.SetRelativeMouseMode( false );
 #endif
+			}
 
 			// restore cursor position
 			if (mouseCapturePosition is not null)
