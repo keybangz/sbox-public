@@ -1,6 +1,7 @@
 # Ignore all files by default
 *
 !*/
+.opencode/**
 
 # Git
 !.gitignore
