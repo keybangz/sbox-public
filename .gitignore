@@ -2,6 +2,7 @@
 *
 !*/
 .opencode/**
+.beaconignore
 
 # Git
 !.gitignore
