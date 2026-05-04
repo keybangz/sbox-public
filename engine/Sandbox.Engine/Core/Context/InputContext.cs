@@ -6,7 +6,6 @@ namespace Sandbox.Engine;
 
 internal sealed class InputContext
 {
-	static int _mousePosLogCount = 0;
 	/// <summary>
 	/// The name of this context, for debugging purposes
 	/// </summary>
@@ -151,10 +150,6 @@ internal sealed class InputContext
 	internal void In_MousePosition( Vector2 pos, Vector2 delta )
 	{
 		if ( delta.Length == 0 ) return;
-
-		// Log first 3 calls
-		if ( _mousePosLogCount++ < 3 )
-			Log.Info( $"[InputContext.In_MousePosition] delta={delta} MouseState={MouseState} MouseCapture={MouseCapture}" );
 
 		if ( MouseState == InputState.Game || MouseCapture )
 		{

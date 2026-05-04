@@ -8,7 +8,6 @@ namespace Sandbox;
 /// </summary>
 public static partial class Input
 {
-	static RealTimeSince _lastProcessLog;
 	/// <summary>
 	/// Virtual Reality specific input data.
 	/// </summary>
@@ -64,15 +63,8 @@ public static partial class Input
 	}
 
 
-	private static int _addMouseMovementCount = 0;
 	internal static void AddMouseMovement( Vector2 delta )
 	{
-		_addMouseMovementCount++;
-		if ( _addMouseMovementCount <= 5 )
-		{
-			Log.Info( $"[AddMouseMovement] #{_addMouseMovementCount} delta={delta}" );
-		}
-
 		// Write to ALL contexts, not just CurrentContext.
 		// This mirrors AddMouseWheel behavior and ensures Linux X11 input (which runs
 		// outside any game context Push scope) reaches all consumers regardless of
@@ -124,13 +116,6 @@ public static partial class Input
 		if ( MouseCursorVisible )
 		{
 			AnalogLook = default;
-		}
-
-		if ( _lastProcessLog > 1.0f )
-		{
-			_lastProcessLog = 0;
-			var allContextNames = string.Join(",", Contexts.Select(c => $"{c.Name}(MD={c.MouseDelta},Acc={c.AccumMouseDelta})"));
-			Log.Info( $"[Input.Process] rawDelta={rawDelta} MouseDelta={CurrentContext?.MouseDelta} AccumDelta={CurrentContext?.AccumMouseDelta} MouseCursorVisible={MouseCursorVisible} AnalogLook={AnalogLook} Context={CurrentContext?.Name} AllContexts=[{allContextNames}]" );
 		}
 
 		Actions = CurrentContext.ActionsCurrent;

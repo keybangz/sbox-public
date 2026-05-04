@@ -20,11 +20,6 @@ if ( mouse is null && _mouseCaptureMode )
 }
 #endif
 
-		if ( Environment.GetEnvironmentVariable( "SBOX_INPUT_DEBUG" ) == "1" )
-		{
-			Log.Info( $"[InputRouter] Mouse context: {mouse?.Name ?? "null"}, MouseState={mouse?.MouseState}" );
-		}
-
 		// if this was likely the click that made the window active - and we're not in UI mode
 		// then ignore it.. because we don't want people shooting guns every time they re-activate
 		// the window
@@ -32,10 +27,6 @@ if ( mouse is null && _mouseCaptureMode )
 		{
 			if ( mouse is null || mouse.MouseState != InputContext.InputState.UI )
 			{
-				if ( Environment.GetEnvironmentVariable( "SBOX_INPUT_DEBUG" ) == "1" )
-				{
-					Log.Info( $"[InputRouter] Ignoring click due to window activation (timeSinceWindowActive={timeSinceWindowActive})" );
-				}
 				return;
 			}
 		}
@@ -44,15 +35,7 @@ if ( mouse is null && _mouseCaptureMode )
 
 		if ( mouse is not null )
 		{
-			if ( Environment.GetEnvironmentVariable( "SBOX_INPUT_DEBUG" ) == "1" )
-			{
-				Log.Info( $"[InputRouter] Sending button to context: {mouse.Name}" );
-			}
 			mouse.IN_Button( down, button, button, false, modifiers );
-		}
-		else if ( Environment.GetEnvironmentVariable( "SBOX_INPUT_DEBUG" ) == "1" )
-		{
-			Log.Info( $"[InputRouter] No mouse context found, button not sent!" );
 		}
 
 		//
