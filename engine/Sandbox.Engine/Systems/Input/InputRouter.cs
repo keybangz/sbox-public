@@ -165,10 +165,19 @@ internal static partial class InputRouter
 		MouseCursorVisible = !mouseCaptureMode && (activeMouse is not null && activeMouse.MouseState == InputContext.InputState.UI);
 
 #if !WIN
-		// Linux: if capture is active (from Any() override), cursor must be hidden regardless of activeMouse state
+		// Linux: if capture is active, cursor must be hidden regardless of activeMouse state.
+		// If capture just released, ensure cursor is visible again.
 		if (mouseCaptureMode)
 		{
 			MouseCursorVisible = false;
+		}
+		else if ( mouseCapturePosition is null && !mouseCaptureMode )
+		{
+			// Capture was just released this frame — ensure cursor is visible if UI wants it
+			if ( activeMouse?.MouseState == InputContext.InputState.UI )
+			{
+				MouseCursorVisible = true;
+			}
 		}
 #endif
 
