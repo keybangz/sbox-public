@@ -57,6 +57,12 @@ internal static partial class InputRouter
     private static bool _mouseCaptureMode = false;
 
 	/// <summary>
+	/// Linux: Debounce timer for capture release. Prevents tooltip hover from flickering capture off.
+	/// </summary>
+	private static RealTimeSince _timeSinceCaptureWanted = 0;
+	private static readonly float CaptureDebounceSeconds = 0.1f;
+
+	/// <summary>
 	/// True if an "exit game" button is pressed, escape on keyboard
 	/// </summary>
 	public static bool EscapeIsDown { get; private set; }
@@ -144,18 +150,27 @@ internal static partial class InputRouter
 
 		#if !WIN
 		// Linux: If in-game and no context explicitly wants UI mouse, force capture.
-		// MouseState is set by UISystem.Simulate() which runs AFTER this frame's input.
-		// On Linux, game panels may not explicitly set MouseInput=Game, so MouseState stays Ignore.
-		// We default to capture when a game is running and no context is actively requesting UI mouse.
-		// ESC/menu: the menu InputContext will have MouseState=UI, so anyUI=true → no capture.
-		if (!mouseCaptureMode && IGameInstance.Current is not null)
+		// Uses a debounce to prevent tooltip hover from flickering capture off/on.
+		if ( IGameInstance.Current is not null )
 		{
-			// Only check the game context's MouseState — not the menu context.
-			// MenuDll intermittently sets MouseState=UI during gameplay (tooltip hover, panel focus),
-			// which would incorrectly suppress game mouse capture.
 			var gameCtx = IGameInstanceDll.Current?.InputContext;
 			bool gameWantsUI = gameCtx != null && gameCtx.MouseState == InputContext.InputState.UI;
-			mouseCaptureMode = !gameWantsUI;
+
+			if ( !gameWantsUI )
+			{
+				// Game wants capture — reset debounce timer and force capture
+				_timeSinceCaptureWanted = 0;
+				mouseCaptureMode = true;
+			}
+			else if ( !mouseCaptureMode )
+			{
+				// Game wants UI — only release capture after debounce period
+				// This prevents tooltip hover from briefly releasing capture
+				if ( _timeSinceCaptureWanted < CaptureDebounceSeconds )
+				{
+					mouseCaptureMode = _mouseCaptureMode; // hold previous state during debounce
+				}
+			}
 		}
 #endif
 
