@@ -185,12 +185,16 @@ internal static partial class InputRouter
 
 #if WIN
 			NativeEngine.InputSystem.SetRelativeMouseMode( true );
+#else
+			LinuxSDLInput.SetRelativeMouseMode( true );
 #endif
 		}
 		else
 		{
 #if WIN
 			NativeEngine.InputSystem.SetRelativeMouseMode( false );
+#else
+			LinuxSDLInput.SetRelativeMouseMode( false );
 #endif
 
 			// restore cursor position

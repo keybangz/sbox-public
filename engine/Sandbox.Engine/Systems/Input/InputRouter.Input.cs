@@ -133,7 +133,12 @@ if ( mouse is null && _mouseCaptureMode )
 		var delta = new Vector2( 0, 0 );
 
 		// if we're not in relative mode - take the delta from this
-		if ( !NativeEngine.InputSystem.GetRelativeMouseMode() )
+#if WIN
+		bool isRelative = NativeEngine.InputSystem.GetRelativeMouseMode();
+#else
+		bool isRelative = LinuxSDLInput.GetRelativeMouseMode();
+#endif
+		if ( !isRelative )
 		{
 			delta = new Vector2( dx, dy );
 			MouseCursorDelta += delta;
