@@ -75,6 +75,7 @@ if ( mouse is null && _mouseCaptureMode )
 		if ( active )
 		{
 			timeSinceWindowActive = 0;
+			InputLog.Trace( "[InputRouter] Window gained focus — capture may reacquire next frame" );
 		}
 		else
 		{
@@ -87,6 +88,19 @@ if ( mouse is null && _mouseCaptureMode )
 			{
 				context.ReleaseAllButtons();
 			}
+
+#if !WIN
+			// Linux: Force-release mouse capture on focus loss.
+			// Without this, _mouseCaptureMode stays true and SetCursorPosition() warps
+			// the cursor on the desktop, interfering with other applications.
+			if ( _mouseCaptureMode )
+			{
+				_mouseCaptureMode = false;
+				mouseCapturePosition = null;
+				LinuxSDLInput.ClearWarpTarget();
+				InputLog.Trace( "[InputRouter] Window lost focus — forced capture release" );
+			}
+#endif
 		}
 	}
 
