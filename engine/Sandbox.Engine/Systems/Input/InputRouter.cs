@@ -185,24 +185,12 @@ internal static partial class InputRouter
 
 #if WIN
 			NativeEngine.InputSystem.SetRelativeMouseMode( true );
-#elif !WIN
-			// Wayland: cannot warp cursor (security restriction). Fall back to SDL relative mode.
-			// X11: manual warp strategy — SetCursorPosition() is called in SetCursorPosition() below.
-			if ( LinuxSDLInput.IsWayland )
-			{
-				NativeEngine.InputSystem.SetRelativeMouseMode( true );
-			}
 #endif
 		}
 		else
 		{
 #if WIN
 			NativeEngine.InputSystem.SetRelativeMouseMode( false );
-#elif !WIN
-			if ( LinuxSDLInput.IsWayland )
-			{
-				NativeEngine.InputSystem.SetRelativeMouseMode( false );
-			}
 #endif
 
 			// restore cursor position

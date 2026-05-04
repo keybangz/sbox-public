@@ -28,8 +28,8 @@ internal static class LinuxSDLInput
 	{
 		get
 		{
-			var driver = NativeEngine.EngineGlobal.GetVideoDriver();
-			return string.Equals( driver, "wayland", StringComparison.OrdinalIgnoreCase );
+			// TODO: implement SDL_GetCurrentVideoDriver() binding
+			return false;
 		}
 	}
 
