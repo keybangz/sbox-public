@@ -21,6 +21,9 @@ internal static class LinuxSDLInput
 		}
 	}
 
+	private static string _videoDriver;
+	private static bool? _isWayland;
+
 	/// <summary>
 	/// True if the current SDL video driver is Wayland.
 	/// </summary>
@@ -28,8 +31,73 @@ internal static class LinuxSDLInput
 	{
 		get
 		{
-			// TODO: implement SDL_GetCurrentVideoDriver() binding
+			if ( _isWayland.HasValue ) return _isWayland.Value;
+
+			try
+			{
+				var ptr = Platform.Linux.LinuxSDL3Native.SDL_GetCurrentVideoDriver();
+				if ( ptr != IntPtr.Zero )
+				{
+					_videoDriver = System.Runtime.InteropServices.Marshal.PtrToStringUTF8( ptr );
+					_isWayland = _videoDriver?.Equals( "wayland", System.StringComparison.OrdinalIgnoreCase ) == true;
+					return _isWayland.Value;
+				}
+			}
+			catch ( System.Exception e )
+			{
+				Log.Warning( $"[LinuxSDLInput] Failed to query SDL video driver: {e.Message}" );
+			}
+
+			// SDL not initialized yet OR P/Invoke failed — assume X11/manual path
+			// Don't cache this — try again next call once SDL is up
 			return false;
+		}
+	}
+
+	public static bool GetRelativeMouseMode()
+	{
+		try
+		{
+			var window = Platform.Linux.LinuxSDL3Native.SDL_GetKeyboardFocus();
+			if ( window == IntPtr.Zero ) window = Platform.Linux.LinuxSDL3Native.SDL_GetMouseFocus();
+			if ( window == IntPtr.Zero ) return false;
+			return Platform.Linux.LinuxSDL3Native.SDL_GetWindowRelativeMouseMode( window );
+		}
+		catch
+		{
+			return false;
+		}
+	}
+
+	public static void SetRelativeMouseMode( bool enabled )
+	{
+		try
+		{
+			var window = Platform.Linux.LinuxSDL3Native.SDL_GetKeyboardFocus();
+			if ( window == IntPtr.Zero ) window = Platform.Linux.LinuxSDL3Native.SDL_GetMouseFocus();
+
+			if ( window == IntPtr.Zero )
+			{
+				InputLog.Trace( "[LinuxSDLInput] SetRelativeMouseMode: no active SDL window" );
+				return;
+			}
+
+			if ( !Platform.Linux.LinuxSDL3Native.SDL_SetWindowRelativeMouseMode( window, enabled ) )
+			{
+				var errPtr = Platform.Linux.LinuxSDL3Native.SDL_GetError();
+				var err = errPtr != IntPtr.Zero
+					? System.Runtime.InteropServices.Marshal.PtrToStringUTF8( errPtr )
+					: "unknown";
+				Log.Warning( $"[LinuxSDLInput] SDL_SetWindowRelativeMouseMode({enabled}) failed: {err}" );
+			}
+			else
+			{
+				InputLog.Trace( $"[LinuxSDLInput] SDL relative mode -> {enabled}" );
+			}
+		}
+		catch ( System.Exception e )
+		{
+			Log.Warning( $"[LinuxSDLInput] SetRelativeMouseMode threw: {e.Message}" );
 		}
 	}
 
