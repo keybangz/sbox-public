@@ -309,6 +309,19 @@ internal static partial class InputRouter
 	internal static void Shutdown()
 	{
 		KeyboardFocusPanel = null;
+
+#if !WIN
+		// Linux: Force-release capture when the engine shuts down.
+		// Prevents the cursor from being trapped if the game exits without
+		// properly transitioning MouseState back to UI.
+		if ( _mouseCaptureMode )
+		{
+			_mouseCaptureMode = false;
+			mouseCapturePosition = null;
+			LinuxSDLInput.ClearWarpTarget();
+			InputLog.Trace( "[InputRouter] Shutdown — forced capture release" );
+		}
+#endif
 	}
 
 	internal static void ShutdownUserCursors()
