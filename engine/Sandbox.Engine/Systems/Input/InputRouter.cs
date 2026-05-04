@@ -60,7 +60,7 @@ internal static partial class InputRouter
 	/// Linux: Debounce timer for capture release. Prevents tooltip hover from flickering capture off.
 	/// </summary>
 	private static RealTimeSince _timeSinceCaptureWanted = 0;
-	private static readonly float CaptureDebounceSeconds = 0.1f;
+	private const float CaptureDebounceSeconds = 0.1f;
 
 	/// <summary>
 	/// True if an "exit game" button is pressed, escape on keyboard

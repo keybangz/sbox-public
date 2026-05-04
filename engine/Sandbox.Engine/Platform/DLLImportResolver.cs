@@ -60,6 +60,12 @@ internal static class DLLImportResolver
 			return handle;
 		}
 
+		// Second try: bare name — lets OS loader use LD_LIBRARY_PATH / PATH
+		if ( NativeLibrary.TryLoad( nativeName, out handle ) )
+		{
+			return handle;
+		}
+
 		return IntPtr.Zero;
 	}
 }

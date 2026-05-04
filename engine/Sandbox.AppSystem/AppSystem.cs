@@ -5,6 +5,7 @@ using Sandbox.Network;
 using Sandbox.Rendering;
 using System;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Runtime;
 using System.Runtime.InteropServices;
@@ -411,15 +412,15 @@ public class AppSystem
 		string dllName;
 		if ( OperatingSystem.IsWindows() )
 		{
-			dllName = $"{Environment.CurrentDirectory}\\bin\\win64\\steam_api64.dll";
+			dllName = Path.Combine( Environment.CurrentDirectory, "bin", "win64", "steam_api64.dll" );
 		}
 		else if ( OperatingSystem.IsLinux() )
 		{
-			dllName = $"{Environment.CurrentDirectory}/bin/linuxsteamrt64/libsteam_api.so";
+			dllName = Path.Combine( Environment.CurrentDirectory, "bin", "linuxsteamrt64", "libsteam_api.so" );
 		}
 		else if ( OperatingSystem.IsMacOS() )
 		{
-			dllName = $"{Environment.CurrentDirectory}/bin/osx64/libsteam_api.dylib";
+			dllName = Path.Combine( Environment.CurrentDirectory, "bin", "osx64", "libsteam_api.dylib" );
 		}
 		else
 		{
@@ -428,13 +429,9 @@ public class AppSystem
 
 		if ( !NativeLibrary.TryLoad( dllName, out steamApiDll ) )
 		{
-			// Try alternative paths for cross-platform compatibility
-			if ( !NativeLibraryResolver.TryLoad( "steam_api64", out steamApiDll ) )
-			{
-				var platform = OperatingSystem.IsWindows() ? "win64" :
-					OperatingSystem.IsLinux() ? "linuxsteamrt64" : "osx64";
-				throw new System.Exception( $"Couldn't load Steam API from bin/{platform}/" );
-			}
+			var platform = OperatingSystem.IsWindows() ? "win64" :
+				OperatingSystem.IsLinux() ? "linuxsteamrt64" : "osx64";
+			throw new System.Exception( $"Couldn't load Steam API from {dllName}" );
 		}
 	}
 }

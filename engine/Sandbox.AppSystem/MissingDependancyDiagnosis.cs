@@ -89,7 +89,7 @@ static class MissingDependancyDiagnosis
 
 	private static void TestAssemblyWithResolver( string assemblyName )
 	{
-		if ( NativeLibraryResolver.TryLoad( assemblyName, out var handle ) )
+		if ( NativeLibrary.TryLoad( assemblyName, out var handle ) )
 		{
 			NativeLibrary.Free( handle );
 			return;

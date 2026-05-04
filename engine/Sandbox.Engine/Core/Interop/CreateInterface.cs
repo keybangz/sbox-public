@@ -17,18 +17,8 @@ internal static class CreateInterface
 		if ( loadedModules.TryGetValue( dll, out var module ) )
 			return module;
 
-		// Convert library name for the current platform
-		var platformDll = NativeLibraryResolver.ConvertLibraryName( dll );
-
-		// Try using our cross-platform resolver first
-		if ( NativeLibraryResolver.TryLoad( dll, out module ) )
-		{
-			loadedModules[dll] = module;
-			return module;
-		}
-
 		// Try loading directly
-		if ( NativeLibrary.TryLoad( platformDll, out module ) )
+		if ( NativeLibrary.TryLoad( dll, out module ) )
 		{
 			loadedModules[dll] = module;
 			return module;
@@ -45,7 +35,7 @@ internal static class CreateInterface
 			binFolder = "win64";
 
 		// Try game root
-		var fullPath = Path.Combine( gameDir, platformDll );
+		var fullPath = Path.Combine( gameDir, dll );
 		if ( NativeLibrary.TryLoad( fullPath, out module ) )
 		{
 			loadedModules[dll] = module;
@@ -53,7 +43,7 @@ internal static class CreateInterface
 		}
 
 		// Try bin subdirectory
-		fullPath = Path.Combine( gameDir, "bin", binFolder, platformDll );
+		fullPath = Path.Combine( gameDir, "bin", binFolder, dll );
 		if ( NativeLibrary.TryLoad( fullPath, out module ) )
 		{
 			loadedModules[dll] = module;
