@@ -191,23 +191,38 @@ internal static partial class InputRouter
 			if ( mouseCapturePosition is null )
 			{
 				mouseCapturePosition = MouseCursorPosition;
+				InputLog.Trace( $"[InputRouter.Frame] Capture acquired at {mouseCapturePosition}" );
 			}
 
 #if WIN
 			NativeEngine.InputSystem.SetRelativeMouseMode( true );
+#elif !WIN
+			// Wayland: cannot warp cursor (security restriction). Fall back to SDL relative mode.
+			// X11: manual warp strategy — SetCursorPosition() is called in SetCursorPosition() below.
+			if ( LinuxSDLInput.IsWayland )
+			{
+				NativeEngine.InputSystem.SetRelativeMouseMode( true );
+			}
 #endif
 		}
 		else
 		{
 #if WIN
 			NativeEngine.InputSystem.SetRelativeMouseMode( false );
+#elif !WIN
+			if ( LinuxSDLInput.IsWayland )
+			{
+				NativeEngine.InputSystem.SetRelativeMouseMode( false );
+			}
 #endif
 
 			// restore cursor position
 			if (mouseCapturePosition is not null)
 			{
+				InputLog.Trace( $"[InputRouter.Frame] Capture released — restoring cursor to {mouseCapturePosition.Value}" );
 				SetCursorPosition(mouseCapturePosition.Value);
 				mouseCapturePosition = null;
+				MouseCursorVisible = true;
 			}
 		}
 
@@ -242,7 +257,10 @@ internal static partial class InputRouter
 	{
 		if ( !g_pInputService.IsAppActive() ) return;
 #if !WIN
+		if ( LinuxSDLInput.IsWayland ) return; // Wayland uses SDL relative mode instead
 		if ( !LinuxSDLInput.HasX11Focus ) return;
+		// Register this warp so OnMouseMotion can discard the synthetic event it generates
+		LinuxSDLInput.IgnoreNextWarp( pos );
 #endif
 
 		g_pInputService.SetCursorPosition( (int)pos.x, (int)pos.y );
