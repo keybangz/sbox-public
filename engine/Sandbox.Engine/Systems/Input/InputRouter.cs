@@ -1,6 +1,5 @@
 ﻿using NativeEngine;
 using Sandbox.Internal;
-using Sandbox.Systems.Render.Multimedia;
 using Sandbox.UI;
 
 namespace Sandbox.Engine;
@@ -12,48 +11,48 @@ namespace Sandbox.Engine;
 /// </summary>
 internal static partial class InputRouter
 {
-	/// <summary>
-	/// True if the cursor is visible
-	/// </summary>
-	public static bool MouseCursorVisible { get; private set; }
+    /// <summary>
+    /// True if the cursor is visible
+    /// </summary>
+    public static bool MouseCursorVisible { get; private set; }
 
-	/// <summary>
-	/// Linux: True when the game is running and no context is actively requesting UI mouse.
-	/// Computed fresh each call — safe to read from PollEvents() before Frame() runs.
-	/// Avoids the 1-frame lag of reading MouseCursorVisible (which is set in Frame()).
-	/// </summary>
-	internal static bool GameWantsCapture
-	{
-		get
-		{
-			if (IGameInstance.Current == null) return false;
-			var ctx = IGameInstanceDll.Current?.InputContext;
-			if (ctx == null) return true; // game loaded but context not yet initialized — assume capture
-			if (ctx.MouseState == InputContext.InputState.UI) return false;
-			if (ctx.MouseState == InputContext.InputState.Ignore) return _mouseCaptureMode; // hold previous state during Ignore
-			return true; // Game or unrecognized state — wants capture
-		}
-	}
+    /// <summary>
+    /// Linux: True when the game is running and no context is actively requesting UI mouse.
+    /// Computed fresh each call — safe to read from PollEvents() before Frame() runs.
+    /// Avoids the 1-frame lag of reading MouseCursorVisible (which is set in Frame()).
+    /// </summary>
+    internal static bool GameWantsCapture
+    {
+        get
+        {
+            if (IGameInstance.Current == null) return false;
+            var ctx = IGameInstanceDll.Current?.InputContext;
+            if (ctx == null) return true; // game loaded but context not yet initialized — assume capture
+            if (ctx.MouseState == InputContext.InputState.UI) return false;
+            if (ctx.MouseState == InputContext.InputState.Ignore) return _mouseCaptureMode; // hold previous state during Ignore
+            return true; // Game or unrecognized state — wants capture
+        }
+    }
 
-	/// <summary>
-	/// The mouse cursor position. Or the last position if it's now invisible.
-	/// </summary>
-	public static Vector2 MouseCursorPosition { get; private set; }
+    /// <summary>
+    /// The mouse cursor position. Or the last position if it's now invisible.
+    /// </summary>
+    public static Vector2 MouseCursorPosition { get; private set; }
 
-	/// <summary>
-	/// The mouse cursor delta
-	/// </summary>
-	public static Vector2 MouseCursorDelta { get; private set; }
+    /// <summary>
+    /// The mouse cursor delta
+    /// </summary>
+    public static Vector2 MouseCursorDelta { get; private set; }
 
-	/// <summary>
-	/// The panel we're keyboard focusing on
-	/// </summary>
-	public static IPanel KeyboardFocusPanel { get; set; }
+    /// <summary>
+    /// The panel we're keyboard focusing on
+    /// </summary>
+    public static IPanel KeyboardFocusPanel { get; set; }
 
-	/// <summary>
-	/// The position in which we entered capture/relative mode
-	/// </summary>
-	static Vector2? mouseCapturePosition;
+    /// <summary>
+    /// The position in which we entered capture/relative mode
+    /// </summary>
+    static Vector2? mouseCapturePosition;
 
     /// <summary>
     /// True when the game has captured the mouse (relative/game mode).
@@ -65,384 +64,384 @@ internal static partial class InputRouter
     /// </summary>
     internal static bool _mouseCaptureMode = false;
 
-	/// <summary>
-	/// Linux: Debounce timer for capture release. Prevents tooltip hover from flickering capture off.
-	/// </summary>
-	private static RealTimeSince _timeSinceCaptureWanted = 0;
-	private const float CaptureDebounceSeconds = 0.1f;
+    /// <summary>
+    /// Linux: Debounce timer for capture release. Prevents tooltip hover from flickering capture off.
+    /// </summary>
+    private static RealTimeSince _timeSinceCaptureWanted = 0;
+    private const float CaptureDebounceSeconds = 0.1f;
 
-	/// <summary>
-	/// True if an "exit game" button is pressed, escape on keyboard
-	/// </summary>
-	public static bool EscapeIsDown { get; private set; }
+    /// <summary>
+    /// True if an "exit game" button is pressed, escape on keyboard
+    /// </summary>
+    public static bool EscapeIsDown { get; private set; }
 
-	/// <summary>
-	/// The escape button was pressed this frame. 
-	/// The game is allowed to consume this. Then it will go to the menu.
-	/// This is distinct from EscapeIsDown, because that is used to close the game when held down.
-	/// </summary>
-	public static bool EscapeWasPressed { get; set; }
+    /// <summary>
+    /// The escape button was pressed this frame.
+    /// The game is allowed to consume this. Then it will go to the menu.
+    /// This is distinct from EscapeIsDown, because that is used to close the game when held down.
+    /// </summary>
+    public static bool EscapeWasPressed { get; set; }
 
-	/// <summary>
-	/// Time since escape was pressed
-	/// </summary>
-	static RealTimeSince TimeSinceEscapePressed { get; set; }
+    /// <summary>
+    /// Time since escape was pressed
+    /// </summary>
+    static RealTimeSince TimeSinceEscapePressed { get; set; }
 
-	/// <summary>
-	/// Buttons that are currently pressed
-	/// </summary>
-	static HashSet<ButtonCode> PressedButtons = new HashSet<ButtonCode>();
+    /// <summary>
+    /// Buttons that are currently pressed
+    /// </summary>
+    static HashSet<ButtonCode> PressedButtons = new HashSet<ButtonCode>();
 
-	/// <summary>
-	/// Controller buttons that are currently pressed
-	/// </summary>
-	static HashSet<GamepadCode> PressedControllerButtons = new HashSet<GamepadCode>();
+    /// <summary>
+    /// Controller buttons that are currently pressed
+    /// </summary>
+    static HashSet<GamepadCode> PressedControllerButtons = new HashSet<GamepadCode>();
 
-	/// <summary>
-	/// Returns the number of seconds escape has been held down
-	/// </summary>
-	public static float EscapeTime => EscapeIsDown ? TimeSinceEscapePressed.Relative : 0;
+    /// <summary>
+    /// Returns the number of seconds escape has been held down
+    /// </summary>
+    public static float EscapeTime => EscapeIsDown ? TimeSinceEscapePressed.Relative : 0;
 
-	/// <summary>
-	/// Return the input contexts of each context, in order of priority
-	/// </summary>
-	static IEnumerable<InputContext> Contexts
-	{
-		get
-		{
-			if ( IMenuDll.Current is not null )
-			{
-				var menu = IMenuDll.Current.InputContext;
-				if ( menu is not null ) yield return menu;
-			}
+    /// <summary>
+    /// Return the input contexts of each context, in order of priority
+    /// </summary>
+    static IEnumerable<InputContext> Contexts
+    {
+        get
+        {
+            if (IMenuDll.Current is not null)
+            {
+                var menu = IMenuDll.Current.InputContext;
+                if (menu is not null) yield return menu;
+            }
 
-			// if we even have a game menu!
-			if ( IGameInstance.Current is not null )
-			{
-				var gamemenu = IGameInstanceDll.Current.InputContext;
-				if ( gamemenu is not null ) yield return gamemenu;
-			}
-		}
-	}
+            // if we even have a game menu!
+            if (IGameInstance.Current is not null)
+            {
+                var gamemenu = IGameInstanceDll.Current.InputContext;
+                if (gamemenu is not null) yield return gamemenu;
+            }
+        }
+    }
 
-	public static void Frame()
-	{
-		var activeMouse = Contexts.Where( x => x.MouseState != InputContext.InputState.Ignore ).FirstOrDefault();
-		var activeKeyboard = Contexts.Where( x => x.KeyboardState != InputContext.InputState.Ignore ).FirstOrDefault();
+    public static void Frame()
+    {
+        var activeMouse = Contexts.Where(x => x.MouseState != InputContext.InputState.Ignore).FirstOrDefault();
+        var activeKeyboard = Contexts.Where(x => x.KeyboardState != InputContext.InputState.Ignore).FirstOrDefault();
 
-		// Capture mode could either come from being in game (in which case input is sent to the game)
-		// or from a Panel.CaptureMode - in which case input is sent to the panel/ui
-		bool mouseCaptureMode = activeMouse is not null && activeMouse.MouseState == InputContext.InputState.Game;
-		mouseCaptureMode = mouseCaptureMode || (activeMouse?.MouseCapture ?? false);
-
-		#if !WIN
-		// Linux: If in-game and no context explicitly wants UI mouse, force capture.
-		// Uses a debounce to prevent tooltip hover from flickering capture off/on.
-		if ( IGameInstance.Current is not null )
-		{
-			var gameCtx = IGameInstanceDll.Current?.InputContext;
-			bool gameWantsUI = gameCtx != null && gameCtx.MouseState == InputContext.InputState.UI;
-			bool gameStateIgnore = gameCtx == null || gameCtx.MouseState == InputContext.InputState.Ignore;
-
-			if ( !gameWantsUI && !gameStateIgnore )
-			{
-				// Game explicitly wants capture — reset debounce timer and force capture
-				_timeSinceCaptureWanted = 0;
-				mouseCaptureMode = true;
-			}
-			else if ( gameStateIgnore )
-			{
-				// Context not yet initialized or state is Ignore — hold previous capture state
-				// This prevents capture from flickering off during the first few frames
-				mouseCaptureMode = _mouseCaptureMode;
-			}
-			else if ( !mouseCaptureMode )
-			{
-				// Game wants UI — only release capture after debounce period
-				if ( _timeSinceCaptureWanted < CaptureDebounceSeconds )
-				{
-					mouseCaptureMode = _mouseCaptureMode;
-				}
-			}
-		}
-#endif
-
-		bool captureStateChanged = mouseCaptureMode != _mouseCaptureMode;
-
-		// Cache for OnKey() to use for keyboard context selection
-		_mouseCaptureMode = mouseCaptureMode;
-
-		MouseCursorVisible = !mouseCaptureMode && (activeMouse is not null && activeMouse.MouseState == InputContext.InputState.UI);
+        // Capture mode could either come from being in game (in which case input is sent to the game)
+        // or from a Panel.CaptureMode - in which case input is sent to the panel/ui
+        bool mouseCaptureMode = activeMouse is not null && activeMouse.MouseState == InputContext.InputState.Game;
+        mouseCaptureMode = mouseCaptureMode || (activeMouse?.MouseCapture ?? false);
 
 #if !WIN
-		// Linux: if capture is active, cursor must be hidden regardless of activeMouse state.
-		// If capture just released, ensure cursor is visible again.
-		if (mouseCaptureMode)
-		{
-			MouseCursorVisible = false;
-		}
-		else if ( mouseCapturePosition is null && !mouseCaptureMode )
-		{
-			// Capture was just released this frame — ensure cursor is visible if UI wants it
-			if ( activeMouse?.MouseState == InputContext.InputState.UI )
-			{
-				MouseCursorVisible = true;
-			}
-		}
+        // Linux: If in-game and no context explicitly wants UI mouse, force capture.
+        // Uses a debounce to prevent tooltip hover from flickering capture off/on.
+        if (IGameInstance.Current is not null)
+        {
+            var gameCtx = IGameInstanceDll.Current?.InputContext;
+            bool gameWantsUI = gameCtx != null && gameCtx.MouseState == InputContext.InputState.UI;
+            bool gameStateIgnore = gameCtx == null || gameCtx.MouseState == InputContext.InputState.Ignore;
+
+            if (!gameWantsUI && !gameStateIgnore)
+            {
+                // Game explicitly wants capture — reset debounce timer and force capture
+                _timeSinceCaptureWanted = 0;
+                mouseCaptureMode = true;
+            }
+            else if (gameStateIgnore)
+            {
+                // Context not yet initialized or state is Ignore — hold previous capture state
+                // This prevents capture from flickering off during the first few frames
+                mouseCaptureMode = _mouseCaptureMode;
+            }
+            else if (!mouseCaptureMode)
+            {
+                // Game wants UI — only release capture after debounce period
+                if (_timeSinceCaptureWanted < CaptureDebounceSeconds)
+                {
+                    mouseCaptureMode = _mouseCaptureMode;
+                }
+            }
+        }
 #endif
 
-		if ( mouseCaptureMode )
-		{
-			// save the cursor position
-			if ( mouseCapturePosition is null )
-			{
-				mouseCapturePosition = MouseCursorPosition;
-				InputLog.Trace( $"[InputRouter.Frame] Capture acquired at {mouseCapturePosition}" );
-			}
+        bool captureStateChanged = mouseCaptureMode != _mouseCaptureMode;
 
-			if ( captureStateChanged )
-			{
+        // Cache for OnKey() to use for keyboard context selection
+        _mouseCaptureMode = mouseCaptureMode;
+
+        MouseCursorVisible = !mouseCaptureMode && (activeMouse is not null && activeMouse.MouseState == InputContext.InputState.UI);
+
+#if !WIN
+        // Linux: if capture is active, cursor must be hidden regardless of activeMouse state.
+        // If capture just released, ensure cursor is visible again.
+        if (mouseCaptureMode)
+        {
+            MouseCursorVisible = false;
+        }
+        else if (mouseCapturePosition is null && !mouseCaptureMode)
+        {
+            // Capture was just released this frame — ensure cursor is visible if UI wants it
+            if (activeMouse?.MouseState == InputContext.InputState.UI)
+            {
+                MouseCursorVisible = true;
+            }
+        }
+#endif
+
+        if (mouseCaptureMode)
+        {
+            // save the cursor position
+            if (mouseCapturePosition is null)
+            {
+                mouseCapturePosition = MouseCursorPosition;
+                InputLog.Trace($"[InputRouter.Frame] Capture acquired at {mouseCapturePosition}");
+            }
+
+            if (captureStateChanged)
+            {
 #if WIN
 				NativeEngine.InputSystem.SetRelativeMouseMode( true );
 #else
-				LinuxSDLInput.SetRelativeMouseMode( true );
+                LinuxSDLInput.SetRelativeMouseMode(true);
 #endif
-			}
-		}
-		else
-		{
-			if ( captureStateChanged )
-			{
+            }
+        }
+        else
+        {
+            if (captureStateChanged)
+            {
 #if WIN
 				NativeEngine.InputSystem.SetRelativeMouseMode( false );
 #else
-				LinuxSDLInput.SetRelativeMouseMode( false );
+                LinuxSDLInput.SetRelativeMouseMode(false);
 #endif
-			}
+            }
 
-			// restore cursor position
-			if (mouseCapturePosition is not null)
-			{
-				InputLog.Trace( $"[InputRouter.Frame] Capture released — restoring cursor to {mouseCapturePosition.Value}" );
-				SetCursorPosition(mouseCapturePosition.Value);
-				mouseCapturePosition = null;
-				MouseCursorVisible = true;
-			}
-		}
+            // restore cursor position
+            if (mouseCapturePosition is not null)
+            {
+                InputLog.Trace($"[InputRouter.Frame] Capture released — restoring cursor to {mouseCapturePosition.Value}");
+                SetCursorPosition(mouseCapturePosition.Value);
+                mouseCapturePosition = null;
+                MouseCursorVisible = true;
+            }
+        }
 
-		if ( activeMouse is not null )
-		{
-			SetCursorType( activeMouse.MouseCursor );
-		}
+        if (activeMouse is not null)
+        {
+            SetCursorType(activeMouse.MouseCursor);
+        }
 
-		if ( activeKeyboard is not null )
-		{
-			KeyboardFocusPanel = activeKeyboard.KeyboardFocusPanel;
-		}
+        if (activeKeyboard is not null)
+        {
+            KeyboardFocusPanel = activeKeyboard.KeyboardFocusPanel;
+        }
 
-		if ( KeyboardFocusPanel is null )
-		{
-			NativeEngine.InputSystem.SetIMEAllowed( false );
-		}
-		else
-		{
-			NativeEngine.InputSystem.SetIMEAllowed( true );
-			var rect = KeyboardFocusPanel.Rect;
-			NativeEngine.InputSystem.SetIMETextLocation( (int)rect.Left, (int)rect.Top, (int)rect.Width, (int)rect.Height );
-		}
+        if (KeyboardFocusPanel is null)
+        {
+            NativeEngine.InputSystem.SetIMEAllowed(false);
+        }
+        else
+        {
+            NativeEngine.InputSystem.SetIMEAllowed(true);
+            var rect = KeyboardFocusPanel.Rect;
+            NativeEngine.InputSystem.SetIMETextLocation((int)rect.Left, (int)rect.Top, (int)rect.Width, (int)rect.Height);
+        }
 
-		MouseCursorDelta = 0;
-		EscapeWasPressed = false;
+        MouseCursorDelta = 0;
+        EscapeWasPressed = false;
 
-		TooltipSystem.SetHovered( activeMouse?.MouseFocusPanel ?? null );
-	}
+        TooltipSystem.SetHovered(activeMouse?.MouseFocusPanel ?? null);
+    }
 
-	static void SetCursorPosition( Vector2 pos )
-	{
-		if ( !g_pInputService.IsAppActive() ) return;
+    static void SetCursorPosition(Vector2 pos)
+    {
+        if (!g_pInputService.IsAppActive()) return;
 #if !WIN
-		if ( LinuxSDLInput.IsWayland ) return; // Wayland uses SDL relative mode instead
-		if ( !LinuxSDLInput.HasX11Focus ) return;
-		// Register this warp so OnMouseMotion can discard the synthetic event it generates
-		LinuxSDLInput.IgnoreNextWarp( pos );
+        if (LinuxSDLInput.IsWayland) return; // Wayland uses SDL relative mode instead
+        if (!LinuxSDLInput.HasX11Focus) return;
+        // Register this warp so OnMouseMotion can discard the synthetic event it generates
+        LinuxSDLInput.IgnoreNextWarp(pos);
 #endif
 
-		g_pInputService.SetCursorPosition( (int)pos.x, (int)pos.y );
-	}
+        g_pInputService.SetCursorPosition((int)pos.x, (int)pos.y);
+    }
 
-	static string CursorName { get; set; }
+    static string CursorName { get; set; }
 
-	static readonly CaseInsensitiveDictionary<InputStandardCursor_t> CursorLookup = new()
-	{
-		{ "none", InputStandardCursor_t.None },
-		{ "arrow", InputStandardCursor_t.Arrow },
-		{ "ibeam", InputStandardCursor_t.IBeam },
-		{ "text", InputStandardCursor_t.IBeam },
-		{ "crosshair", InputStandardCursor_t.Crosshair },
-		{ "pointer", InputStandardCursor_t.Hand },
-		{ "hand", InputStandardCursor_t.Hand },
-		{ "progress", InputStandardCursor_t.WaitArrow },
-		{ "wait", InputStandardCursor_t.HourGlass },
-		{ "hourglass", InputStandardCursor_t.HourGlass },
-		{ "move", InputStandardCursor_t.SizeALL },
-		{ "sizenesw", InputStandardCursor_t.SizeNESW },
-		{ "nesw-resize", InputStandardCursor_t.SizeNESW },
-		{ "sizenwse", InputStandardCursor_t.SizeNWSE },
-		{ "nwse-resize", InputStandardCursor_t.SizeNWSE },
-		{ "sizewe", InputStandardCursor_t.SizeWE },
-		{ "ew-resize", InputStandardCursor_t.SizeWE },
-		{ "sizens", InputStandardCursor_t.SizeNS },
-		{ "ns-resize", InputStandardCursor_t.SizeNS },
-		{ "not-allowed", InputStandardCursor_t.No },
-	};
+    static readonly CaseInsensitiveDictionary<InputStandardCursor_t> CursorLookup = new()
+    {
+        { "none", InputStandardCursor_t.None },
+        { "arrow", InputStandardCursor_t.Arrow },
+        { "ibeam", InputStandardCursor_t.IBeam },
+        { "text", InputStandardCursor_t.IBeam },
+        { "crosshair", InputStandardCursor_t.Crosshair },
+        { "pointer", InputStandardCursor_t.Hand },
+        { "hand", InputStandardCursor_t.Hand },
+        { "progress", InputStandardCursor_t.WaitArrow },
+        { "wait", InputStandardCursor_t.HourGlass },
+        { "hourglass", InputStandardCursor_t.HourGlass },
+        { "move", InputStandardCursor_t.SizeALL },
+        { "sizenesw", InputStandardCursor_t.SizeNESW },
+        { "nesw-resize", InputStandardCursor_t.SizeNESW },
+        { "sizenwse", InputStandardCursor_t.SizeNWSE },
+        { "nwse-resize", InputStandardCursor_t.SizeNWSE },
+        { "sizewe", InputStandardCursor_t.SizeWE },
+        { "ew-resize", InputStandardCursor_t.SizeWE },
+        { "sizens", InputStandardCursor_t.SizeNS },
+        { "ns-resize", InputStandardCursor_t.SizeNS },
+        { "not-allowed", InputStandardCursor_t.No },
+    };
 
-	static readonly HashSet<string> UserCursors = new();
+    static readonly HashSet<string> UserCursors = new();
 
-	static void SetCursorType( string name )
-	{
-		name = MouseCursorVisible ? string.IsNullOrWhiteSpace( name ) ? "arrow" : name.ToLower() : "none";
-		if ( name == CursorName )
-			return;
+    static void SetCursorType(string name)
+    {
+        name = MouseCursorVisible ? string.IsNullOrWhiteSpace(name) ? "arrow" : name.ToLower() : "none";
+        if (name == CursorName)
+            return;
 
-		if ( name == "none" )
-		{
-			InputSystem.SetCursorStandard( InputStandardCursor_t.None );
-		}
-		else if ( UserCursors.Contains( name ) )
-		{
-			InputSystem.SetCursorUser( name );
-		}
-		else if ( CursorLookup.TryGetValue( name, out var found ) )
-		{
-			InputSystem.SetCursorStandard( found );
-		}
-		else
-		{
-			name = "arrow";
-			if ( name == CursorName )
-				return;
+        if (name == "none")
+        {
+            InputSystem.SetCursorStandard(InputStandardCursor_t.None);
+        }
+        else if (UserCursors.Contains(name))
+        {
+            InputSystem.SetCursorUser(name);
+        }
+        else if (CursorLookup.TryGetValue(name, out var found))
+        {
+            InputSystem.SetCursorStandard(found);
+        }
+        else
+        {
+            name = "arrow";
+            if (name == CursorName)
+                return;
 
-			InputSystem.SetCursorStandard( InputStandardCursor_t.Arrow );
-		}
+            InputSystem.SetCursorStandard(InputStandardCursor_t.Arrow);
+        }
 
-		CursorName = name;
-	}
+        CursorName = name;
+    }
 
-	internal static void Shutdown()
-	{
-		KeyboardFocusPanel = null;
+    internal static void Shutdown()
+    {
+        KeyboardFocusPanel = null;
 
 #if !WIN
-		// Linux: Force-release capture when the engine shuts down.
-		// Prevents the cursor from being trapped if the game exits without
-		// properly transitioning MouseState back to UI.
-		if ( _mouseCaptureMode )
-		{
-			_mouseCaptureMode = false;
-			mouseCapturePosition = null;
-			LinuxSDLInput.ClearWarpTarget();
-			InputLog.Trace( "[InputRouter] Shutdown — forced capture release" );
-		}
+        // Linux: Force-release capture when the engine shuts down.
+        // Prevents the cursor from being trapped if the game exits without
+        // properly transitioning MouseState back to UI.
+        if (_mouseCaptureMode)
+        {
+            _mouseCaptureMode = false;
+            mouseCapturePosition = null;
+            LinuxSDLInput.ClearWarpTarget();
+            InputLog.Trace("[InputRouter] Shutdown — forced capture release");
+        }
 #endif
-	}
+    }
 
-	internal static void ShutdownUserCursors()
-	{
-		if ( Application.IsHeadless )
-			return;
+    internal static void ShutdownUserCursors()
+    {
+        if (Application.IsHeadless)
+            return;
 
-		UserCursors.Clear();
-		InputSystem.ShutdownUserCursors();
-	}
+        UserCursors.Clear();
+        InputSystem.ShutdownUserCursors();
+    }
 
-	internal static void CreateUserCursor( BaseFileSystem filesystem, string name, string filepath, int hotX, int hotY )
-	{
-		Assert.False( Application.IsHeadless );
+    internal static void CreateUserCursor(BaseFileSystem filesystem, string name, string filepath, int hotX, int hotY)
+    {
+        Assert.False(Application.IsHeadless);
 
-		if ( string.IsNullOrWhiteSpace( name ) )
-			return;
+        if (string.IsNullOrWhiteSpace(name))
+            return;
 
-		if ( string.IsNullOrWhiteSpace( filepath ) )
-			return;
+        if (string.IsNullOrWhiteSpace(filepath))
+            return;
 
-		if ( UserCursors.Contains( name ) )
-			return;
+        if (UserCursors.Contains(name))
+            return;
 
-		if ( !filesystem.FileExists( filepath ) )
-			return;
+        if (!filesystem.FileExists(filepath))
+            return;
 
-		if ( !InputSystem.LoadCursorFromFile( filepath, name, hotX, hotY ) )
-			return;
+        if (!InputSystem.LoadCursorFromFile(filepath, name, hotX, hotY))
+            return;
 
-		UserCursors.Add( name.ToLower() );
-	}
+        UserCursors.Add(name.ToLower());
+    }
 
-	/// <summary>
-	/// An input context wants to set the cursor position
-	/// </summary>
-	internal static void SetCursorPosition( InputContext inputContext, Vector2 vector2 )
-	{
-		var activeMouse = Contexts.Where( x => x.MouseState != InputContext.InputState.Ignore )
-							.FirstOrDefault();
+    /// <summary>
+    /// An input context wants to set the cursor position
+    /// </summary>
+    internal static void SetCursorPosition(InputContext inputContext, Vector2 vector2)
+    {
+        var activeMouse = Contexts.Where(x => x.MouseState != InputContext.InputState.Ignore)
+                            .FirstOrDefault();
 
-		if ( activeMouse != inputContext )
-			return;
+        if (activeMouse != inputContext)
+            return;
 
-		// if this is set, we're in capture mode - so just update the position
-		// which will update the position of the cursor when we come out of it
-		if ( mouseCapturePosition is not null )
-		{
-			mouseCapturePosition = vector2;
-			return;
-		}
+        // if this is set, we're in capture mode - so just update the position
+        // which will update the position of the cursor when we come out of it
+        if (mouseCapturePosition is not null)
+        {
+            mouseCapturePosition = vector2;
+            return;
+        }
 
-		SetCursorPosition( vector2 );
-	}
+        SetCursorPosition(vector2);
+    }
 
-	/// <summary>
-	/// Return true if button is pressed
-	/// </summary>
-	public static bool IsButtonDown( ButtonCode code )
-	{
-		return PressedButtons.Contains( code );
-	}
+    /// <summary>
+    /// Return true if button is pressed
+    /// </summary>
+    public static bool IsButtonDown(ButtonCode code)
+    {
+        return PressedButtons.Contains(code);
+    }
 
-	/// <summary>
-	/// Return true if button is pressed
-	/// </summary>
-	private static void SetButtonState( ButtonCode code, bool state )
-	{
-		if ( state ) PressedButtons.Add( code );
-		else PressedButtons.Remove( code );
-	}
+    /// <summary>
+    /// Return true if button is pressed
+    /// </summary>
+    private static void SetButtonState(ButtonCode code, bool state)
+    {
+        if (state) PressedButtons.Add(code);
+        else PressedButtons.Remove(code);
+    }
 
-	/// <summary>
-	/// Return true if button is pressed
-	/// </summary>
-	public static bool IsButtonDown( GamepadCode code )
-	{
-		return PressedControllerButtons.Contains( code );
-	}
+    /// <summary>
+    /// Return true if button is pressed
+    /// </summary>
+    public static bool IsButtonDown(GamepadCode code)
+    {
+        return PressedControllerButtons.Contains(code);
+    }
 
-	/// <summary>
-	/// Return true if button is pressed
-	/// </summary>
-	private static void SetButtonState( GamepadCode code, bool state )
-	{
-		if ( state ) PressedControllerButtons.Add( code );
-		else PressedControllerButtons.Remove( code );
-	}
+    /// <summary>
+    /// Return true if button is pressed
+    /// </summary>
+    private static void SetButtonState(GamepadCode code, bool state)
+    {
+        if (state) PressedControllerButtons.Add(code);
+        else PressedControllerButtons.Remove(code);
+    }
 
-	/// <summary>
-	/// A console command from the engine.
-	/// </summary>
-	internal static void OnConsoleCommand( string v )
-	{
-		ConVarSystem.Run( v );
-	}
+    /// <summary>
+    /// A console command from the engine.
+    /// </summary>
+    internal static void OnConsoleCommand(string v)
+    {
+        ConVarSystem.Run(v);
+    }
 
-	internal static void CloseApplication()
-	{
-		Application.Exit();
-	}
+    internal static void CloseApplication()
+    {
+        Application.Exit();
+    }
 }

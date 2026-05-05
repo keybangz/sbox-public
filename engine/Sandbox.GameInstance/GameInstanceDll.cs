@@ -439,14 +439,6 @@ internal partial class GameInstanceDll : Engine.IGameInstanceDll
 				_perFrameInputScope?.Dispose();
 				_perFrameInputScope = _perFrameInput.Push();
 
-				// ADD THIS (log once per second):
-				if (RealTime.Now % 2.0f < Time.Delta)
-				{
-					var ctxNames = string.Join(",", Sandbox.Input.Contexts.Select(c => c.Name));
-					var perFrameInList = Sandbox.Input.Contexts.Any(c => c == _perFrameInput);
-					Log.Info($"[GameInstanceDll.Tick] Input.Contexts=[{ctxNames}] perFrameInList={perFrameInList} perFrameName={_perFrameInput.Name}");
-				}
-
 				Input.Process();
 			}
 
@@ -1046,8 +1038,16 @@ internal partial class GameInstanceDll : Engine.IGameInstanceDll
 		input.OnMouseMotion += Sandbox.Input.AddMouseMovement;
 		input.OnGameButton += (scanCode, name, down) =>
 		{
+			Log.Info($"[OnGameButton] scanCode={scanCode} name={name} down={down} InputActions={(Sandbox.Input.InputActions == null ? "NULL" : Sandbox.Input.InputActions.Count.ToString())}");
 			Sandbox.Input.OnButton( scanCode, name, down );
 		};
+
+		// Ensure InputActions is populated — ReadConfig(null) creates default InputSettings with InitDefault()
+		// This guarantees Input.OnButton() doesn't early-return on null InputActions before game loads
+		if (Sandbox.Input.InputSettings == null || Sandbox.Input.InputActions == null || Sandbox.Input.InputActions.Count == 0)
+		{
+			Sandbox.Input.ReadConfig(null);
+		}
 
 		InputContext = input;
 
