@@ -219,10 +219,10 @@ fi
 # Launch
 # ============================================================================
 
-# Use dotnet to run the managed launcher instead of the native executable.
-# The native executable takes over the main loop and doesn't return control
-# to managed code for async task processing, causing initialization to hang.
-# Running via dotnet allows managed code to control the main loop properly.
+# Use the native AppHost binary (game/sbox) which runs Startup.Main() ->
+# LauncherEnvironment.Init() -> GameAppSystem.Run() (managed loop).
+# LauncherEnvironment.Init() sets SBOX_BIN_DIR, LD_LIBRARY_PATH, and CurrentDirectory
+# before any native engine libs are loaded, so the native engine can find bin/linuxsteamrt64/.
 #
 # Note: We use regular invocation instead of 'exec' so our EXIT trap runs
 # for cleanup when the process terminates.
@@ -297,8 +297,8 @@ if [ "$SBOX_VALGRIND" = "1" ]; then
     # Enable MALLOC_CHECK for additional heap validation
     export MALLOC_CHECK_=3
 
-    # Run with Valgrind - instrument dotnet directly
-    valgrind "${VALGRIND_ARGS[@]}" dotnet sbox.dll -game "$GAME_DIR" "$@"
+    # Run with Valgrind - instrument the native AppHost binary
+    valgrind "${VALGRIND_ARGS[@]}" "$GAME_DIR/sbox" -game "$GAME_DIR" "$@"
     EXIT_CODE=$?
 
 # GDB debugging: SBOX_GDB=1 ./run.sh
@@ -353,7 +353,7 @@ elif [ "$SBOX_GDB" = "1" ]; then
     fi
 
     # Run with GDB
-    gdb "${GDB_ARGS[@]}" --args dotnet sbox.dll -game "$GAME_DIR" "$@"
+    gdb "${GDB_ARGS[@]}" --args "$GAME_DIR/sbox" -game "$GAME_DIR" "$@"
     EXIT_CODE=$?
 
 # AddressSanitizer: SBOX_ASAN=1 ./run.sh
@@ -391,11 +391,15 @@ elif [ "$SBOX_ASAN" = "1" ]; then
     echo "ASAN log: /tmp/sbox_asan.*"
     echo ""
 
-    dotnet sbox.dll -game "$GAME_DIR" "$@"
+    # Use the native AppHost binary under ASAN
+    "$GAME_DIR/sbox" -game "$GAME_DIR" "$@"
     EXIT_CODE=$?
 
 else
-    dotnet sbox.dll -game "$GAME_DIR" "$@"
+    # Use the native AppHost binary - it runs Startup.Main() -> LauncherEnvironment.Init()
+    # -> GameAppSystem.Run() (managed loop). LauncherEnvironment.Init() now sets SBOX_BIN_DIR
+    # so the native engine can find bin/linuxsteamrt64/ without needing run.sh to set it.
+    "$GAME_DIR/sbox" -game "$GAME_DIR" "$@"
     EXIT_CODE=$?
 fi
 
