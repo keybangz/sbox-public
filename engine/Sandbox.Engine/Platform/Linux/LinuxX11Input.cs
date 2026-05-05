@@ -171,7 +171,6 @@ internal static class LinuxX11Input
 		int winX = rootX, winY = rootY;
 		if ( _focusedWindow != IntPtr.Zero )
 		{
-			var root = XDefaultRootWindow( _display );
 			XTranslateCoordinates( _display, root, _focusedWindow, rootX, rootY, out winX, out winY, out _ );
 		}
 
