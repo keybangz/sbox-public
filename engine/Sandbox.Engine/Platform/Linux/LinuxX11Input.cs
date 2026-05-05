@@ -33,6 +33,9 @@ internal static class LinuxX11Input
 	[DllImport( "libX11.so.6", EntryPoint = "XDefaultRootWindow" )]
 	private static extern IntPtr XDefaultRootWindow( IntPtr display );
 
+	[DllImport( "libX11.so.6", EntryPoint = "XGetInputFocus" )]
+	private static extern void XGetInputFocus( IntPtr display, out IntPtr focus_return, out int revert_to_return );
+
 	// ── State ─────────────────────────────────────────────────────────────────
 
 	private static IntPtr _display = IntPtr.Zero;
@@ -72,6 +75,17 @@ internal static class LinuxX11Input
 		}
 	}
 
+	// ── Focus helper ──────────────────────────────────────────────────────────
+
+	private static bool HasX11WindowFocus()
+	{
+		if ( _display == IntPtr.Zero ) return false;
+		XGetInputFocus( _display, out IntPtr focus, out _ );
+		// focus == PointerRoot (1) means pointer is on root window (no app has focus)
+		// focus == None (0) means no window has focus
+		return focus != IntPtr.Zero && focus != new IntPtr( 1 );
+	}
+
 	// ── Main poll ─────────────────────────────────────────────────────────────
 
 	/// <summary>
@@ -81,8 +95,8 @@ internal static class LinuxX11Input
 	internal static void Poll()
 	{
 		if ( LinuxSDLInput.IsWayland ) return;
-		if ( !LinuxSDLInput.HasX11Focus ) return;
 		if ( !EnsureDisplay() ) return;
+		if ( !HasX11WindowFocus() ) return;
 
 		PollKeyboard();
 		PollMouse();
@@ -136,7 +150,16 @@ internal static class LinuxX11Input
 
 			if ( dx != 0 || dy != 0 )
 			{
-				InputRouter.OnMouseMotion( dx, dy );
+				if ( InputRouter._mouseCaptureMode )
+				{
+					// Game/capture mode: relative delta
+					InputRouter.OnMouseMotion( dx, dy );
+				}
+				else
+				{
+					// Menu/UI mode: absolute position + delta
+					InputRouter.OnMousePositionChange( rootX, rootY, dx, dy );
+				}
 			}
 		}
 
