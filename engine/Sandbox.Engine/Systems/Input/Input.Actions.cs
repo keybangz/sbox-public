@@ -316,11 +316,13 @@ public static partial class Input
 
 		MissingActions.Clear();
 
-		if ( string.IsNullOrEmpty( Application.GameIdent ) || InputActions is null )
+		if ( InputActions is null )
 			return;
 
 		// Tell the binding system about the new binds so it can set defaults properly
-		var collection = InputBinds.FindCollection( Application.GameIdent );
+		// Use "common" as fallback when GameIdent is not yet set (matches OnButton fallback)
+		var gameIdent = string.IsNullOrEmpty( Application.GameIdent ) ? "common" : Application.GameIdent;
+		var collection = InputBinds.FindCollection( gameIdent );
 		collection.UpdateActions( InputActions );
 	}
 }
