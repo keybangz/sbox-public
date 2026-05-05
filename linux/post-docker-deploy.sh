@@ -35,6 +35,14 @@ if [ ! -L "$BIN_DIR/libdxcompiler.so" ]; then
     ln -sf libdxcompiler_wrapper.so "$BIN_DIR/libdxcompiler.so"
     echo "  [OK] Created symlink libdxcompiler.so -> libdxcompiler_wrapper.so"
 fi
+# Ensure symlink exists: libsteam_api64.so -> libsteam_api.so
+# Required because .NET PreJit resolves DllImport("steam_api64") before our
+# custom DLLImportResolver can remap the name. LD_LIBRARY_PATH includes BIN_DIR
+# so the OS loader finds libsteam_api64.so here at startup.
+if [ ! -L "$BIN_DIR/libsteam_api64.so" ]; then
+    ln -sf libsteam_api.so "$BIN_DIR/libsteam_api64.so"
+    echo "  [OK] Created symlink libsteam_api64.so -> libsteam_api.so"
+fi
 echo "  [OK] DXC shim deployed ($(du -sh "$BIN_DIR/libdxcompiler_wrapper.so" | cut -f1))"
 
 # --- Step 2: Rebuild and deploy Sandbox.AppSystem.dll ---
