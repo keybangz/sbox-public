@@ -1,4 +1,5 @@
-﻿using Sandbox.Utility;
+﻿using System.Linq;
+using Sandbox.Utility;
 using static Sandbox.Component;
 
 namespace Sandbox;
@@ -278,7 +279,9 @@ public partial class Scene : GameObject
 
 	internal void InternalFixedUpdate()
 	{
+		Log.Info($"[FixedUpdate.PreFlip] HashCode={FixedUpdateInputContext.GetHashCode()} AccumActionsPressed={FixedUpdateInputContext.AccumActionsPressed} AccumKeysPressed={FixedUpdateInputContext.AccumKeysPressed.Count} ContextCount={Sandbox.Input.Contexts.Count()}");
 		FixedUpdateInputContext.Flip();
+		Log.Info($"[FixedUpdate.PostFlip] HashCode={FixedUpdateInputContext.GetHashCode()} ActionsCurrent={FixedUpdateInputContext.ActionsCurrent}");
 		using var _ = FixedUpdateInputContext.Push();
 
 		using ( _fixedUpdateTimer.Start() )
