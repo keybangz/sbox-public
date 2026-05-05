@@ -47,6 +47,7 @@ internal static class LinuxX11Input
 	private static int _prevMouseX = -1;
 	private static int _prevMouseY = -1;
 	private static uint _prevMouseMask = 0;
+	private static int _debugFrameCount = 0;
 
 	// ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -96,6 +97,10 @@ internal static class LinuxX11Input
 	{
 		if ( LinuxSDLInput.IsWayland ) return;
 		if ( !EnsureDisplay() ) return;
+
+		if ( _debugFrameCount % 300 == 0 )
+			InputLog.Trace( $"[X11Input] Poll() alive, frame={_debugFrameCount}, wayland={LinuxSDLInput.IsWayland}" );
+
 		if ( !HasX11WindowFocus() ) return;
 
 		PollKeyboard();
@@ -142,6 +147,13 @@ internal static class LinuxX11Input
 
 		if ( !ok ) return;
 
+		// DEBUG: log mask every frame when non-zero, or log every 120 frames
+		if ( mask != 0 || (_debugFrameCount % 120 == 0) )
+		{
+			InputLog.Trace( $"[X11Mouse] mask=0x{mask:X} rootX={rootX} rootY={rootY} prevMask=0x{_prevMouseMask:X}" );
+		}
+		_debugFrameCount++;
+
 		// Mouse motion
 		if ( _prevMouseX >= 0 )
 		{
@@ -181,7 +193,10 @@ internal static class LinuxX11Input
 		bool wasDown = ( prev & (uint)bit ) != 0;
 		bool isDown  = ( curr & (uint)bit ) != 0;
 		if ( isDown != wasDown )
+		{
+			InputLog.Trace( $"[X11Mouse] Button {button} -> {isDown} (bit=0x{bit:X} curr=0x{curr:X} prev=0x{prev:X})" );
 			InputRouter.OnMouseButton( button, isDown, 0 );
+		}
 	}
 
 	// ── Modifiers ─────────────────────────────────────────────────────────────
