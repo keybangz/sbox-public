@@ -99,6 +99,8 @@ internal static class LinuxX11Input
 	private static int _debugFrameCount = 0;
 	private static bool _relativeMouseMode = false;
 	private static IntPtr _blankCursor = IntPtr.Zero;
+	private static IntPtr _gameWindow = IntPtr.Zero; // window we grabbed relative mode on
+	private static bool _grabSuspended = false;      // true when grab released due to focus loss
 
 	// ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -174,6 +176,9 @@ internal static class LinuxX11Input
 				XFreePixmap( _display, pixmap );
 			}
 
+			_gameWindow = window;
+			_grabSuspended = false;
+
 			// Hide cursor on game window
 			XDefineCursor( _display, window, _blankCursor );
 
@@ -192,6 +197,7 @@ internal static class LinuxX11Input
 			{
 				InputLog.Trace( $"[LinuxX11Input] XGrabPointer failed: {result}" );
 				XUndefineCursor( _display, window );
+				_gameWindow = IntPtr.Zero;
 			}
 			else
 			{
@@ -202,8 +208,11 @@ internal static class LinuxX11Input
 		else
 		{
 			XUngrabPointer( _display, 0 );
-			XUndefineCursor( _display, window );
+			if ( _gameWindow != IntPtr.Zero )
+				XUndefineCursor( _display, _gameWindow );
 			_relativeMouseMode = false;
+			_grabSuspended = false;
+			_gameWindow = IntPtr.Zero;
 			InputLog.Trace( "[LinuxX11Input] Relative mouse mode OFF" );
 		}
 
@@ -224,7 +233,57 @@ internal static class LinuxX11Input
 		if ( _debugFrameCount % 300 == 0 )
 			InputLog.Trace( $"[X11Input] Poll() alive, frame={_debugFrameCount}, wayland={LinuxSDLInput.IsWayland}" );
 
-		if ( !HasX11WindowFocus() ) return;
+		if ( !HasX11WindowFocus() )
+		{
+			// Focus lost entirely (no window) — suspend grab
+			if ( _relativeMouseMode && !_grabSuspended )
+			{
+				XUngrabPointer( _display, 0 );
+				if ( _gameWindow != IntPtr.Zero )
+					XUndefineCursor( _display, _gameWindow );
+				_grabSuspended = true;
+				XFlush( _display );
+				InputLog.Trace( "[LinuxX11Input] Grab suspended (focus lost)" );
+			}
+			return;
+		}
+
+		// HasX11WindowFocus() updated _focusedWindow. Check if it's our game window.
+		if ( _relativeMouseMode && _gameWindow != IntPtr.Zero && _focusedWindow != _gameWindow )
+		{
+			// A different window (dialog etc.) has focus — suspend grab if not already
+			if ( !_grabSuspended )
+			{
+				XUngrabPointer( _display, 0 );
+				XUndefineCursor( _display, _gameWindow );
+				_grabSuspended = true;
+				XFlush( _display );
+				InputLog.Trace( $"[LinuxX11Input] Grab suspended (dialog/other window has focus: {_focusedWindow})" );
+			}
+			// Don't poll input while a foreign window has focus
+			return;
+		}
+
+		// Focus is on our game window — resume grab if suspended
+		if ( _relativeMouseMode && _grabSuspended && _focusedWindow == _gameWindow )
+		{
+			XDefineCursor( _display, _gameWindow, _blankCursor );
+			const uint PointerMotionMask = 1 << 6;
+			const uint ButtonPressMask = 1 << 2;
+			const uint ButtonReleaseMask = 1 << 3;
+			const int GrabModeAsync = 1;
+			var result = XGrabPointer(
+				_display, _gameWindow, true,
+				PointerMotionMask | ButtonPressMask | ButtonReleaseMask,
+				GrabModeAsync, GrabModeAsync,
+				_gameWindow, _blankCursor, 0 );
+			if ( result == 0 )
+			{
+				_grabSuspended = false;
+				XFlush( _display );
+				InputLog.Trace( "[LinuxX11Input] Grab resumed (game window refocused)" );
+			}
+		}
 
 		PollKeyboard();
 		PollMouse();
