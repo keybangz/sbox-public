@@ -9,16 +9,21 @@ internal class Build
 	public static Pipeline Create( BuildConfiguration configuration = BuildConfiguration.Developer,
 								 bool clean = false,
 								 bool skipNative = false,
-								 bool skipManaged = false )
+								 bool skipManaged = false,
+								 bool skipArtifacts = false )
 	{
 		var builder = new PipelineBuilder( "Build" );
 		var isPublicSource = IsPublicSourceDistribution();
 		var shouldSkipNative = skipNative || isPublicSource;
 
-		if ( isPublicSource )
+		if ( isPublicSource && !skipArtifacts )
 		{
 			Log.Info( "Detected public source distribution; downloading public artifacts and skipping native build." );
 			builder.AddStep( new DownloadPublicArtifacts( "Download Public Artifacts" ) );
+		}
+		else if ( isPublicSource && skipArtifacts )
+		{
+			Log.Info( "Detected public source distribution; skipping artifact download (--skip-artifacts)." );
 		}
 
 		// Always add interop gen
