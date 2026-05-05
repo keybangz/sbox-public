@@ -164,6 +164,8 @@ internal static partial class InputRouter
 		}
 #endif
 
+		bool captureStateChanged = mouseCaptureMode != _mouseCaptureMode;
+
 		// Cache for OnKey() to use for keyboard context selection
 		_mouseCaptureMode = mouseCaptureMode;
 
@@ -185,8 +187,6 @@ internal static partial class InputRouter
 			}
 		}
 #endif
-
-		bool captureStateChanged = mouseCaptureMode != _mouseCaptureMode;
 
 		if ( mouseCaptureMode )
 		{

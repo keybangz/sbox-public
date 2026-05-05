@@ -381,10 +381,9 @@ internal sealed class InputContext
 			}
 		}
 
-		// Fire OnGameButton when keyboard isn't explicitly Ignored.
-		// On Linux, PollEvents() runs before SimulateUI() sets KeyboardState=Game,
-		// so gating on ==Game drops first-frame key-downs (WASD never accumulates).
-		if ( KeyboardState != InputState.Ignore || !down )
+		// Fire OnGameButton when keyboard isn't explicitly Ignored, or on release,
+		// or when Linux capture mode is active (PollEvents runs before UISystem sets KeyboardState=Game).
+		if ( KeyboardState != InputState.Ignore || !down || InputRouter.GameWantsCapture )
 		{
 			var name = InputSystem.CodeToString( scanButtonCode );
 			if ( !string.IsNullOrWhiteSpace( name ) )
