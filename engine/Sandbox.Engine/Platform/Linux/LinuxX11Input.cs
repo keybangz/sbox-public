@@ -9,16 +9,16 @@ namespace Sandbox.Engine;
 /// Uses XQueryKeymap + XQueryPointer to read raw input state each frame,
 /// then feeds deltas into InputRouter.
 /// </summary>
-[StructLayout( LayoutKind.Sequential )]
-private struct XColor
-{
-	public uint pixel;
-	public ushort red, green, blue;
-	public byte flags, pad;
-}
-
 internal static class LinuxX11Input
 {
+	[StructLayout( LayoutKind.Sequential )]
+	private struct XColor
+	{
+		public uint pixel;
+		public ushort red, green, blue;
+		public byte flags, pad;
+	}
+
 	// ── X11 P/Invoke ──────────────────────────────────────────────────────────
 
 	[DllImport( "libX11.so.6", EntryPoint = "XOpenDisplay" )]
