@@ -1046,43 +1046,7 @@ internal partial class GameInstanceDll : Engine.IGameInstanceDll
 		input.OnMouseMotion += Sandbox.Input.AddMouseMovement;
 		input.OnGameButton += (scanCode, name, down) =>
 		{
-			if (down)
-				Log.Info($"[OnGameButton] scanCode={scanCode} name={name} down={down} InputActions={(Sandbox.Input.InputActions == null ? "NULL" : Sandbox.Input.InputActions.Count.ToString())}");
-
-			// Use InputActions if available, fall back to CommonInputs so WASD works before ReadConfig is called
-			var actionList = Sandbox.Input.InputActions ?? Engine.Input.CommonInputs;
-
-			// Strip KEY_ prefix from name for comparison (CodeToString may return "KEY_W" while KeyboardCode is "W")
-			var nameStripped = name?.StartsWith("KEY_", System.StringComparison.OrdinalIgnoreCase) == true
-				? name.Substring(4)
-				: name;
-
-			var action = actionList.FirstOrDefault(x =>
-				string.Equals(x.KeyboardCode, name, StringComparison.OrdinalIgnoreCase) ||
-				string.Equals(x.KeyboardCode, nameStripped, StringComparison.OrdinalIgnoreCase) ||
-				(System.Enum.TryParse<NativeEngine.ButtonCode>(x.KeyboardCode, true, out var parsedCode) && parsedCode == scanCode) ||
-				(System.Enum.TryParse<NativeEngine.ButtonCode>("KEY_" + x.KeyboardCode, true, out var parsedKey) && parsedKey == scanCode));
-
-			if (down)
-				Log.Info($"[OnGameButton] action={action?.Name ?? "NONE"} KeyboardCode={action?.KeyboardCode ?? "N/A"} nameStripped={nameStripped}");
-
-			if (action is not null)
-			{
-				var i = Sandbox.Input.GetActionIndex(action);
-				if (i >= 0)
-				{
-					foreach (var e in Sandbox.Input.Contexts)
-					{
-						if (down)
-							e.AccumActionsPressed |= 1UL << i;
-						else
-							e.AccumActionsReleased |= 1UL << i;
-					}
-				}
-			}
-
-			// Also fire the standard bind collection path so InputBinds.FindCollection works on Linux
-			Sandbox.Input.OnButton(scanCode, name, down);
+			Sandbox.Input.OnButton( scanCode, name, down );
 		};
 
 		InputContext = input;

@@ -340,8 +340,7 @@ if ( mouse is null && _mouseCaptureMode )
 		// Do NOT use .Skip(1) — MenuDll may be absent, making the game context index 0.
 		// Instead: find the GameInstanceDll context directly by checking IGameInstanceDll.Current.
 		{
-			bool capture = IGameInstance.Current != null &&
-						   Contexts.Any(c => c.MouseState == InputContext.InputState.Game || c.MouseCapture);
+			bool capture = IGameInstance.Current != null && _mouseCaptureMode;
 			if (capture)
 			{
 				var gameCtx = IGameInstanceDll.Current?.InputContext;

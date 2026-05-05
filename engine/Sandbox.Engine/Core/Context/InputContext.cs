@@ -151,7 +151,7 @@ internal sealed class InputContext
 	{
 		if ( delta.Length == 0 ) return;
 
-		if ( MouseState == InputState.Game || MouseCapture )
+		if ( MouseState == InputState.Game || MouseCapture || InputRouter._mouseCaptureMode )
 		{
 			OnMouseMotion?.Invoke( delta );
 			Sandbox.Input.AddMouseMovement( delta );

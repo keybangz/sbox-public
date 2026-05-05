@@ -54,7 +54,7 @@ internal static partial class InputRouter
     /// <summary>
     /// Cached mouse capture mode state from Frame() for use in OnKey()
     /// </summary>
-    private static bool _mouseCaptureMode = false;
+    internal static bool _mouseCaptureMode = false;
 
 	/// <summary>
 	/// Linux: Debounce timer for capture release. Prevents tooltip hover from flickering capture off.
