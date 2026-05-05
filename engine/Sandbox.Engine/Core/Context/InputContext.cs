@@ -213,6 +213,10 @@ internal sealed class InputContext
 		TargetUISystem.InputEventQueue.AddButtonEvent( keyButtonCode, false, modifiers );
 
 		var name = InputSystem.CodeToString( scanButtonCode );
+#if !WIN
+		if ( string.IsNullOrWhiteSpace( name ) )
+			name = LinuxX11Input.ButtonCodeToName( scanButtonCode );
+#endif
 		if ( !string.IsNullOrWhiteSpace( name ) )
 		{
 			OnGameButton?.Invoke( scanButtonCode, name, false );
@@ -224,6 +228,10 @@ internal sealed class InputContext
 		if ( TrappingKeys )
 		{
 			var name = InputSystem.CodeToString( scanButtonCode );
+#if !WIN
+			if ( string.IsNullOrWhiteSpace( name ) )
+				name = LinuxX11Input.ButtonCodeToName( scanButtonCode );
+#endif
 			if ( !string.IsNullOrWhiteSpace( name ) )
 			{
 				TrappedKeys.Add( name );
@@ -271,6 +279,10 @@ internal sealed class InputContext
 		if ( MouseState == InputState.Game || gameToo || !pressed )
 		{
 			var name = InputSystem.CodeToString( button );
+#if !WIN
+			if ( string.IsNullOrWhiteSpace( name ) )
+				name = LinuxX11Input.ButtonCodeToName( button );
+#endif
 			if ( !string.IsNullOrWhiteSpace( name ) )
 			{
 				OnGameButton?.Invoke( button, name, pressed );
@@ -387,10 +399,12 @@ internal sealed class InputContext
 		{
 			var name = InputSystem.CodeToString( scanButtonCode );
 #if !WIN
-			// Linux: scan codes (raw hardware positions) may not have string names in the native engine.
-			// Fall back to the translated key button code (X11 keysym) which always has a name.
+			// Linux: native CodeToString returns null for our ButtonCode values.
+			// Use our own translation table instead.
 			if ( string.IsNullOrWhiteSpace( name ) )
-				name = InputSystem.CodeToString( keyButtonCode );
+				name = LinuxX11Input.ButtonCodeToName( scanButtonCode );
+			if ( string.IsNullOrWhiteSpace( name ) )
+				name = LinuxX11Input.ButtonCodeToName( keyButtonCode );
 #endif
 			if ( !string.IsNullOrWhiteSpace( name ) )
 			{

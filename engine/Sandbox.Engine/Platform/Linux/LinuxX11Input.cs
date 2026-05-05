@@ -398,6 +398,150 @@ internal static class LinuxX11Input
 		return m;
 	}
 
+	// ── ButtonCode → bind-system string ──────────────────────────────────────
+	// The native engine's InputSystem.CodeToString() uses a Windows VK string table
+	// that is not populated on Linux. This dictionary provides the exact same strings
+	// that the bind system (BindCollection, Input.Common) expects, so that
+	// Input.OnButton() can resolve actions correctly without touching the native layer.
+	// String values are case-insensitive in the bind system but we match the canonical
+	// casing used in Input.Common.cs for clarity.
+
+	private static readonly Dictionary<ButtonCode, string> _buttonCodeNames = new()
+	{
+		// Letters
+		{ ButtonCode.KEY_A, "a" },
+		{ ButtonCode.KEY_B, "b" },
+		{ ButtonCode.KEY_C, "c" },
+		{ ButtonCode.KEY_D, "d" },
+		{ ButtonCode.KEY_E, "e" },
+		{ ButtonCode.KEY_F, "f" },
+		{ ButtonCode.KEY_G, "g" },
+		{ ButtonCode.KEY_H, "h" },
+		{ ButtonCode.KEY_I, "i" },
+		{ ButtonCode.KEY_J, "j" },
+		{ ButtonCode.KEY_K, "k" },
+		{ ButtonCode.KEY_L, "l" },
+		{ ButtonCode.KEY_M, "m" },
+		{ ButtonCode.KEY_N, "n" },
+		{ ButtonCode.KEY_O, "o" },
+		{ ButtonCode.KEY_P, "p" },
+		{ ButtonCode.KEY_Q, "q" },
+		{ ButtonCode.KEY_R, "r" },
+		{ ButtonCode.KEY_S, "s" },
+		{ ButtonCode.KEY_T, "t" },
+		{ ButtonCode.KEY_U, "u" },
+		{ ButtonCode.KEY_V, "v" },
+		{ ButtonCode.KEY_W, "w" },
+		{ ButtonCode.KEY_X, "x" },
+		{ ButtonCode.KEY_Y, "y" },
+		{ ButtonCode.KEY_Z, "z" },
+		// Numbers row
+		{ ButtonCode.KEY_0, "0" },
+		{ ButtonCode.KEY_1, "1" },
+		{ ButtonCode.KEY_2, "2" },
+		{ ButtonCode.KEY_3, "3" },
+		{ ButtonCode.KEY_4, "4" },
+		{ ButtonCode.KEY_5, "5" },
+		{ ButtonCode.KEY_6, "6" },
+		{ ButtonCode.KEY_7, "7" },
+		{ ButtonCode.KEY_8, "8" },
+		{ ButtonCode.KEY_9, "9" },
+		// Special / whitespace
+		{ ButtonCode.KEY_SPACE,     "space" },
+		{ ButtonCode.KEY_ENTER,     "enter" },
+		{ ButtonCode.KEY_TAB,       "tab" },
+		{ ButtonCode.KEY_BACKSPACE, "backspace" },
+		{ ButtonCode.KEY_ESCAPE,    "escape" },
+		{ ButtonCode.KEY_CAPSLOCK,  "capslock" },
+		// Modifiers
+		{ ButtonCode.KEY_LSHIFT,    "shift" },
+		{ ButtonCode.KEY_RSHIFT,    "shift" },
+		{ ButtonCode.KEY_LCONTROL,  "ctrl" },
+		{ ButtonCode.KEY_RCONTROL,  "ctrl" },
+		{ ButtonCode.KEY_LALT,      "alt" },
+		{ ButtonCode.KEY_RALT,      "alt" },
+		{ ButtonCode.KEY_LWIN,      "lwin" },
+		{ ButtonCode.KEY_RWIN,      "rwin" },
+		// Punctuation
+		{ ButtonCode.KEY_MINUS,      "-" },
+		{ ButtonCode.KEY_EQUAL,      "=" },
+		{ ButtonCode.KEY_LBRACKET,   "[" },
+		{ ButtonCode.KEY_RBRACKET,   "]" },
+		{ ButtonCode.KEY_SEMICOLON,  ";" },
+		{ ButtonCode.KEY_APOSTROPHE, "'" },
+		{ ButtonCode.KEY_BACKQUOTE,  "`" },
+		{ ButtonCode.KEY_BACKSLASH,  "\\" },
+		{ ButtonCode.KEY_COMMA,      "," },
+		{ ButtonCode.KEY_PERIOD,     "." },
+		{ ButtonCode.KEY_SLASH,      "/" },
+		// Navigation
+		{ ButtonCode.KEY_HOME,     "home" },
+		{ ButtonCode.KEY_END,      "end" },
+		{ ButtonCode.KEY_PAGEUP,   "pageup" },
+		{ ButtonCode.KEY_PAGEDOWN, "pagedown" },
+		{ ButtonCode.KEY_INSERT,   "insert" },
+		{ ButtonCode.KEY_DELETE,   "delete" },
+		// Arrow keys
+		{ ButtonCode.KEY_UP,    "up" },
+		{ ButtonCode.KEY_DOWN,  "down" },
+		{ ButtonCode.KEY_LEFT,  "left" },
+		{ ButtonCode.KEY_RIGHT, "right" },
+		// Function keys
+		{ ButtonCode.KEY_F1,  "f1" },
+		{ ButtonCode.KEY_F2,  "f2" },
+		{ ButtonCode.KEY_F3,  "f3" },
+		{ ButtonCode.KEY_F4,  "f4" },
+		{ ButtonCode.KEY_F5,  "f5" },
+		{ ButtonCode.KEY_F6,  "f6" },
+		{ ButtonCode.KEY_F7,  "f7" },
+		{ ButtonCode.KEY_F8,  "f8" },
+		{ ButtonCode.KEY_F9,  "f9" },
+		{ ButtonCode.KEY_F10, "f10" },
+		{ ButtonCode.KEY_F11, "f11" },
+		{ ButtonCode.KEY_F12, "f12" },
+		// Numpad
+		{ ButtonCode.KEY_NUMLOCK,      "numlock" },
+		{ ButtonCode.KEY_SCROLLLOCK,   "scrolllock" },
+		{ ButtonCode.KEY_PAD_0,        "kp_ins" },
+		{ ButtonCode.KEY_PAD_1,        "kp_end" },
+		{ ButtonCode.KEY_PAD_2,        "kp_downarrow" },
+		{ ButtonCode.KEY_PAD_3,        "kp_pgdn" },
+		{ ButtonCode.KEY_PAD_4,        "kp_leftarrow" },
+		{ ButtonCode.KEY_PAD_5,        "kp_5" },
+		{ ButtonCode.KEY_PAD_6,        "kp_rightarrow" },
+		{ ButtonCode.KEY_PAD_7,        "kp_home" },
+		{ ButtonCode.KEY_PAD_8,        "kp_uparrow" },
+		{ ButtonCode.KEY_PAD_9,        "kp_pgup" },
+		{ ButtonCode.KEY_PAD_DECIMAL,  "kp_del" },
+		{ ButtonCode.KEY_PAD_ENTER,    "kp_enter" },
+		{ ButtonCode.KEY_PAD_PLUS,     "kp_plus" },
+		{ ButtonCode.KEY_PAD_MINUS,    "kp_minus" },
+		{ ButtonCode.KEY_PAD_MULTIPLY, "kp_multiply" },
+		{ ButtonCode.KEY_PAD_DIVIDE,   "kp_slash" },
+		// Mouse buttons
+		{ ButtonCode.MouseLeft,    "mouse1" },
+		{ ButtonCode.MouseRight,   "mouse2" },
+		{ ButtonCode.MouseMiddle,  "mouse3" },
+		{ ButtonCode.MouseBack,    "mouse4" },
+		{ ButtonCode.MouseForward, "mouse5" },
+		{ ButtonCode.MouseWheelUp,   "mwheelup" },
+		{ ButtonCode.MouseWheelDown, "mwheeldown" },
+		// Misc
+		{ ButtonCode.KEY_BREAK, "break" },
+	};
+
+	/// <summary>
+	/// Translates a <see cref="ButtonCode"/> to the canonical bind-system string name
+	/// (e.g. <c>ButtonCode.KEY_W → "w"</c>, <c>ButtonCode.KEY_SPACE → "space"</c>).
+	/// This is the Linux replacement for <c>NativeEngine.InputSystem.CodeToString()</c>,
+	/// which uses a Windows VK string table that is not populated on Linux.
+	/// Returns <see langword="null"/> if the code has no known mapping.
+	/// </summary>
+	internal static string ButtonCodeToName( ButtonCode code )
+	{
+		return _buttonCodeNames.TryGetValue( code, out var name ) ? name : null;
+	}
+
 	// ── Keycode → ButtonCode map ───────────────────────────────────────────────
 	// X11 keycodes are hardware scancodes + 8. These are standard US layout values.
 
