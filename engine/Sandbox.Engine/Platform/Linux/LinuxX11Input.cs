@@ -36,7 +36,6 @@ internal static class LinuxX11Input
 	// ── State ─────────────────────────────────────────────────────────────────
 
 	private static IntPtr _display = IntPtr.Zero;
-	private static bool _initialized = false;
 	private static bool _failed = false;
 
 	private static readonly byte[] _prevKeymap = new byte[32];
@@ -62,7 +61,6 @@ internal static class LinuxX11Input
 				_failed = true;
 				return false;
 			}
-			_initialized = true;
 			InputLog.Trace( "[LinuxX11Input] X11 display opened" );
 			return true;
 		}
@@ -106,7 +104,7 @@ internal static class LinuxX11Input
 			var button = X11KeycodeToButtonCode( keycode );
 			if ( button == ButtonCode.BUTTON_CODE_INVALID ) continue;
 
-			InputRouter.OnKey( button, isDown, GetModifiers() );
+			InputRouter.OnKey( button, button, isDown, false, 0 );
 		}
 
 		System.Array.Copy( _currKeymap, _prevKeymap, 32 );
