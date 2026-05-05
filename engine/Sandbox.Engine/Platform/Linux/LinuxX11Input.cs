@@ -36,6 +36,13 @@ internal static class LinuxX11Input
 	[DllImport( "libX11.so.6", EntryPoint = "XGetInputFocus" )]
 	private static extern void XGetInputFocus( IntPtr display, out IntPtr focus_return, out int revert_to_return );
 
+	[DllImport( "libX11.so.6", EntryPoint = "XTranslateCoordinates" )]
+	private static extern bool XTranslateCoordinates(
+		IntPtr display, IntPtr src_w, IntPtr dest_w,
+		int src_x, int src_y,
+		out int dest_x_return, out int dest_y_return,
+		out IntPtr child_return );
+
 	// ── State ─────────────────────────────────────────────────────────────────
 
 	private static IntPtr _display = IntPtr.Zero;
@@ -47,6 +54,7 @@ internal static class LinuxX11Input
 	private static int _prevMouseX = -1;
 	private static int _prevMouseY = -1;
 	private static uint _prevMouseMask = 0;
+	private static IntPtr _focusedWindow = IntPtr.Zero;
 	private static int _debugFrameCount = 0;
 
 	// ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -82,9 +90,13 @@ internal static class LinuxX11Input
 	{
 		if ( _display == IntPtr.Zero ) return false;
 		XGetInputFocus( _display, out IntPtr focus, out _ );
-		// focus == PointerRoot (1) means pointer is on root window (no app has focus)
-		// focus == None (0) means no window has focus
-		return focus != IntPtr.Zero && focus != new IntPtr( 1 );
+		if ( focus == IntPtr.Zero || focus == new IntPtr( 1 ) )
+		{
+			_focusedWindow = IntPtr.Zero;
+			return false;
+		}
+		_focusedWindow = focus;
+		return true;
 	}
 
 	// ── Main poll ─────────────────────────────────────────────────────────────
@@ -105,6 +117,8 @@ internal static class LinuxX11Input
 
 		PollKeyboard();
 		PollMouse();
+
+		_debugFrameCount++;
 	}
 
 	// ── Keyboard ──────────────────────────────────────────────────────────────
@@ -152,7 +166,14 @@ internal static class LinuxX11Input
 		{
 			InputLog.Trace( $"[X11Mouse] mask=0x{mask:X} rootX={rootX} rootY={rootY} prevMask=0x{_prevMouseMask:X}" );
 		}
-		_debugFrameCount++;
+
+		// Translate root coords to window-relative coords
+		int winX = rootX, winY = rootY;
+		if ( _focusedWindow != IntPtr.Zero )
+		{
+			var root = XDefaultRootWindow( _display );
+			XTranslateCoordinates( _display, root, _focusedWindow, rootX, rootY, out winX, out winY, out _ );
+		}
 
 		// Mouse motion
 		if ( _prevMouseX >= 0 )
@@ -164,13 +185,11 @@ internal static class LinuxX11Input
 			{
 				if ( InputRouter._mouseCaptureMode )
 				{
-					// Game/capture mode: relative delta
 					InputRouter.OnMouseMotion( dx, dy );
 				}
 				else
 				{
-					// Menu/UI mode: absolute position + delta
-					InputRouter.OnMousePositionChange( rootX, rootY, dx, dy );
+					InputRouter.OnMousePositionChange( winX, winY, dx, dy );
 				}
 			}
 		}
