@@ -9,6 +9,14 @@ namespace Sandbox.Engine;
 /// Uses XQueryKeymap + XQueryPointer to read raw input state each frame,
 /// then feeds deltas into InputRouter.
 /// </summary>
+[StructLayout( LayoutKind.Sequential )]
+private struct XColor
+{
+	public uint pixel;
+	public ushort red, green, blue;
+	public byte flags, pad;
+}
+
 internal static class LinuxX11Input
 {
 	// ── X11 P/Invoke ──────────────────────────────────────────────────────────
@@ -43,6 +51,39 @@ internal static class LinuxX11Input
 		out int dest_x_return, out int dest_y_return,
 		out IntPtr child_return );
 
+	[DllImport( "libX11.so.6", EntryPoint = "XCreateBitmapFromData" )]
+	private static extern IntPtr XCreateBitmapFromData( IntPtr display, IntPtr drawable, byte[] data, uint width, uint height );
+
+	[DllImport( "libX11.so.6", EntryPoint = "XCreatePixmapCursor" )]
+	private static extern IntPtr XCreatePixmapCursor( IntPtr display, IntPtr source, IntPtr mask, ref XColor foreground, ref XColor background, uint x, uint y );
+
+	[DllImport( "libX11.so.6", EntryPoint = "XFreeCursor" )]
+	private static extern int XFreeCursor( IntPtr display, IntPtr cursor );
+
+	[DllImport( "libX11.so.6", EntryPoint = "XFreePixmap" )]
+	private static extern int XFreePixmap( IntPtr display, IntPtr pixmap );
+
+	[DllImport( "libX11.so.6", EntryPoint = "XDefineCursor" )]
+	private static extern int XDefineCursor( IntPtr display, IntPtr window, IntPtr cursor );
+
+	[DllImport( "libX11.so.6", EntryPoint = "XUndefineCursor" )]
+	private static extern int XUndefineCursor( IntPtr display, IntPtr window );
+
+	[DllImport( "libX11.so.6", EntryPoint = "XGrabPointer" )]
+	private static extern int XGrabPointer(
+		IntPtr display, IntPtr grab_window, bool owner_events,
+		uint event_mask, int pointer_mode, int keyboard_mode,
+		IntPtr confine_to, IntPtr cursor, uint time );
+
+	[DllImport( "libX11.so.6", EntryPoint = "XUngrabPointer" )]
+	private static extern int XUngrabPointer( IntPtr display, uint time );
+
+	[DllImport( "libX11.so.6", EntryPoint = "XFlush" )]
+	private static extern int XFlush( IntPtr display );
+
+	[DllImport( "libX11.so.6", EntryPoint = "XWarpPointer" )]
+	private static extern int XWarpPointer( IntPtr display, IntPtr src_w, IntPtr dest_w, int src_x, int src_y, uint src_width, uint src_height, int dest_x, int dest_y );
+
 	// ── State ─────────────────────────────────────────────────────────────────
 
 	private static IntPtr _display = IntPtr.Zero;
@@ -56,6 +97,8 @@ internal static class LinuxX11Input
 	private static uint _prevMouseMask = 0;
 	private static IntPtr _focusedWindow = IntPtr.Zero;
 	private static int _debugFrameCount = 0;
+	private static bool _relativeMouseMode = false;
+	private static IntPtr _blankCursor = IntPtr.Zero;
 
 	// ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -97,6 +140,74 @@ internal static class LinuxX11Input
 		}
 		_focusedWindow = focus;
 		return true;
+	}
+
+	// ── Relative mouse mode ───────────────────────────────────────────────────
+
+	/// <summary>
+	/// X11-native relative mouse mode. Hides cursor and grabs pointer to game window.
+	/// Called from InputRouter.Frame() instead of LinuxSDLInput.SetRelativeMouseMode().
+	/// </summary>
+	internal static void SetRelativeMouseMode( bool enabled )
+	{
+		if ( _relativeMouseMode == enabled ) return;
+		if ( !EnsureDisplay() ) return;
+
+		XGetInputFocus( _display, out var window, out _ );
+		if ( window == IntPtr.Zero || window == (IntPtr)1 ) // 1 = PointerRoot
+		{
+			InputLog.Trace( $"[LinuxX11Input] SetRelativeMouseMode({enabled}): no focused window" );
+			return;
+		}
+
+		if ( enabled )
+		{
+			// Create blank cursor if needed
+			if ( _blankCursor == IntPtr.Zero )
+			{
+				var root = XDefaultRootWindow( _display );
+				var data = new byte[] { 0 };
+				var pixmap = XCreateBitmapFromData( _display, root, data, 1, 1 );
+				var fg = new XColor();
+				var bg = new XColor();
+				_blankCursor = XCreatePixmapCursor( _display, pixmap, pixmap, ref fg, ref bg, 0, 0 );
+				XFreePixmap( _display, pixmap );
+			}
+
+			// Hide cursor on game window
+			XDefineCursor( _display, window, _blankCursor );
+
+			// Grab pointer — confine to game window, hide cursor
+			const uint PointerMotionMask = 1 << 6;
+			const uint ButtonPressMask = 1 << 2;
+			const uint ButtonReleaseMask = 1 << 3;
+			const int GrabModeAsync = 1;
+			var result = XGrabPointer(
+				_display, window, true,
+				PointerMotionMask | ButtonPressMask | ButtonReleaseMask,
+				GrabModeAsync, GrabModeAsync,
+				window, _blankCursor, 0 );
+
+			if ( result != 0 ) // GrabSuccess = 0
+			{
+				InputLog.Trace( $"[LinuxX11Input] XGrabPointer failed: {result}" );
+				XUndefineCursor( _display, window );
+			}
+			else
+			{
+				_relativeMouseMode = true;
+				InputLog.Trace( "[LinuxX11Input] Relative mouse mode ON" );
+			}
+		}
+		else
+		{
+			XUngrabPointer( _display, 0 );
+			XUndefineCursor( _display, window );
+			_relativeMouseMode = false;
+			InputLog.Trace( "[LinuxX11Input] Relative mouse mode OFF" );
+		}
+
+		XFlush( _display );
 	}
 
 	// ── Main poll ─────────────────────────────────────────────────────────────
