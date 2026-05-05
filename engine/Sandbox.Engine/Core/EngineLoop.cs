@@ -151,6 +151,9 @@ internal static class EngineLoop
         using var __ = PerformanceStats.Timings.Input.Scope();
 
         g_pInputService.Pump();
+#if !WIN
+        LinuxX11Input.Poll();
+#endif
     }
 
     private static System.Diagnostics.Stopwatch _frameStartStopwatch = new System.Diagnostics.Stopwatch();
