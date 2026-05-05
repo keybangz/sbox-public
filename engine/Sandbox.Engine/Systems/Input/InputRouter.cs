@@ -22,9 +22,21 @@ internal static partial class InputRouter
 	/// Computed fresh each call — safe to read from PollEvents() before Frame() runs.
 	/// Avoids the 1-frame lag of reading MouseCursorVisible (which is set in Frame()).
 	/// </summary>
-	internal static bool GameWantsCapture =>
-		IGameInstance.Current != null &&
-		(IGameInstanceDll.Current?.InputContext?.MouseState != InputContext.InputState.UI);
+	internal static bool GameWantsCapture
+	{
+		get
+		{
+			if (IGameInstance.Current == null) return false;
+			var ctx = IGameInstanceDll.Current?.InputContext;
+			// Frame 1: ctx.MouseState is still Ignore (UpdateInputFromUI hasn't run).
+			// Treat anything that is not explicitly UI as 'wants capture'.
+			// _mouseCaptureMode acts as the steady-state authority once Frame() has
+			// run at least once; before that we trust 'game is loaded' as intent.
+			if (ctx == null) return _mouseCaptureMode;
+			if (ctx.MouseState == InputContext.InputState.UI) return false;
+			return true;
+		}
+	}
 
 	/// <summary>
 	/// The mouse cursor position. Or the last position if it's now invisible.

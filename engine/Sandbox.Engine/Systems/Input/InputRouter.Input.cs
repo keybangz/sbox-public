@@ -110,6 +110,12 @@ if ( mouse is null && _mouseCaptureMode )
 #endif
 
 		// game or mouse capture
+#if !WIN
+		// X11 RelMode is authoritative on Linux; ignore SDL motion to avoid
+		// double-accumulation into AccumMouseDelta.
+		if ( LinuxSDLInput.IsRelModeActive )
+			return;
+#endif
 		var mouse = Contexts.FirstOrDefault( x => x.MouseState != InputContext.InputState.Ignore );
 #if !WIN
 		// Linux: UISystem runs after input events, so MouseState may still be Ignore.
@@ -336,11 +342,11 @@ if ( mouse is null && _mouseCaptureMode )
 		var keyboard = Contexts.FirstOrDefault( x => x.KeyboardState != InputContext.InputState.Ignore );
 
 #if !WIN
-		// When game has mouse capture, prefer game context for keyboard over menu context.
-		// Do NOT use .Skip(1) — MenuDll may be absent, making the game context index 0.
-		// Instead: find the GameInstanceDll context directly by checking IGameInstanceDll.Current.
 		{
-			bool capture = IGameInstance.Current != null && _mouseCaptureMode;
+			// Use fresh GameWantsCapture instead of stale cached _mouseCaptureMode.
+			// _mouseCaptureMode is updated in Frame() AFTER PollEvents/OnKey, so it is
+			// always 1 frame behind here. GameWantsCapture is computed inline.
+			bool capture = GameWantsCapture;
 			if (capture)
 			{
 				var gameCtx = IGameInstanceDll.Current?.InputContext;
