@@ -66,12 +66,6 @@ internal static partial class InputRouter
     internal static bool _mouseCaptureMode = false;
 
     /// <summary>
-    /// Linux: Debounce timer for capture release. Prevents tooltip hover from flickering capture off.
-    /// </summary>
-    private static RealTimeSince _timeSinceCaptureWanted = 0;
-    private const float CaptureDebounceSeconds = 0.1f;
-
-    /// <summary>
     /// True if an "exit game" button is pressed, escape on keyboard
     /// </summary>
     public static bool EscapeIsDown { get; private set; }
@@ -130,42 +124,7 @@ internal static partial class InputRouter
         var activeMouse = Contexts.Where(x => x.MouseState != InputContext.InputState.Ignore).FirstOrDefault();
         var activeKeyboard = Contexts.Where(x => x.KeyboardState != InputContext.InputState.Ignore).FirstOrDefault();
 
-        // Capture mode could either come from being in game (in which case input is sent to the game)
-        // or from a Panel.CaptureMode - in which case input is sent to the panel/ui
-        bool mouseCaptureMode = activeMouse is not null && activeMouse.MouseState == InputContext.InputState.Game;
-        mouseCaptureMode = mouseCaptureMode || (activeMouse?.MouseCapture ?? false);
-
-#if !WIN
-        // Linux: If in-game and no context explicitly wants UI mouse, force capture.
-        // Uses a debounce to prevent tooltip hover from flickering capture off/on.
-        if (IGameInstance.Current is not null)
-        {
-            var gameCtx = IGameInstanceDll.Current?.InputContext;
-            bool gameWantsUI = gameCtx != null && gameCtx.MouseState == InputContext.InputState.UI;
-            bool gameStateIgnore = gameCtx == null || gameCtx.MouseState == InputContext.InputState.Ignore;
-
-            if (!gameWantsUI && !gameStateIgnore)
-            {
-                // Game explicitly wants capture — reset debounce timer and force capture
-                _timeSinceCaptureWanted = 0;
-                mouseCaptureMode = true;
-            }
-            else if (gameStateIgnore)
-            {
-                // Context not yet initialized or state is Ignore — hold previous capture state
-                // This prevents capture from flickering off during the first few frames
-                mouseCaptureMode = _mouseCaptureMode;
-            }
-            else if (!mouseCaptureMode)
-            {
-                // Game wants UI — only release capture after debounce period
-                if (_timeSinceCaptureWanted < CaptureDebounceSeconds)
-                {
-                    mouseCaptureMode = _mouseCaptureMode;
-                }
-            }
-        }
-#endif
+        bool mouseCaptureMode = GameWantsCapture;
 
         bool captureStateChanged = mouseCaptureMode != _mouseCaptureMode;
 
@@ -173,23 +132,6 @@ internal static partial class InputRouter
         _mouseCaptureMode = mouseCaptureMode;
 
         MouseCursorVisible = !mouseCaptureMode && (activeMouse is not null && activeMouse.MouseState == InputContext.InputState.UI);
-
-#if !WIN
-        // Linux: if capture is active, cursor must be hidden regardless of activeMouse state.
-        // If capture just released, ensure cursor is visible again.
-        if (mouseCaptureMode)
-        {
-            MouseCursorVisible = false;
-        }
-        else if (mouseCapturePosition is null && !mouseCaptureMode)
-        {
-            // Capture was just released this frame — ensure cursor is visible if UI wants it
-            if (activeMouse?.MouseState == InputContext.InputState.UI)
-            {
-                MouseCursorVisible = true;
-            }
-        }
-#endif
 
         if (mouseCaptureMode)
         {

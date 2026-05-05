@@ -67,7 +67,7 @@ public sealed partial class PlayerController : Component
 
     protected override void OnFixedUpdate()
     {
-        if (Scene.IsEditor) return;
+        // if (Scene.IsEditor) return;
 
         UpdateHeadroom();
         UpdateFalling();
@@ -75,7 +75,6 @@ public sealed partial class PlayerController : Component
         prevPosition = WorldPosition;
 
         Log.Info($"[PlayerController.OnFixedUpdate] IsProxy={IsProxy} UseInputControls={UseInputControls} AnalogMove={Input.AnalogMove} Down(forward)={Input.Down("forward")}");
-
 
         if (IsProxy) return;
         if (!UseInputControls) return;
