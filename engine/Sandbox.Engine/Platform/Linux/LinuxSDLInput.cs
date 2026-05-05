@@ -8,13 +8,6 @@ namespace Sandbox.Engine;
 internal static class LinuxSDLInput
 {
 	/// <summary>
-	/// True when Linux X11 relative mode is active this frame.
-	/// Set by LinuxCursorCapture.PollEvents() before the RelMode branch.
-	/// Used by InputRouter.OnMouseMotion to suppress SDL motion double-write.
-	/// </summary>
-	internal static bool IsRelModeActive = false;
-
-	/// <summary>
 	/// True if the current display server is X11 AND the window has input focus.
 	/// On Wayland this always returns false.
 	/// </summary>

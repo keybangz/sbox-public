@@ -553,8 +553,6 @@ namespace Sandbox.Systems.Render.Multimedia
                     }
                 }
 
-                Sandbox.Engine.LinuxSDLInput.IsRelModeActive = relMode;
-
                 if (relMode)
                 {
                     ulong rootWindow = XDefaultRootWindow(_display);

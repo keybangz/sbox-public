@@ -110,12 +110,6 @@ if ( mouse is null && _mouseCaptureMode )
 #endif
 
 		// game or mouse capture
-#if !WIN
-		// X11 RelMode is authoritative on Linux; ignore SDL motion to avoid
-		// double-accumulation into AccumMouseDelta.
-		if ( LinuxSDLInput.IsRelModeActive )
-			return;
-#endif
 		var mouse = Contexts.FirstOrDefault( x => x.MouseState != InputContext.InputState.Ignore );
 #if !WIN
 		// Linux: UISystem runs after input events, so MouseState may still be Ignore.
