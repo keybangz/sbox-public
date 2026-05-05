@@ -28,13 +28,10 @@ internal static partial class InputRouter
 		{
 			if (IGameInstance.Current == null) return false;
 			var ctx = IGameInstanceDll.Current?.InputContext;
-			// Frame 1: ctx.MouseState is still Ignore (UpdateInputFromUI hasn't run).
-			// Treat anything that is not explicitly UI as 'wants capture'.
-			// _mouseCaptureMode acts as the steady-state authority once Frame() has
-			// run at least once; before that we trust 'game is loaded' as intent.
-			if (ctx == null) return _mouseCaptureMode;
+			if (ctx == null) return true; // game loaded but context not yet initialized — assume capture
 			if (ctx.MouseState == InputContext.InputState.UI) return false;
-			return true;
+			if (ctx.MouseState == InputContext.InputState.Ignore) return _mouseCaptureMode; // hold previous state during Ignore
+			return true; // Game or unrecognized state — wants capture
 		}
 	}
 
@@ -145,20 +142,26 @@ internal static partial class InputRouter
 		{
 			var gameCtx = IGameInstanceDll.Current?.InputContext;
 			bool gameWantsUI = gameCtx != null && gameCtx.MouseState == InputContext.InputState.UI;
+			bool gameStateIgnore = gameCtx == null || gameCtx.MouseState == InputContext.InputState.Ignore;
 
-			if ( !gameWantsUI )
+			if ( !gameWantsUI && !gameStateIgnore )
 			{
-				// Game wants capture — reset debounce timer and force capture
+				// Game explicitly wants capture — reset debounce timer and force capture
 				_timeSinceCaptureWanted = 0;
 				mouseCaptureMode = true;
+			}
+			else if ( gameStateIgnore )
+			{
+				// Context not yet initialized or state is Ignore — hold previous capture state
+				// This prevents capture from flickering off during the first few frames
+				mouseCaptureMode = _mouseCaptureMode;
 			}
 			else if ( !mouseCaptureMode )
 			{
 				// Game wants UI — only release capture after debounce period
-				// This prevents tooltip hover from briefly releasing capture
 				if ( _timeSinceCaptureWanted < CaptureDebounceSeconds )
 				{
-					mouseCaptureMode = _mouseCaptureMode; // hold previous state during debounce
+					mouseCaptureMode = _mouseCaptureMode;
 				}
 			}
 		}

@@ -18,6 +18,10 @@ if ( mouse is null && _mouseCaptureMode )
 {
     mouse = IGameInstanceDll.Current?.InputContext;
 }
+if ( mouse is null && !_mouseCaptureMode )
+{
+    mouse = IMenuDll.Current?.InputContext;
+}
 #endif
 
 		// if this was likely the click that made the window active - and we're not in UI mode
@@ -157,10 +161,16 @@ if ( mouse is null && _mouseCaptureMode )
 		var mouse = Contexts.FirstOrDefault( x => x.MouseState != InputContext.InputState.Ignore );
 #if !WIN
 		// Linux: UISystem runs after input events, so MouseState may still be Ignore.
-		// If game has capture (set in Frame()), route position change to game context directly.
+		// If game has capture (set in Frame()), route motion to game context directly.
 		if ( mouse is null && _mouseCaptureMode )
 		{
 			mouse = IGameInstanceDll.Current?.InputContext;
+		}
+		// If not in capture mode and no context has mouse, try menu context as fallback.
+		// This handles the case where Escape opens the menu but MouseState is still Ignore.
+		if ( mouse is null && !_mouseCaptureMode )
+		{
+			mouse = IMenuDll.Current?.InputContext;
 		}
 #endif
 		if ( mouse is not null )
@@ -337,15 +347,18 @@ if ( mouse is null && _mouseCaptureMode )
 
 #if !WIN
 		{
-			// Use fresh GameWantsCapture instead of stale cached _mouseCaptureMode.
-			// _mouseCaptureMode is updated in Frame() AFTER PollEvents/OnKey, so it is
-			// always 1 frame behind here. GameWantsCapture is computed inline.
-			bool capture = GameWantsCapture;
-			if (capture)
+			// Linux: PollEvents() runs before SimulateUI(), so KeyboardState is 1 frame behind.
+			// Route to game context whenever game is loaded AND no context has explicit UI keyboard focus.
+			// This ensures WASD/movement keys reach the game even before SimulateUI sets KeyboardState.
+			var gameCtx = IGameInstanceDll.Current?.InputContext;
+			if ( gameCtx is not null )
 			{
-				var gameCtx = IGameInstanceDll.Current?.InputContext;
-				if (gameCtx is not null)
+				// Only keep UI keyboard if a panel explicitly has keyboard focus (e.g. text input)
+				bool uiHasExplicitFocus = keyboard is not null && keyboard.KeyboardState == InputContext.InputState.UI && keyboard.KeyboardFocusPanel is not null;
+				if ( !uiHasExplicitFocus )
+				{
 					keyboard = gameCtx;
+				}
 			}
 		}
 #endif

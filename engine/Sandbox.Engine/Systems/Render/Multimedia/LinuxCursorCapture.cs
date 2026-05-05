@@ -145,6 +145,7 @@ namespace Sandbox.Systems.Render.Multimedia
         // RelMode only actually drops after this exceeds the threshold (hysteresis).
         private static int _relModeDropFrames = 0;
         private const int RelModeDropThreshold = 4; // ~4 frames at 60fps ≈ 66ms
+        private static int _xQueryLogCounter = 0;
 
         /// <summary>
         /// Returns true if 'candidate' is 'ancestor' or any descendant of 'ancestor'.
@@ -181,10 +182,54 @@ namespace Sandbox.Systems.Render.Multimedia
         public static bool HasX11Focus => _hasFocus;
 
         /// <summary>
+        /// Always false — this implementation is X11-only. Wayland is not supported.
+        /// </summary>
+        public static bool IsWayland => false;
+
+        /// <summary>
         /// True when Linux X11 relative/capture mode is active.
         /// Used by InputRouter to replace the SDL3-based IsMouseCaptured on Linux.
         /// </summary>
         public static bool IsInRelativeMode => _ownRelativeMode;
+
+        /// <summary>
+        /// Returns true if we are currently in relative mouse mode (game capture).
+        /// Used by InputRouter.OnMousePositionChange to decide if delta should be accumulated.
+        /// </summary>
+        public static bool GetRelativeMouseMode() => _ownRelativeMode;
+
+        /// <summary>
+        /// Called by InputRouter.Frame() to request relative mode change.
+        /// Actual mode change happens in PollEvents() via GameWantsCapture.
+        /// This is a hint only — PollEvents() is authoritative.
+        /// </summary>
+        public static void SetRelativeMouseMode( bool enabled )
+        {
+            // PollEvents() manages actual relative mode via GameWantsCapture.
+            // This method exists for API compatibility with InputRouter.Frame().
+            // No action needed — PollEvents() will pick up the change next frame.
+        }
+
+        /// <summary>
+        /// Register a pending warp so IsSyntheticMotion can filter it out.
+        /// </summary>
+        public static void IgnoreNextWarp( Vector2 pos )
+        {
+            // Not needed for X11 warp-to-center approach — we don't use SetCursorPosition in relative mode.
+        }
+
+        /// <summary>
+        /// Returns true if the given position matches a pending warp target.
+        /// </summary>
+        public static bool IsSyntheticMotion( Vector2 pos ) => false;
+
+        /// <summary>
+        /// Clear any pending warp target (called on focus loss).
+        /// </summary>
+        public static void ClearWarpTarget()
+        {
+            // No-op for X11 warp-to-center approach.
+        }
 
         // X11 keycode to ButtonCode lookup table
         // X11 keycodes are hardware-dependent but on standard Linux/X11 with evdev driver:
@@ -487,6 +532,14 @@ namespace Sandbox.Systems.Render.Multimedia
                 byte* keys = stackalloc byte[32];
                 XQueryKeymap(_display, keys);
 
+                // Log raw keymap bytes periodically to confirm X11 connection is working
+                if (_xQueryLogCounter++ % 300 == 0) // every ~5 seconds at 60fps
+                {
+                    bool anyDown = false;
+                    for (int i = 0; i < 32; i++) if (keys[i] != 0) { anyDown = true; break; }
+                    Log.Info($"[LinuxSDLInput] XQueryKeymap poll #{_xQueryLogCounter}: anyKeyDown={anyDown} display={_display} engineWindow=0x{_engineWindow:X} hasFocus={_hasFocus}");
+                }
+
                 for (int kc = 8; kc < 256; kc++)
                 {
                     bool isDown = (keys[kc >> 3] & (1 << (kc & 7))) != 0;
@@ -496,6 +549,7 @@ namespace Sandbox.Systems.Render.Multimedia
                     {
                         _prevKeyState[kc] = isDown;
                         var bc = _keycodeTable[kc];
+                        Log.Info($"[LinuxSDLInput] Key edge: kc={kc} bc={bc} isDown={isDown}");
                         if (bc != ButtonCode.BUTTON_CODE_INVALID)
                             InputRouter.OnKey(bc, bc, isDown, false, 0);
                     }
