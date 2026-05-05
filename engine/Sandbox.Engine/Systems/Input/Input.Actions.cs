@@ -186,8 +186,6 @@ public static partial class Input
 	/// </summary>
 	internal static void OnButton( ButtonCode code, string button, bool down )
 	{
-		Log.Info($"[Input.OnButton] code={code} button={button} down={down} InputActions={(InputActions == null ? "NULL" : InputActions.Count.ToString())} AccumKeysPressed_count={Contexts.FirstOrDefault()?.AccumKeysPressed?.Count ?? -1}");
-
 		if ( InputActions == null )
 		{
 			activeButtons.Clear();

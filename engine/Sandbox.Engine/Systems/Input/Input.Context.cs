@@ -116,7 +116,6 @@ public static partial class Input
 
 			// Current actions are all pressed
 			ActionsCurrent = AccumActionsPressed;
-			Log.Info($"[Flip] Name={Name} HashCode={GetHashCode()} AccumActionsPressed={AccumActionsPressed} ActionsCurrent={ActionsCurrent}");
 			SavedActions = ActionsCurrent;
 
 			// Remove released actions

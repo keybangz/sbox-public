@@ -1038,7 +1038,6 @@ internal partial class GameInstanceDll : Engine.IGameInstanceDll
 		input.OnMouseMotion += Sandbox.Input.AddMouseMovement;
 		input.OnGameButton += (scanCode, name, down) =>
 		{
-			Log.Info($"[OnGameButton] scanCode={scanCode} name={name} down={down} InputActions={(Sandbox.Input.InputActions == null ? "NULL" : Sandbox.Input.InputActions.Count.ToString())}");
 			Sandbox.Input.OnButton( scanCode, name, down );
 		};
 
