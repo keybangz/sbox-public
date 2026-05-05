@@ -24,6 +24,23 @@ static const char* DEEPBIND_LIBS[] = {
     nullptr
 };
 
+// Libraries that should be promoted to the global namespace so managed
+// NativeLibrary.TryLoad() finds the same already-loaded instance.
+// SDL3 is loaded by the engine with RTLD_DEEPBIND; without RTLD_GLOBAL the
+// managed P/Invoke loads a second SDL3 instance with no windows registered.
+static const char* GLOBAL_LIBS[] = {
+    "libSDL3",
+    nullptr
+};
+
+static bool needs_global(const char* filename) {
+    if (!filename) return false;
+    for (int i = 0; GLOBAL_LIBS[i]; i++) {
+        if (strstr(filename, GLOBAL_LIBS[i])) return true;
+    }
+    return false;
+}
+
 // Libraries that the native engine looks for next to the dotnet binary
 // (/usr/share/dotnet/) but actually live in game/bin/linuxsteamrt64/.
 // We intercept and redirect these to the correct location.
@@ -95,6 +112,16 @@ extern "C" void* dlopen(const char* filename, int flags) {
         int new_flags = flags | RTLD_DEEPBIND;
         if (g_log) {
             fprintf(g_log, "[DEEPBIND] %s: flags 0x%x -> 0x%x\n", effective_filename, flags, new_flags);
+            fflush(g_log);
+        }
+        flags = new_flags;
+    }
+
+    // --- RTLD_GLOBAL: promote SDL3 so managed NativeLibrary finds same instance ---
+    if (needs_global(effective_filename) && !(flags & RTLD_GLOBAL)) {
+        int new_flags = flags | RTLD_GLOBAL;
+        if (g_log) {
+            fprintf(g_log, "[GLOBAL] %s: flags 0x%x -> 0x%x\n", effective_filename, flags, new_flags);
             fflush(g_log);
         }
         flags = new_flags;
