@@ -25,12 +25,6 @@ namespace Sandbox.Systems.Render.Multimedia
         // Relative mode state tracking
         private static bool _relModeActive = false;
 
-        /// <summary>
-        /// True when Linux X11 relative mode hysteresis has resolved to active this frame.
-        /// Used by InputRouter to suppress SDL OnMouseMotion when X11 is driving deltas.
-        /// </summary>
-        internal static bool IsRelModeActive = false;
-
         // X11 event size no longer needed (state polling replaces event reading)
         // private const int X_EVENT_SIZE = 192;
 
@@ -559,7 +553,7 @@ namespace Sandbox.Systems.Render.Multimedia
                     }
                 }
 
-                IsRelModeActive = relMode;
+                Sandbox.Engine.LinuxSDLInput.IsRelModeActive = relMode;
 
                 if (relMode)
                 {
