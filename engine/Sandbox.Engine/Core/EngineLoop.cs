@@ -40,10 +40,6 @@ internal static class EngineLoop
         if (_runFrameCount <= 3)
         {
             Log.Info($"[EngineLoop] RunFrame #{_runFrameCount} called!");
-            try
-            {
-            }
-            catch { }
         }
 
         if (Application.WantsExit)
@@ -466,10 +462,6 @@ internal static class EngineLoop
         if (_clientOutputCount <= 3)
         {
             Log.Info($"[EngineLoop] OnClientOutput #{_clientOutputCount} called!");
-            try
-            {
-            }
-            catch { }
         }
 
         // The editor renders it's own game scene

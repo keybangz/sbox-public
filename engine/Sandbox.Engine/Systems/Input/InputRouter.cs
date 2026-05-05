@@ -22,22 +22,18 @@ internal static partial class InputRouter
     /// Avoids the 1-frame lag of reading MouseCursorVisible (which is set in Frame()).
     /// </summary>
 	internal static bool GameWantsCapture
-	{
-		get
-		{
-			if (IGameInstance.Current == null) return false;
-			var ctx = IGameInstanceDll.Current?.InputContext;
-			if (ctx == null) return true; // game loaded but context not yet initialized — assume capture
-			if (ctx.MouseState == InputContext.InputState.UI) return false;
-#if !WIN
-			// Linux: SimulateUI doesn't set KeyboardState=Game, so we infer game wants capture
-			// whenever the game is loaded and no UI panel has explicit keyboard focus.
-			if (ctx.KeyboardFocusPanel == null) return true;
-#endif
-			if (ctx.MouseState == InputContext.InputState.Ignore) return _mouseCaptureMode;
-			return true;
-		}
-	}
+    {
+        get
+        {
+            if (IGameInstance.Current == null) return false;
+            var ctx = IGameInstanceDll.Current?.InputContext;
+            if (ctx == null) return true; // game loaded but context not yet initialized — assume capture
+            if (ctx.MouseState == InputContext.InputState.UI) return false;
+            if (ctx.MouseState == InputContext.InputState.Game) return true;
+            if (ctx.MouseState == InputContext.InputState.Ignore) return _mouseCaptureMode;
+            return true;
+        }
+    }
 
     /// <summary>
     /// The mouse cursor position. Or the last position if it's now invisible.

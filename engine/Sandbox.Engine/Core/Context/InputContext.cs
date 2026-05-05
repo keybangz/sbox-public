@@ -386,6 +386,12 @@ internal sealed class InputContext
 		if ( KeyboardState != InputState.Ignore || !down || InputRouter.GameWantsCapture )
 		{
 			var name = InputSystem.CodeToString( scanButtonCode );
+#if !WIN
+			// Linux: scan codes (raw hardware positions) may not have string names in the native engine.
+			// Fall back to the translated key button code (X11 keysym) which always has a name.
+			if ( string.IsNullOrWhiteSpace( name ) )
+				name = InputSystem.CodeToString( keyButtonCode );
+#endif
 			if ( !string.IsNullOrWhiteSpace( name ) )
 			{
 				OnGameButton?.Invoke( scanButtonCode, name, down );
