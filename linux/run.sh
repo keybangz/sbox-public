@@ -5,10 +5,6 @@ BIN_DIR="$GAME_DIR/bin/linuxsteamrt64"
 export LD_LIBRARY_PATH="$BIN_DIR:$GAME_DIR:${LD_LIBRARY_PATH:-}"
 export SBOX_BIN_DIR="$BIN_DIR"
 
-# Force SDL3 to use X11 video driver — Wayland init fails silently causing render system
-# to exit immediately after Vulkan device init. X11 keeps the engine alive.
-export SDL_VIDEODRIVER=x11
-
 # Disable dotnet background processes that can cause file locking issues
 export DOTNET_CLI_TELEMETRY_OPTOUT=1
 export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1

@@ -67,16 +67,6 @@ public static class LauncherEnvironment
 			System.Environment.SetEnvironmentVariable( "SBOX_BIN_DIR", nativeDllPath );
 		}
 
-		// Force SDL3 to use X11 video driver on Linux.
-		// Wayland init fails silently causing the render system to exit immediately after
-		// Vulkan device init. X11 (via XWayland) keeps the engine alive.
-		// Must be set before SourceEnginePreInit loads SDL3.
-		if ( OperatingSystem.IsLinux() &&
-		     string.IsNullOrEmpty( System.Environment.GetEnvironmentVariable( "SDL_VIDEODRIVER" ) ) )
-		{
-			System.Environment.SetEnvironmentVariable( "SDL_VIDEODRIVER", "x11" );
-		}
-
 		UpdateNativeDllPath( nativeDllPath );
 	}
 

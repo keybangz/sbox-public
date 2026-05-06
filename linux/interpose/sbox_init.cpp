@@ -9,12 +9,7 @@
 //    Force-initialize system libcrypto's provider subsystem before engine2 loads.
 //    Without this, EVP_KEYMGMT_is_a crashes due to uninitialized provider store.
 //
-// 2. SDL_VIDEODRIVER=x11
-//    SDL3 Wayland init fails silently, causing the render system to exit
-//    immediately after Vulkan device init. Force X11 mode so the engine stays alive.
-//    Set here (before any SDL init) so it works even without run.sh or LD_PRELOAD.
-//
-// 3. Permissive free() (from permissive_free_interpose.cpp)
+// 2. Permissive free() (from permissive_free_interpose.cpp)
 //    libmeshsystem.so calls free() on pointers that were never malloc'd
 //    (engine2 passes mmap'd/stack buffers to meshsystem which tries to free them).
 //    This causes "double free or corruption" -> SIGABRT.
@@ -39,11 +34,6 @@
 __attribute__((constructor))
 static void sbox_openssl_init(void)
 {
-    // SDL_VIDEODRIVER: force X11 so Wayland init failure doesn't kill the render system.
-    // Only set if not already overridden by the user/environment.
-    if (!getenv("SDL_VIDEODRIVER"))
-        setenv("SDL_VIDEODRIVER", "x11", 0);
-
     void* libcrypto = dlopen("libcrypto.so.3", RTLD_NOW | RTLD_GLOBAL | RTLD_NOLOAD);
     if (!libcrypto)
         libcrypto = dlopen("libcrypto.so.3", RTLD_NOW | RTLD_GLOBAL);
