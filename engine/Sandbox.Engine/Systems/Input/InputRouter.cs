@@ -27,11 +27,13 @@ internal static partial class InputRouter
         {
             if (IGameInstance.Current == null) return false;
             var ctx = IGameInstanceDll.Current?.InputContext;
-            if (ctx == null) return true; // game loaded but context not yet initialized — assume capture
+            if (ctx == null) return true;
+            // Only capture mouse when the game context explicitly wants Game mouse,
+            // or when we're already in capture mode (Ignore = pre-UISystem frame).
             if (ctx.MouseState == InputContext.InputState.UI) return false;
             if (ctx.MouseState == InputContext.InputState.Game) return true;
-            if (ctx.MouseState == InputContext.InputState.Ignore) return _mouseCaptureMode;
-            return true;
+            // Ignore = UISystem hasn't run yet — preserve existing capture state
+            return _mouseCaptureMode;
         }
     }
 
@@ -206,7 +208,7 @@ internal static partial class InputRouter
         if (LinuxSDLInput.IsWayland) return; // Wayland uses SDL relative mode instead
         if (!LinuxSDLInput.HasX11Focus) return;
         // Register this warp so OnMouseMotion can discard the synthetic event it generates
-        LinuxSDLInput.IgnoreNextWarp(pos);
+        LinuxSDLInput.IgnoreNextWarp(pos, MouseCursorPosition);
 #endif
 
         g_pInputService.SetCursorPosition((int)pos.x, (int)pos.y);

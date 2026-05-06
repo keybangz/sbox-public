@@ -73,7 +73,7 @@ internal static partial class InputRouter
 			}
 
 #if !WIN
-			// Linux: Force-release mouse capture on focus loss.
+			// Linux: Force-release capture on focus loss.
 			// Without this, _mouseCaptureMode stays true and SetCursorPosition() warps
 			// the cursor on the desktop, interfering with other applications.
 			if ( _mouseCaptureMode )
@@ -81,6 +81,7 @@ internal static partial class InputRouter
 				_mouseCaptureMode = false;
 				mouseCapturePosition = null;
 				LinuxSDLInput.ClearWarpTarget();
+				LinuxX11Input.SetRelativeMouseMode( false );
 				InputLog.Trace( "[InputRouter] Window lost focus — forced capture release" );
 			}
 #endif
@@ -102,7 +103,7 @@ internal static partial class InputRouter
 		// When we call SetCursorPosition() to re-center the cursor after reading delta,
 		// the OS generates a new motion event. Without filtering, this zeroes out or
 		// inverts the accumulated delta, causing camera snapping.
-		if ( GameWantsCapture && LinuxSDLInput.IsSyntheticMotion( MouseCursorPosition ) )
+		if ( GameWantsCapture && LinuxSDLInput.IsSyntheticMotion( dx, dy ) )
 		{
 			InputLog.Trace( $"[OnMouseMotion] Discarded synthetic warp event at {MouseCursorPosition}" );
 			return;
@@ -336,7 +337,10 @@ internal static partial class InputRouter
 		var keyboard = Contexts.FirstOrDefault( x => x.KeyboardState != InputContext.InputState.Ignore );
 
 #if !WIN
-		if ( GameWantsCapture )
+		// Linux: UISystem runs after input polling, so KeyboardState may still be Ignore
+		// on the game context even when the game is active. Always prefer the game context
+		// when a game is loaded — it will correctly ignore or handle the key internally.
+		if ( IGameInstance.Current is not null )
 		{
 			var gameCtx = IGameInstanceDll.Current?.InputContext;
 			if ( gameCtx is not null )

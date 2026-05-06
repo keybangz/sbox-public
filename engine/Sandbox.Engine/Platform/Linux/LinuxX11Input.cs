@@ -219,23 +219,112 @@ internal static class LinuxX11Input
 		XFlush( _display );
 	}
 
+	// ── SDL scancode → ButtonCode map ─────────────────────────────────────────
+	// SDL scancodes are USB HID scancodes. X11 keycodes = SDL scancode + 8.
+	// This map is used for Wayland polling where XQueryKeymap is unavailable.
+
+	private static readonly Dictionary<int, ButtonCode> _sdlScancodeToButtonCode = new()
+	{
+		// Numbers row (SDL_SCANCODE_1..0 = 30..39)
+		{ 30, ButtonCode.KEY_1 }, { 31, ButtonCode.KEY_2 }, { 32, ButtonCode.KEY_3 },
+		{ 33, ButtonCode.KEY_4 }, { 34, ButtonCode.KEY_5 }, { 35, ButtonCode.KEY_6 },
+		{ 36, ButtonCode.KEY_7 }, { 37, ButtonCode.KEY_8 }, { 38, ButtonCode.KEY_9 },
+		{ 39, ButtonCode.KEY_0 },
+		// Top row (SDL_SCANCODE_Q..P = 20..25, then brackets)
+		{ 20, ButtonCode.KEY_Q }, { 26, ButtonCode.KEY_W }, { 8,  ButtonCode.KEY_E },
+		{ 21, ButtonCode.KEY_R }, { 23, ButtonCode.KEY_T }, { 28, ButtonCode.KEY_Y },
+		{ 24, ButtonCode.KEY_U }, { 12, ButtonCode.KEY_I }, { 18, ButtonCode.KEY_O },
+		{ 19, ButtonCode.KEY_P },
+		// Home row
+		{ 4,  ButtonCode.KEY_A }, { 22, ButtonCode.KEY_S }, { 7,  ButtonCode.KEY_D },
+		{ 9,  ButtonCode.KEY_F }, { 10, ButtonCode.KEY_G }, { 11, ButtonCode.KEY_H },
+		{ 13, ButtonCode.KEY_J }, { 14, ButtonCode.KEY_K }, { 15, ButtonCode.KEY_L },
+		// Bottom row
+		{ 29, ButtonCode.KEY_Z }, { 27, ButtonCode.KEY_X }, { 6,  ButtonCode.KEY_C },
+		{ 25, ButtonCode.KEY_V }, { 5,  ButtonCode.KEY_B }, { 17, ButtonCode.KEY_N },
+		{ 16, ButtonCode.KEY_M },
+		// Special
+		{ 41, ButtonCode.KEY_ESCAPE }, { 42, ButtonCode.KEY_BACKSPACE },
+		{ 43, ButtonCode.KEY_TAB },    { 40, ButtonCode.KEY_ENTER },
+		{ 44, ButtonCode.KEY_SPACE },  { 57, ButtonCode.KEY_CAPSLOCK },
+		// Modifiers
+		{ 225, ButtonCode.KEY_LSHIFT }, { 229, ButtonCode.KEY_RSHIFT },
+		{ 224, ButtonCode.KEY_LCONTROL }, { 228, ButtonCode.KEY_RCONTROL },
+		{ 226, ButtonCode.KEY_LALT }, { 230, ButtonCode.KEY_RALT },
+		{ 227, ButtonCode.KEY_LWIN }, { 231, ButtonCode.KEY_RWIN },
+		// Punctuation
+		{ 45, ButtonCode.KEY_MINUS }, { 46, ButtonCode.KEY_EQUAL },
+		{ 47, ButtonCode.KEY_LBRACKET }, { 48, ButtonCode.KEY_RBRACKET },
+		{ 51, ButtonCode.KEY_SEMICOLON }, { 52, ButtonCode.KEY_APOSTROPHE },
+		{ 53, ButtonCode.KEY_BACKQUOTE }, { 49, ButtonCode.KEY_BACKSLASH },
+		{ 54, ButtonCode.KEY_COMMA }, { 55, ButtonCode.KEY_PERIOD },
+		{ 56, ButtonCode.KEY_SLASH },
+		// Navigation
+		{ 74, ButtonCode.KEY_HOME }, { 77, ButtonCode.KEY_END },
+		{ 75, ButtonCode.KEY_PAGEUP }, { 78, ButtonCode.KEY_PAGEDOWN },
+		{ 73, ButtonCode.KEY_INSERT }, { 76, ButtonCode.KEY_DELETE },
+		// Arrows
+		{ 82, ButtonCode.KEY_UP }, { 81, ButtonCode.KEY_DOWN },
+		{ 80, ButtonCode.KEY_LEFT }, { 79, ButtonCode.KEY_RIGHT },
+		// Function keys
+		{ 58, ButtonCode.KEY_F1 }, { 59, ButtonCode.KEY_F2 }, { 60, ButtonCode.KEY_F3 },
+		{ 61, ButtonCode.KEY_F4 }, { 62, ButtonCode.KEY_F5 }, { 63, ButtonCode.KEY_F6 },
+		{ 64, ButtonCode.KEY_F7 }, { 65, ButtonCode.KEY_F8 }, { 66, ButtonCode.KEY_F9 },
+		{ 67, ButtonCode.KEY_F10 }, { 68, ButtonCode.KEY_F11 }, { 69, ButtonCode.KEY_F12 },
+		// Numpad
+		{ 83, ButtonCode.KEY_NUMLOCK }, { 71, ButtonCode.KEY_SCROLLLOCK },
+		{ 84, ButtonCode.KEY_PAD_DIVIDE }, { 85, ButtonCode.KEY_PAD_MULTIPLY },
+		{ 86, ButtonCode.KEY_PAD_MINUS }, { 87, ButtonCode.KEY_PAD_PLUS },
+		{ 88, ButtonCode.KEY_PAD_ENTER },
+		{ 89, ButtonCode.KEY_PAD_1 }, { 90, ButtonCode.KEY_PAD_2 }, { 91, ButtonCode.KEY_PAD_3 },
+		{ 92, ButtonCode.KEY_PAD_4 }, { 93, ButtonCode.KEY_PAD_5 }, { 94, ButtonCode.KEY_PAD_6 },
+		{ 95, ButtonCode.KEY_PAD_7 }, { 96, ButtonCode.KEY_PAD_8 }, { 97, ButtonCode.KEY_PAD_9 },
+		{ 99, ButtonCode.KEY_PAD_DECIMAL }, { 98, ButtonCode.KEY_PAD_0 },
+		// Misc
+		{ 72, ButtonCode.KEY_BREAK },
+	};
+
+	// Wayland state tracking (mirrors _prevKeymap / _prevMouseMask for X11)
+	private static readonly Dictionary<ButtonCode, bool> _waylandPrevKeys = new();
+	private static uint _waylandPrevMouseMask = 0;
+	private static float _waylandPrevMouseX = -1;
+	private static float _waylandPrevMouseY = -1;
+
 	// ── Main poll ─────────────────────────────────────────────────────────────
 
 	/// <summary>
 	/// Called every frame from EngineLoop.UpdateInput().
-	/// Reads X11 keyboard and mouse state, fires InputRouter events for changes.
+	/// Always reads input via SDL3 (works under both native X11 and XWayland).
+	/// X11 grab machinery runs in parallel when available, for cursor locking only.
 	/// </summary>
 	internal static void Poll()
 	{
-		if ( LinuxSDLInput.IsWayland ) return;
-		if ( !EnsureDisplay() ) return;
-
 		if ( _debugFrameCount % 300 == 0 )
-			InputLog.Trace( $"[X11Input] Poll() alive, frame={_debugFrameCount}, wayland={LinuxSDLInput.IsWayland}" );
+			InputLog.Trace( $"[X11Input] Poll() alive, frame={_debugFrameCount}, wayland={LinuxSDLInput.IsWayland}, driver={LinuxSDLInput.VideoDriver}" );
 
+		// Always use SDL3 for input reading — works under native X11, XWayland, and Wayland.
+		// XQueryKeymap / XQueryPointer are unreliable under XWayland because the compositor
+		// owns focus and the X11 window may never report as focused.
+		PollSDL();
+
+		// X11 grab machinery — only for cursor locking, not input reading.
+		// Skip entirely on native Wayland (SDL relative mode handles it there).
+		if ( !LinuxSDLInput.IsWayland && EnsureDisplay() )
+		{
+			TickX11GrabMachinery();
+		}
+
+		_debugFrameCount++;
+	}
+
+	/// <summary>
+	/// Manages X11 pointer grab state (cursor hiding/locking) without reading input.
+	/// Only called when running under a real X11 server (not XWayland-as-Wayland).
+	/// </summary>
+	private static void TickX11GrabMachinery()
+	{
 		if ( !HasX11WindowFocus() )
 		{
-			// Focus lost entirely (no window) — suspend grab
 			if ( _relativeMouseMode && !_grabSuspended )
 			{
 				XUngrabPointer( _display, 0 );
@@ -248,10 +337,8 @@ internal static class LinuxX11Input
 			return;
 		}
 
-		// HasX11WindowFocus() updated _focusedWindow. Check if it's our game window.
 		if ( _relativeMouseMode && _gameWindow != IntPtr.Zero && _focusedWindow != _gameWindow )
 		{
-			// A different window (dialog etc.) has focus — suspend grab if not already
 			if ( !_grabSuspended )
 			{
 				XUngrabPointer( _display, 0 );
@@ -260,11 +347,9 @@ internal static class LinuxX11Input
 				XFlush( _display );
 				InputLog.Trace( $"[LinuxX11Input] Grab suspended (dialog/other window has focus: {_focusedWindow})" );
 			}
-			// Don't poll input while a foreign window has focus
 			return;
 		}
 
-		// Focus is on our game window — resume grab if suspended
 		if ( _relativeMouseMode && _grabSuspended && _focusedWindow == _gameWindow )
 		{
 			XDefineCursor( _display, _gameWindow, _blankCursor );
@@ -284,11 +369,108 @@ internal static class LinuxX11Input
 				InputLog.Trace( "[LinuxX11Input] Grab resumed (game window refocused)" );
 			}
 		}
+	}
 
-		PollKeyboard();
-		PollMouse();
+	// ── SDL poll (works under X11, XWayland, and native Wayland) ─────────────
 
-		_debugFrameCount++;
+	/// <summary>
+	/// Polls keyboard and mouse state via SDL3 APIs.
+	/// Works under native X11, XWayland, and native Wayland — SDL3 is always
+	/// initialized by the engine regardless of the video driver.
+	/// </summary>
+	private static void PollSDL()
+	{
+		// Pump the SDL event queue so SDL_GetKeyboardState / SDL_GetMouseState
+		// reflect the current frame's input. The engine uses SDL_AddEventWatch
+		// (not SDL_PollEvent) so we must pump manually here.
+		try { Platform.Linux.LinuxSDL3Native.SDL_PumpEvents(); }
+		catch ( System.Exception e )
+		{
+			Log.Warning( $"[LinuxX11Input] SDL_PumpEvents failed: {e.Message}" );
+		}
+
+		PollWaylandKeyboard();
+		PollWaylandMouse();
+	}
+
+	private static unsafe void PollWaylandKeyboard()
+	{
+		IntPtr statePtr;
+		int numkeys;
+		try
+		{
+			statePtr = Platform.Linux.LinuxSDL3Native.SDL_GetKeyboardState( out numkeys );
+		}
+		catch ( System.Exception e )
+		{
+			Log.Warning( $"[LinuxX11Input] SDL_GetKeyboardState failed: {e.Message}" );
+			return;
+		}
+
+		if ( statePtr == IntPtr.Zero ) return;
+
+		if ( _debugFrameCount % 300 == 0 )
+			InputLog.Trace( $"[WaylandInput] PollWaylandKeyboard alive, frame={_debugFrameCount}, numkeys={numkeys}" );
+
+		byte* state = (byte*)statePtr;
+
+		foreach ( var (scancode, button) in _sdlScancodeToButtonCode )
+		{
+			if ( scancode >= numkeys ) continue;
+
+			bool isDown = state[scancode] != 0;
+			_waylandPrevKeys.TryGetValue( button, out bool wasDown );
+
+			if ( isDown == wasDown ) continue;
+
+			_waylandPrevKeys[button] = isDown;
+
+			Log.Info( $"[WaylandInput] Key {button} -> {isDown} (scancode={scancode})" );
+			InputRouter.OnKey( button, button, isDown, false, 0 );
+		}
+	}
+
+	private static void PollWaylandMouse()
+	{
+		uint mask;
+		float mouseX, mouseY;
+		try
+		{
+			mask = Platform.Linux.LinuxSDL3Native.SDL_GetMouseState( out mouseX, out mouseY );
+		}
+		catch ( System.Exception e )
+		{
+			Log.Warning( $"[LinuxX11Input] SDL_GetMouseState failed: {e.Message}" );
+			return;
+		}
+
+		// Mouse motion
+		if ( _waylandPrevMouseX >= 0 )
+		{
+			float dx = mouseX - _waylandPrevMouseX;
+			float dy = mouseY - _waylandPrevMouseY;
+
+			if ( dx != 0 || dy != 0 )
+			{
+				if ( InputRouter._mouseCaptureMode )
+					InputRouter.OnMouseMotion( dx, dy );
+				else
+					InputRouter.OnMousePositionChange( mouseX, mouseY, dx, dy );
+			}
+		}
+
+		_waylandPrevMouseX = mouseX;
+		_waylandPrevMouseY = mouseY;
+
+		// SDL mouse button mask: bit 0=left, bit 1=middle, bit 2=right, bit 3=x1, bit 4=x2
+		// SDL_BUTTON_LMASK = 1<<0, SDL_BUTTON_MMASK = 1<<1, SDL_BUTTON_RMASK = 1<<2
+		FireMouseButton( mask, _waylandPrevMouseMask, 1 << 0, ButtonCode.MouseLeft );
+		FireMouseButton( mask, _waylandPrevMouseMask, 1 << 2, ButtonCode.MouseRight );
+		FireMouseButton( mask, _waylandPrevMouseMask, 1 << 1, ButtonCode.MouseMiddle );
+		FireMouseButton( mask, _waylandPrevMouseMask, 1 << 3, ButtonCode.MouseBack );
+		FireMouseButton( mask, _waylandPrevMouseMask, 1 << 4, ButtonCode.MouseForward );
+
+		_waylandPrevMouseMask = mask;
 	}
 
 	// ── Keyboard ──────────────────────────────────────────────────────────────

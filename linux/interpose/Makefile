@@ -12,7 +12,7 @@ TARGETS = libsbox_interpose.so libaudio_interpose.so libvulkan_interpose.so \
           libframe_hook.so libmemory_interpose.so libtexture_interpose.so \
           libscene_interpose.so libdeepbind_interpose.so \
           libpermissive_free_interpose.so libopenssl_init_interpose.so \
-          libsdl3_dynapi_interpose.so
+          libsdl3_dynapi_interpose.so libsbox_init.so
 
 all: $(TARGETS)
 
@@ -69,6 +69,12 @@ libopenssl_init_interpose.so: openssl_init_interpose.cpp
 # SDL3 dynapi interpose - Redirect dlsym("SDL_Foo_REAL") -> dlsym("SDL_Foo")
 # Fixes render system Init failure: rendersystemvulkan uses dlsym for 1,251 SDL_*_REAL symbols
 libsdl3_dynapi_interpose.so: sdl3_dynapi_interpose.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
+	@echo "Built $@"
+
+# Combined startup init — OpenSSL provider init + permissive free()
+# Loaded as DT_NEEDED by game/sbox so it runs automatically without LD_PRELOAD.
+libsbox_init.so: sbox_init.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
 	@echo "Built $@"
 

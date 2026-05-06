@@ -25,6 +25,11 @@ internal static class LinuxSDLInput
 	private static bool? _isWayland;
 
 	/// <summary>
+	/// The SDL video driver string (e.g. "wayland", "x11"). Empty until SDL is initialized.
+	/// </summary>
+	public static string VideoDriver => _videoDriver ?? string.Empty;
+
+	/// <summary>
 	/// True if the current SDL video driver is Wayland.
 	/// </summary>
 	public static bool IsWayland
@@ -39,18 +44,20 @@ internal static class LinuxSDLInput
 				if ( ptr != IntPtr.Zero )
 				{
 					_videoDriver = System.Runtime.InteropServices.Marshal.PtrToStringUTF8( ptr );
+					// Cache the result — SDL is initialized, this won't change
 					_isWayland = _videoDriver?.Equals( "wayland", System.StringComparison.OrdinalIgnoreCase ) == true;
 					return _isWayland.Value;
 				}
+				// SDL not initialized yet — don't cache, try again next frame
+				return false;
 			}
 			catch ( System.Exception e )
 			{
 				Log.Warning( $"[LinuxSDLInput] Failed to query SDL video driver: {e.Message}" );
+				// P/Invoke failed entirely — assume X11 and cache to stop spamming
+				_isWayland = false;
+				return false;
 			}
-
-			// SDL not initialized yet OR P/Invoke failed — assume X11/manual path
-			// Don't cache this — try again next call once SDL is up
-			return false;
 		}
 	}
 
@@ -102,31 +109,34 @@ internal static class LinuxSDLInput
 	}
 
 	/// <summary>
-	/// The position we last warped the cursor to. Used to filter synthetic motion events.
+	/// The delta we expect from the synthetic warp event (warpTarget - cursorPosAtWarpTime).
+	/// Used to filter out the motion event the OS generates after SetCursorPosition().
 	/// </summary>
-	private static Vector2? _pendingWarpTarget = null;
+	private static Vector2? _pendingWarpDelta = null;
 	private static readonly float WarpEpsilon = 2.0f;
 
 	/// <summary>
-	/// Register a cursor warp position. The next motion event at this position will be discarded as synthetic.
+	/// Register a cursor warp. Pass the warp target and the current cursor position so we can
+	/// compute the expected synthetic delta and discard it in IsSyntheticMotion.
 	/// </summary>
-	public static void IgnoreNextWarp( Vector2 targetPos )
+	public static void IgnoreNextWarp( Vector2 warpTarget, Vector2 currentPos )
 	{
-		_pendingWarpTarget = targetPos;
+		_pendingWarpDelta = warpTarget - currentPos;
 	}
 
 	/// <summary>
-	/// Returns true if the given motion event position matches a pending warp target (i.e., it is synthetic).
+	/// Returns true if the given motion delta matches the pending synthetic warp delta.
 	/// Clears the pending warp if matched.
 	/// </summary>
-	public static bool IsSyntheticMotion( Vector2 eventPos )
+	public static bool IsSyntheticMotion( float dx, float dy )
 	{
-		if ( _pendingWarpTarget is null ) return false;
+		if ( _pendingWarpDelta is null ) return false;
 
-		var diff = (eventPos - _pendingWarpTarget.Value).Length;
+		var expected = _pendingWarpDelta.Value;
+		var diff = new Vector2( dx - expected.x, dy - expected.y ).Length;
 		if ( diff <= WarpEpsilon )
 		{
-			_pendingWarpTarget = null;
+			_pendingWarpDelta = null;
 			return true;
 		}
 
@@ -138,6 +148,6 @@ internal static class LinuxSDLInput
 	/// </summary>
 	public static void ClearWarpTarget()
 	{
-		_pendingWarpTarget = null;
+		_pendingWarpDelta = null;
 	}
 }

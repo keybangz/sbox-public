@@ -35,7 +35,7 @@ public static class LauncherEnvironment
 	{
 		AppDomain.CurrentDomain.AssemblyResolve += CurrentDomain_AssemblyResolve;
 
-		GamePath = AppContext.BaseDirectory;
+		GamePath = System.IO.Path.GetFullPath( AppContext.BaseDirectory );
 
 		// this exe is in the bin folder
 		if ( GamePath.EndsWith( System.IO.Path.Combine( "bin", PlatformName ) ) )
@@ -65,6 +65,16 @@ public static class LauncherEnvironment
 		if ( string.IsNullOrEmpty( System.Environment.GetEnvironmentVariable( "SBOX_BIN_DIR" ) ) )
 		{
 			System.Environment.SetEnvironmentVariable( "SBOX_BIN_DIR", nativeDllPath );
+		}
+
+		// Force SDL3 to use X11 video driver on Linux.
+		// Wayland init fails silently causing the render system to exit immediately after
+		// Vulkan device init. X11 (via XWayland) keeps the engine alive.
+		// Must be set before SourceEnginePreInit loads SDL3.
+		if ( OperatingSystem.IsLinux() &&
+		     string.IsNullOrEmpty( System.Environment.GetEnvironmentVariable( "SDL_VIDEODRIVER" ) ) )
+		{
+			System.Environment.SetEnvironmentVariable( "SDL_VIDEODRIVER", "x11" );
 		}
 
 		UpdateNativeDllPath( nativeDllPath );

@@ -395,7 +395,13 @@ internal sealed class InputContext
 
 		// Fire OnGameButton when keyboard isn't explicitly Ignored, or on release,
 		// or when Linux capture mode is active (PollEvents runs before UISystem sets KeyboardState=Game).
+		// On Linux, also fire when a game instance is loaded — UISystem sets KeyboardState=Game one frame
+		// late, so the very first keypress after load would be silently dropped without this.
+#if WIN
 		if ( KeyboardState != InputState.Ignore || !down || InputRouter.GameWantsCapture )
+#else
+		if ( KeyboardState != InputState.Ignore || !down || InputRouter.GameWantsCapture || IGameInstance.Current is not null )
+#endif
 		{
 			var name = InputSystem.CodeToString( scanButtonCode );
 #if !WIN
@@ -405,6 +411,8 @@ internal sealed class InputContext
 				name = LinuxX11Input.ButtonCodeToName( scanButtonCode );
 			if ( string.IsNullOrWhiteSpace( name ) )
 				name = LinuxX11Input.ButtonCodeToName( keyButtonCode );
+
+			Log.Info( $"[InputContext.OnButton] name={name ?? "null"} scan={scanButtonCode} key={keyButtonCode} down={down} KeyboardState={KeyboardState} GameWantsCapture={InputRouter.GameWantsCapture} OnGameButton={(OnGameButton != null ? "set" : "null")}" );
 #endif
 			if ( !string.IsNullOrWhiteSpace( name ) )
 			{
