@@ -149,7 +149,10 @@ internal static partial class InputRouter
 #if WIN
 				NativeEngine.InputSystem.SetRelativeMouseMode( true );
 #else
-                LinuxX11Input.SetRelativeMouseMode(true);
+                if (LinuxSDLInput.IsWayland)
+                    LinuxSDLInput.SetRelativeMouseMode(true);
+                else
+                    LinuxX11Input.SetRelativeMouseMode(true);
 #endif
             }
         }
@@ -160,7 +163,10 @@ internal static partial class InputRouter
 #if WIN
 				NativeEngine.InputSystem.SetRelativeMouseMode( false );
 #else
-                LinuxX11Input.SetRelativeMouseMode(false);
+                if (LinuxSDLInput.IsWayland)
+                    LinuxSDLInput.SetRelativeMouseMode(false);
+                else
+                    LinuxX11Input.SetRelativeMouseMode(false);
 #endif
             }
 
