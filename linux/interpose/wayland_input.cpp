@@ -250,6 +250,177 @@ static pfn_SDL_SendMouseWheel        p_SDL_SendMouseWheel        = nullptr;
 static pfn_SDL_SetKeyboardFocus      p_SDL_SetKeyboardFocus      = nullptr;
 static pfn_SDL_SetMouseFocus         p_SDL_SetMouseFocus         = nullptr;
 
+// ============================================================================
+// C# InputRouter trampoline pointers (resolved via dlsym from the managed
+// assembly's [UnmanagedCallersOnly] exports). Calling these directly bypasses
+// SDL3's broken Wayland event pump and the native engine's SDL→InputEvent
+// conversion. System V AMD64 ABI (x86-64 Linux default) since no CallConvs
+// attribute is specified on the C# side.
+// ============================================================================
+
+// SandboxEngine_InputRouter_OnMouseMotion(float dx, float dy)
+typedef void (*pfn_Engine_OnMouseMotion)(float dx, float dy);
+// SandboxEngine_InputRouter_OnMouseButton(long button, int state, int ikeymods)
+typedef void (*pfn_Engine_OnMouseButton)(int64_t button, int32_t state, int32_t ikeymods);
+// SandboxEngine_InputRouter_OnMouseWheel(int x, int y, int ikeymods)
+typedef void (*pfn_Engine_OnMouseWheel)(int32_t x, int32_t y, int32_t ikeymods);
+// SandboxEngine_InputRouter_OnKey(long scanButtonCode, long keyButtonCode, int state, int repeating, int ikeymods)
+typedef void (*pfn_Engine_OnKey)(int64_t scanButtonCode, int64_t keyButtonCode, int32_t state, int32_t repeating, int32_t ikeymods);
+// SandboxEngine_InputRouter_OnText(uint key)
+typedef void (*pfn_Engine_OnText)(uint32_t key);
+// SandboxEngine_InputRouter_OnMousePositionChange(float x, float y, float dx, float dy)
+typedef void (*pfn_Engine_OnMousePositionChange)(float x, float y, float dx, float dy);
+
+static pfn_Engine_OnMouseMotion         p_Engine_OnMouseMotion         = nullptr;
+static pfn_Engine_OnMouseButton         p_Engine_OnMouseButton         = nullptr;
+static pfn_Engine_OnMouseWheel          p_Engine_OnMouseWheel          = nullptr;
+static pfn_Engine_OnKey                 p_Engine_OnKey                 = nullptr;
+static pfn_Engine_OnText                p_Engine_OnText                = nullptr;
+static pfn_Engine_OnMousePositionChange p_Engine_OnMousePositionChange = nullptr;
+
+// ============================================================================
+// evdev keycode → engine ButtonCode mapping
+// The engine uses a custom ButtonCode enum (backed by ulong) with values
+// inherited from Valve's Source engine. KEY_A=11, KEY_W=33, SPACE=65, etc.
+// Mouse buttons start at 314 (MouseLeft=314, MouseRight=315, Middle=316,
+// Back=317, Forward=318, WheelUp=319, WheelDown=320).
+// ============================================================================
+
+static uint64_t evdev_to_button_code(uint32_t evdev_key)
+{
+    // Mapping from linux/input-event-codes.h evdev codes to the engine's
+    // ButtonCode enum (0-based auto-increment). Values confirmed from
+    // engine/Sandbox.Engine/Core/Interop/NativeEngine/ButtonCode.cs
+    switch (evdev_key) {
+        // ---- Mouse buttons (evdev BTN_*) ----
+        case 0x110: return 314; // BTN_LEFT   → MouseLeft
+        case 0x111: return 315; // BTN_RIGHT  → MouseRight
+        case 0x112: return 316; // BTN_MIDDLE → MouseMiddle
+        case 0x113: return 317; // BTN_SIDE   → MouseBack
+        case 0x114: return 318; // BTN_EXTRA  → MouseForward
+
+        // ---- Keyboard alpha (evdev KEY_*) ----
+        case 30: return 11;  // KEY_A
+        case 48: return 12;  // KEY_B
+        case 46: return 13;  // KEY_C
+        case 32: return 14;  // KEY_D
+        case 18: return 15;  // KEY_E
+        case 33: return 16;  // KEY_F
+        case 34: return 17;  // KEY_G
+        case 35: return 18;  // KEY_H
+        case 23: return 19;  // KEY_I
+        case 36: return 20;  // KEY_J
+        case 37: return 21;  // KEY_K
+        case 38: return 22;  // KEY_L
+        case 50: return 23;  // KEY_M
+        case 49: return 24;  // KEY_N
+        case 24: return 25;  // KEY_O
+        case 25: return 26;  // KEY_P
+        case 16: return 27;  // KEY_Q
+        case 19: return 28;  // KEY_R
+        case 31: return 29;  // KEY_S
+        case 20: return 30;  // KEY_T
+        case 22: return 31;  // KEY_U
+        case 47: return 32;  // KEY_V
+        case 17: return 33;  // KEY_W
+        case 45: return 34;  // KEY_X
+        case 21: return 35;  // KEY_Y
+        case 44: return 36;  // KEY_Z
+
+        // ---- Numbers ----
+        case 11: return 1;   // KEY_0
+        case 2:  return 2;   // KEY_1
+        case 3:  return 3;   // KEY_2
+        case 4:  return 4;   // KEY_3
+        case 5:  return 5;   // KEY_4
+        case 6:  return 6;   // KEY_5
+        case 7:  return 7;   // KEY_6
+        case 8:  return 8;   // KEY_7
+        case 9:  return 9;   // KEY_8
+        case 10: return 10;  // KEY_9
+
+        // ---- Numpad ----
+        case 82: return 37;  // KEY_KP0
+        case 79: return 38;  // KEY_KP1
+        case 80: return 39;  // KEY_KP2
+        case 81: return 40;  // KEY_KP3
+        case 75: return 41;  // KEY_KP4
+        case 76: return 42;  // KEY_KP5
+        case 77: return 43;  // KEY_KP6
+        case 71: return 44;  // KEY_KP7
+        case 72: return 45;  // KEY_KP8
+        case 73: return 46;  // KEY_KP9
+        case 98: return 47;  // KEY_KPSLASH
+        case 55: return 48;  // KEY_KPASTERISK
+        case 74: return 49;  // KEY_KPMINUS
+        case 78: return 50;  // KEY_KPPLUS
+        case 96: return 51;  // KEY_KPENTER
+        case 83: return 52;  // KEY_KPDOT
+
+        // ---- Punctuation ----
+        case 53: return 59;  // KEY_COMMA
+        case 52: return 60;  // KEY_DOT
+        case 51: return 61;  // KEY_SLASH
+        case 86: return 62;  // KEY_102ND → KEY_BACKSLASH
+        case 12: return 63;  // KEY_MINUS
+        case 13: return 64;  // KEY_EQUAL
+        case 26: return 54;  // KEY_LBRACKET
+        case 27: return 55;  // KEY_RBRACKET
+        case 39: return 56;  // KEY_SEMICOLON
+        case 40: return 57;  // KEY_APOSTROPHE
+        case 41: return 58;  // KEY_GRAVE → BACKQUOTE
+
+        // ---- Special keys ----
+        case 28: return 65;  // KEY_ENTER
+        case 57: return 66;  // KEY_SPACE
+        case 14: return 67;  // KEY_BACKSPACE
+        case 15: return 68;  // KEY_TAB
+        case 58: return 69;  // KEY_CAPSLOCK
+        case 69: return 70;  // KEY_NUMLOCK
+        case 1:  return 71;  // KEY_ESC
+        case 70: return 72;  // KEY_SCROLLLOCK
+        case 110:return 73;  // KEY_INSERT
+        case 111:return 74;  // KEY_DELETE
+        case 102:return 75;  // KEY_HOME
+        case 107:return 76;  // KEY_END
+        case 104:return 77;  // KEY_PAGEUP
+        case 109:return 78;  // KEY_PAGEDOWN
+
+        // ---- Modifiers ----
+        case 42: return 80;  // KEY_LSHIFT
+        case 54: return 81;  // KEY_RSHIFT
+        case 56: return 82;  // KEY_LALT
+        case 100:return 83;  // KEY_RALT
+        case 29: return 84;  // KEY_LCTRL
+        case 97: return 85;  // KEY_RCTRL
+        case 125:return 86;  // KEY_LWIN
+        case 126:return 87;  // KEY_RWIN
+        case 127:return 88;  // KEY_COMPOSE → KEY_APP
+
+        // ---- Arrows ----
+        case 103:return 89;  // KEY_UP
+        case 105:return 90;  // KEY_LEFT
+        case 108:return 91;  // KEY_DOWN
+        case 106:return 92;  // KEY_RIGHT
+
+        // ---- Function keys ----
+        case 59: return 93;  // KEY_F1
+        case 60: return 94;  // KEY_F2
+        case 61: return 95;  // KEY_F3
+        case 62: return 96;  // KEY_F4
+        case 63: return 97;  // KEY_F5
+        case 64: return 98;  // KEY_F6
+        case 65: return 99;  // KEY_F7
+        case 66: return 100; // KEY_F8
+        case 67: return 101; // KEY_F9
+        case 68: return 102; // KEY_F10
+        case 87: return 103; // KEY_F11
+        case 88: return 104; // KEY_F12
+
+        default: return 0;
+    }
+}
+
 // SDL3 default IDs for "the keyboard" and "the mouse" when not tracking
 // per-device. Matches SDL_DEFAULT_KEYBOARD_ID / SDL_DEFAULT_MOUSE_ID = 1.
 static constexpr uint32_t kSDLDefaultKeyboardID = 1;
@@ -342,6 +513,7 @@ struct WaylandState {
     wl_pointer*    pointer       = nullptr;
 
     SDL_WindowID   engine_window_id = 0;
+    void*          engine_window   = nullptr;  // actual SDL_Window* for SDL_Send*
 
     // xkb state for keyboard translation
     xkb_context* xkb_ctx       = nullptr;
@@ -481,6 +653,10 @@ static void kbd_enter(void*, wl_keyboard*, uint32_t /*serial*/, wl_surface* surf
     logf("kbd_enter: surface=%p ours=%d", (void*)surface, ours);
     if (!ours) return;
 
+    // SDL3's SendKeyboardKey validates that the target window has keyboard
+    // focus. Without this the internal dispatch ignores our key events.
+    p_SDL_SetKeyboardFocus(g_w.engine_window);
+
     SDL_WindowEvent we{};
     we.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
     we.timestamp = now_ns();
@@ -506,47 +682,31 @@ static void kbd_key(void*, wl_keyboard*, uint32_t /*serial*/, uint32_t /*time*/,
                     uint32_t key, uint32_t state)
 {
     if (!g_w.kbd_focused.load()) return;
-    if (!g_w.kbstate) return;
 
     bool down = (state == WL_KEYBOARD_KEY_STATE_PRESSED);
+    uint64_t bc = evdev_to_button_code(key);
 
-    // wl_keyboard.key delivers evdev keycodes; xkb wants +8.
-    xkb_keysym_t ks = xkb_state_key_get_one_sym(g_w.kbstate, key + 8);
+    // Route through SDL's dispatch (updates keyboard state array)
     SDL_Scancode sc = evdev_to_sdl_scancode(key);
-    SDL_Keycode  kc = keysym_to_sdl_keycode(ks);
+    uint64_t ts = now_ns();
+    if (p_SDL_SendKeyboardKey) {
+        p_SDL_SendKeyboardKey(ts, 1, (int)key, (int)sc, down);
+    }
 
-    SDL_KeyboardEvent ke{};
-    ke.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
-    ke.timestamp = now_ns();
-    ke.windowID = g_w.engine_window_id;
-    ke.which = 1;
-    ke.scancode = sc;
-    ke.key = kc;
-    ke.mod = xkb_to_sdl_mods();
-    ke.raw = (uint16_t)key;
-    ke.down = down;
-    ke.repeat = false;
-    p_SDL_PushEvent(&ke);
+    // Also call the C# trampoline directly (bypasses SDL event queue)
+    if (p_Engine_OnKey) {
+        logf("TRAMP OnKey: bc=%ld down=%d", bc, (int)down);
+        p_Engine_OnKey((int64_t)bc, (int64_t)bc, down ? 1 : 0, 0, 0);
+    }
 
     // Synthesize TEXT_INPUT for printable keys on key-down
-    if (down) {
+    if (down && g_w.kbstate) {
         char utf8[8] = {0};
         int n = xkb_state_key_get_utf8(g_w.kbstate, key + 8, utf8, sizeof(utf8));
         if (n > 0 && (uint8_t)utf8[0] >= 0x20 && utf8[0] != 0x7F) {
-            // Heap-allocate so the engine can read the const char* later.
-            // Engine consumes events synchronously inside SDL_PumpEvents path,
-            // so a stable static buffer pool avoids leaks.
-            static thread_local char ring[16][8];
-            static thread_local int ring_idx = 0;
-            ring_idx = (ring_idx + 1) % 16;
-            memcpy(ring[ring_idx], utf8, sizeof(utf8));
-
-            SDL_TextInputEvent te{};
-            te.type = SDL_EVENT_TEXT_INPUT;
-            te.timestamp = now_ns();
-            te.windowID = g_w.engine_window_id;
-            te.text = ring[ring_idx];
-            p_SDL_PushEvent(&te);
+            if (p_Engine_OnText) {
+                p_Engine_OnText((uint32_t)(uint8_t)utf8[0]);
+            }
         }
     }
 }
@@ -580,6 +740,10 @@ static void ptr_enter(void*, wl_pointer*, uint32_t /*serial*/, wl_surface* surfa
     logf("ptr_enter: surface=%p ours=%d", (void*)surface, ours);
     if (!ours) return;
 
+    // SDL3's SendMouseMotion validates that the target window has mouse
+    // focus. Without this the internal dispatch ignores our motion events.
+    p_SDL_SetMouseFocus(g_w.engine_window);
+
     g_w.last_x = wl_fixed_to_double(sx);
     g_w.last_y = wl_fixed_to_double(sy);
 
@@ -609,17 +773,24 @@ static void ptr_motion(void*, wl_pointer*, uint32_t /*time*/, wl_fixed_t sx, wl_
     if (!g_w.ptr_focused.load()) return;
     float nx = (float)wl_fixed_to_double(sx);
     float ny = (float)wl_fixed_to_double(sy);
-    SDL_MouseMotionEvent me{};
-    me.type = SDL_EVENT_MOUSE_MOTION;
-    me.timestamp = now_ns();
-    me.windowID = g_w.engine_window_id;
-    me.which = 1;
-    me.state = 0;
-    me.x = nx; me.y = ny;
-    me.xrel = nx - g_w.last_x;
-    me.yrel = ny - g_w.last_y;
+    float dx = nx - g_w.last_x;
+    float dy = ny - g_w.last_y;
     g_w.last_x = nx; g_w.last_y = ny;
-    p_SDL_PushEvent(&me);
+    if (dx == 0.0f && dy == 0.0f) return;
+
+    // Route through SDL's dispatch (updates mouse state array)
+    if (p_SDL_SendMouseMotion) {
+        p_SDL_SendMouseMotion(now_ns(), g_w.engine_window, 1, true, dx, dy);
+    }
+
+    // Also call the C# trampolines directly
+    if (p_Engine_OnMouseMotion) {
+        logf("TRAMP OnMouseMotion: dx=%.1f dy=%.1f", dx, dy);
+        p_Engine_OnMouseMotion(dx, dy);
+    }
+    if (p_Engine_OnMousePositionChange) {
+        p_Engine_OnMousePositionChange(nx, ny, dx, dy);
+    }
 }
 
 static void ptr_button(void*, wl_pointer*, uint32_t /*serial*/, uint32_t /*time*/,
@@ -628,7 +799,10 @@ static void ptr_button(void*, wl_pointer*, uint32_t /*serial*/, uint32_t /*time*
     if (!g_w.ptr_focused.load()) return;
     bool down = (state == WL_POINTER_BUTTON_STATE_PRESSED);
 
-    // BTN_LEFT=0x110, BTN_RIGHT=0x111, BTN_MIDDLE=0x112, BTN_SIDE=0x113, BTN_EXTRA=0x114
+    uint64_t bc = evdev_to_button_code(button);
+    if (bc == 0) return;
+
+    // Route through SDL's dispatch (updates mouse button state array)
     uint8_t sdl_btn = 0;
     switch (button) {
         case 0x110: sdl_btn = 1; break; // SDL_BUTTON_LEFT
@@ -636,19 +810,17 @@ static void ptr_button(void*, wl_pointer*, uint32_t /*serial*/, uint32_t /*time*
         case 0x112: sdl_btn = 2; break; // SDL_BUTTON_MIDDLE
         case 0x113: sdl_btn = 4; break; // SDL_BUTTON_X1
         case 0x114: sdl_btn = 5; break; // SDL_BUTTON_X2
-        default: return;
+        default: break;
+    }
+    if (sdl_btn && p_SDL_SendMouseButton) {
+        p_SDL_SendMouseButton(now_ns(), g_w.engine_window, 1, sdl_btn, down);
     }
 
-    SDL_MouseButtonEvent be{};
-    be.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
-    be.timestamp = now_ns();
-    be.windowID = g_w.engine_window_id;
-    be.which = 1;
-    be.button = sdl_btn;
-    be.down = down;
-    be.clicks = 1;
-    be.x = g_w.last_x; be.y = g_w.last_y;
-    p_SDL_PushEvent(&be);
+    // Also call the C# trampoline directly
+    if (p_Engine_OnMouseButton) {
+        logf("TRAMP OnMouseButton: bc=%ld down=%d", bc, (int)down);
+        p_Engine_OnMouseButton((int64_t)bc, down ? 1 : 0, 0);
+    }
 }
 
 static void ptr_axis(void*, wl_pointer*, uint32_t /*time*/, uint32_t axis, wl_fixed_t value)
@@ -762,6 +934,7 @@ static void* worker_thread(void*)
     }
     void* engine_window = windows[0];
     g_w.engine_window_id = p_SDL_GetWindowID(engine_window);
+    g_w.engine_window    = engine_window;  // store for SDL_Send* calls
     free(windows);
 
     const char* drv = p_SDL_GetCurrentVideoDriver ? p_SDL_GetCurrentVideoDriver() : nullptr;
@@ -808,7 +981,39 @@ static void* worker_thread(void*)
 
     logf("setup complete — entering event loop");
 
-    // Step 6: dispatch loop. wl_display_dispatch_queue blocks until events.
+    // Step 6: resolve C# [UnmanagedCallersOnly] trampolines.
+    // These live in the managed assembly, not libengine2.so, so we use
+    // RTLD_DEFAULT. The .NET runtime exports them as native symbols.
+    // The assembly may load AFTER our worker starts, so we retry.
+    bool trampolines_ready = false;
+    for (int retry = 0; retry < 120; ++retry) {
+        p_Engine_OnMouseMotion = (pfn_Engine_OnMouseMotion)
+            dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnMouseMotion");
+        p_Engine_OnMouseButton = (pfn_Engine_OnMouseButton)
+            dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnMouseButton");
+        p_Engine_OnKey         = (pfn_Engine_OnKey)
+            dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnKey");
+        p_Engine_OnText        = (pfn_Engine_OnText)
+            dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnText");
+        p_Engine_OnMouseWheel  = (pfn_Engine_OnMouseWheel)
+            dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnMouseWheel");
+        p_Engine_OnMousePositionChange = (pfn_Engine_OnMousePositionChange)
+            dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnMousePositionChange");
+        if (p_Engine_OnMouseMotion && p_Engine_OnKey && p_Engine_OnMouseButton) {
+            trampolines_ready = true;
+            logf("trampolines resolved after %d retries", retry);
+            break;
+        }
+        usleep(500000); // 500ms
+    }
+    if (!trampolines_ready) {
+        logf("trampolines NOT resolved — engine callbacks unreachable "
+             "(OnMM=%p OnKey=%p OnMB=%p)",
+             (void*)p_Engine_OnMouseMotion, (void*)p_Engine_OnKey,
+             (void*)p_Engine_OnMouseButton);
+    }
+
+    // Step 7: dispatch loop. wl_display_dispatch_queue blocks until events.
     while (true) {
         int ret = wl_display_dispatch_queue(g_w.display, g_w.queue);
         if (ret < 0) {
@@ -854,20 +1059,10 @@ void sbox_wayland_input_init()
     // SDL3 also reads SDL_HINT_VIDEO_DRIVER but that's resolved from the env
     // var above at SDL_Init time, so a single setenv covers it.
 
-    // ------------------------------------------------------------------
-    // Path 1 (cursor war elimination): we deliberately do NOT start the
-    // worker thread. Previously we self-bound a second wl_seat to inject
-    // input events alongside SDL, but that caused the compositor to ping-
-    // pong keyboard/pointer focus between SDL's seat and ours (visible as
-    // rapid kbd_enter/kbd_leave churn in the log). With our seat gone,
-    // SDL's seat wins focus uncontested and its built-in event pump should
-    // deliver motion/buttons/keys to the engine normally.
-    //
-    // The listener machinery above (seat/registry/pointer/keyboard) is
-    // kept compiled but unreferenced — if Path 1 doesn't restore input,
-    // we pivot to Path 2 (interpose wl_proxy_add_listener) and reuse
-    // these handlers as wrappers around SDL's listeners.
-    // ------------------------------------------------------------------
-    logf("Path 1: not starting worker thread — letting SDL own the seat");
-    (void)worker_thread; // suppress unused-function warning
+    pthread_t tid;
+    if (pthread_create(&tid, nullptr, worker_thread, nullptr) != 0) {
+        logf("pthread_create failed: %s", strerror(errno));
+        return;
+    }
+    pthread_detach(tid);
 }
