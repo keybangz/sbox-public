@@ -64,16 +64,28 @@ public static class MainThread
 		return r;
 	}
 
+	// Time budget for queue processing per frame
+	private const int QueueTimeBudgetMs = 8;
+
 	internal static void RunQueues()
 	{
 		ThreadSafe.AssertIsMainThread();
 
+		long startTime = System.Environment.TickCount64;
+		int disposeCount = 0;
+
+		// Process disposables with time budget
 		while ( Disposables.Reader.TryRead( out var disposable ) )
 		{
 			disposable.Dispose();
+			disposeCount++;
+
+			// Check time budget every 10 disposals
+			if ( disposeCount % 10 == 0 && System.Environment.TickCount64 - startTime > QueueTimeBudgetMs )
+				break;
 		}
 
-		RunMainThreadQueues();
+		RunMainThreadQueues( startTime );
 	}
 
 	/// <summary>
@@ -92,11 +104,16 @@ public static class MainThread
 	}
 
 	/// <summary>
-	/// Run queued actions on the main thread
+	/// Run queued actions on the main thread with time budget
 	/// </summary>
-	internal static void RunMainThreadQueues()
+	internal static void RunMainThreadQueues( long startTime = 0 )
 	{
 		ThreadSafe.AssertIsMainThread();
+
+		if ( startTime == 0 )
+			startTime = System.Environment.TickCount64;
+
+		int actionCount = 0;
 
 		while ( Actions.Reader.TryRead( out var action ) )
 		{
@@ -108,6 +125,12 @@ public static class MainThread
 			{
 				Log.Warning( e, e.Message );
 			}
+
+			actionCount++;
+
+			// Check time budget every 5 actions
+			if ( actionCount % 5 == 0 && System.Environment.TickCount64 - startTime > QueueTimeBudgetMs )
+				break;
 		}
 	}
 }

@@ -44,13 +44,29 @@
         var clothing = ClothingContainer.CreateFromLocalUser();
 
         if ( human.IsValid() )
+        {
             human.Enabled = clothing.PrefersHuman;
+            if ( clothing.PrefersHuman )
+            {
+                var body = human.GetComponent<SkinnedModelRenderer>( true );
+                if ( body.IsValid() )
+                    MenuUtility.RunTask( () => clothing.ApplyAsync( body, default ) );
+            }
+        }
 
         if ( citizen.IsValid() )
+        {
             citizen.Enabled = !clothing.PrefersHuman;
+		    if ( !clothing.PrefersHuman )
+		    {
+		        var body = citizen.GetComponent<SkinnedModelRenderer>( true );
+		        if ( body.IsValid() )
+		            MenuUtility.RunTask( () => clothing.ApplyAsync( body, default ) );
+		    }
+		}
 
-        // Fetch resolutions now so opening the settings modal doesn't stutter later.
-        MenuProject.Settings.VideoSettings.FetchResolutions();
+		// Fetch resolutions now so opening the settings modal doesn't stutter later.
+		MenuProject.Settings.VideoSettings.FetchResolutions();
     }
 
 

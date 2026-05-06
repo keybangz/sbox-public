@@ -1,4 +1,5 @@
-﻿// RichTextKit
+﻿#pragma warning disable CA2000
+// RichTextKit
 // Copyright © 2019-2020 Topten Software. All Rights Reserved.
 // 
 // Licensed under the Apache License, Version 2.0 (the "License"); you may 
@@ -66,7 +67,29 @@ namespace Topten.RichTextKit
 		/// <returns>A sequence of runs with unsupported code points replaced by a selected font fallback</returns>
 		public static IEnumerable<Run> GetFontRuns( Slice<int> codePoints, SKTypeface typeface, char replacementCharacter = '\0' )
 		{
-			using var font = new SKFont( typeface );
+			// Ensure typeface is not null; track whether we created it so we can dispose it later
+			SKTypeface createdTypeface = null;
+			if ( typeface == null )
+			{
+				createdTypeface = SKTypeface.CreateDefault();
+				typeface = createdTypeface;
+				if ( typeface == null )
+				{
+					// If we still can't get a typeface, return a single run with null typeface
+					// This will likely cause issues but at least won't crash here
+					yield return new Run()
+					{
+						Start = 0,
+						Length = codePoints.Length,
+						Typeface = null,
+					};
+					yield break;
+				}
+			}
+
+			try
+			{
+				using var font = new SKFont( typeface );
 
 			if ( replacementCharacter != '\0' )
 			{
@@ -184,6 +207,12 @@ namespace Topten.RichTextKit
 					Length = codePoints.Length - runStart,
 					Typeface = typeface,
 				};
+			}
+			}
+			finally
+			{
+				// Dispose the typeface we created (not the caller-supplied one)
+				createdTypeface?.Dispose();
 			}
 		}
 	}

@@ -70,7 +70,8 @@ internal static partial class SyncContext
 		while ( !task.IsCompleted )
 		{
 			EngineLoop.RunAsyncTasks();
-			Thread.Yield();
+			// Small sleep to reduce CPU usage while waiting
+			Thread.Sleep( 1 );
 			IToolsDll.Current?.Spin();
 		}
 
@@ -88,7 +89,8 @@ internal static partial class SyncContext
 		while ( !task.IsCompleted )
 		{
 			EngineLoop.RunAsyncTasks();
-			Thread.Yield();
+			// Small sleep to reduce CPU usage while waiting
+			Thread.Sleep( 1 );
 		}
 
 		if ( task.Exception != null )

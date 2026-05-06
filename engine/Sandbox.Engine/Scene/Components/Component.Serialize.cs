@@ -152,6 +152,8 @@ public abstract partial class Component : BytePack.ISerializer
 		if ( jsonData is null )
 			return;
 
+		var startTime = System.Environment.TickCount64;
+
 		using var sceneScope = Scene.Push();
 
 		// Inject the host object into embedded Action Graphs
@@ -195,6 +197,12 @@ public abstract partial class Component : BytePack.ISerializer
 		}
 
 		CheckRequireComponent();
+
+		var elapsed = System.Environment.TickCount64 - startTime;
+		if ( elapsed > 100 )
+		{
+			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[COMPONENT] PostDeserialize {GetType().FullName} took {elapsed}ms\n" );
+		}
 	}
 
 	/// <summary>

@@ -3139,7 +3139,7 @@
               "CreateAttachments": false,
               "LodOverride": null,
               "MaterialGroup": null,
-              "MaterialOverride": "scenes/avatar/rigwhite/shinywhitefloor.vmat",
+              "MaterialOverride": "scenes/avatar/RigWhite/ShinyWhiteFloor.vmat",
               "Materials": null,
               "Model": "models/dev/box.vmdl",
               "OnComponentDestroy": null,

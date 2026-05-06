@@ -9,7 +9,7 @@ public static partial class EditorUtility
 			if ( AccountInformation.Session is not null )
 				return;
 
-			await AccountInformation.Update();
+			await AccountInformation.Update().ConfigureAwait( false );
 		}
 
 		public static Task Refresh() => AccountInformation.Update();

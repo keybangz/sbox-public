@@ -33,6 +33,7 @@ public partial class Scene : GameObject
 	/// </summary>
 	public bool Load( SceneLoadOptions options )
 	{
+		var loadStart = System.Environment.TickCount64;
 		var sceneFile = options.GetSceneFile();
 
 		if ( !sceneFile.IsValid() )
@@ -73,12 +74,20 @@ public partial class Scene : GameObject
 
 		if ( !IsEditor && options.ShowLoadingScreen )
 		{
+			var loadingScreenStart = System.Environment.TickCount64;
 			StartLoading();
 			LoadingScreen.IsVisible = true;
 			LoadingScreen.Title = "Loading Scene";
+			var loadingScreenElapsed = System.Environment.TickCount64 - loadingScreenStart;
+			if ( loadingScreenElapsed > 100 )
+				System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[SCENE] LoadingScreen setup took {loadingScreenElapsed}ms\n" );
 		}
 
+		var beforeLoadStart = System.Environment.TickCount64;
 		RunEvent<ISceneLoadingEvents>( x => x.BeforeLoad( this, options ) );
+		var beforeLoadElapsed = System.Environment.TickCount64 - beforeLoadStart;
+		if ( beforeLoadElapsed > 100 )
+			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[SCENE] BeforeLoad events took {beforeLoadElapsed}ms\n" );
 
 		if ( sceneFile.Id != Guid.Empty && sceneFile.Id != Id )
 		{
@@ -95,20 +104,34 @@ public partial class Scene : GameObject
 			using var optionsScope = ActionGraph.PushSerializationOptions( sceneFile.SerializationOptions with { ForceUpdateCached = IsEditor } );
 			using var sceneScope = Push();
 
+			// Defer UI PreLayout during scene loading to prevent expensive cascades
+			var previousDeferPreLayout = Sandbox.UI.Panel.DeferPreLayout;
+			Sandbox.UI.Panel.DeferPreLayout = true;
+
 			// Depending on if we load a scene from file or from memory, we need to account for that here
+			var blobStart = System.Environment.TickCount64;
 			using var blobs = BlobDataSerializer.Load( sceneFile.BinaryData, sceneFile.ResourcePath );
 			using var batchGroup = CallbackBatch.Batch();
+			var blobElapsed = System.Environment.TickCount64 - blobStart;
+			if ( blobElapsed > 100 )
+				System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[SCENE] BlobDataSerializer.Load took {blobElapsed}ms\n" );
 
 			// Clear cached binary data now that we've loaded it
 			sceneFile.BinaryData = null;
 
 			if ( sceneFile.GameObjects is not null )
 			{
+				var goStart = System.Environment.TickCount64;
+				int goCount = 0;
 				foreach ( var json in sceneFile.GameObjects )
 				{
 					var go = CreateObject( false );
 					go.Deserialize( json );
+					goCount++;
 				}
+				var goElapsed = System.Environment.TickCount64 - goStart;
+				if ( goElapsed > 100 )
+					System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[SCENE] GameObjects deserialization ({goCount} objects) took {goElapsed}ms\n" );
 			}
 
 			if ( sceneFile.SceneProperties is not null )
@@ -119,6 +142,7 @@ public partial class Scene : GameObject
 			//
 			// Let ISceneLoadingEvents add their own tasks
 			//
+			var eventsStart = System.Environment.TickCount64;
 			List<LoadingContext> sceneLoadingTasks = new();
 			RunEvent<ISceneLoadingEvents>( x =>
 			{
@@ -132,17 +156,31 @@ public partial class Scene : GameObject
 			{
 				AddLoadingTask( task );
 			}
+			var eventsElapsed = System.Environment.TickCount64 - eventsStart;
+			if ( eventsElapsed > 100 )
+				System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[SCENE] ISceneLoadingEvents took {eventsElapsed}ms\n" );
 
 			if ( !IsEditor )
 			{
+				var spawnStart = System.Environment.TickCount64;
 				NetworkSpawnRecursive( null );
+				var spawnElapsed = System.Environment.TickCount64 - spawnStart;
+				if ( spawnElapsed > 100 )
+					System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[SCENE] NetworkSpawnRecursive took {spawnElapsed}ms\n" );
 			}
+
+			// Restore PreLayout deferral - layouts will happen on next frame
+			Sandbox.UI.Panel.DeferPreLayout = previousDeferPreLayout;
 		}
 
 		// Now that we're done, add the system scene
 		if ( !IsEditor && !options.IsAdditive )
 		{
+			var addSysStart = System.Environment.TickCount64;
 			AddSystemScene();
+			var addSysElapsed = System.Environment.TickCount64 - addSysStart;
+			if ( addSysElapsed > 100 )
+				System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[SCENE] AddSystemScene took {addSysElapsed}ms\n" );
 		}
 
 		if ( !options.IsSystemScene )
@@ -150,7 +188,11 @@ public partial class Scene : GameObject
 			// Now we can signal to GameObjectSystems that we have finished loading.
 			// We wrap this in an IsSystemScene check so that it's not called twice
 			// for every scene load.
+			var signalStart = System.Environment.TickCount64;
 			Signal( GameObjectSystem.Stage.SceneLoaded );
+			var signalElapsed = System.Environment.TickCount64 - signalStart;
+			if ( signalElapsed > 100 )
+				System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[SCENE] Signal(SceneLoaded) took {signalElapsed}ms\n" );
 		}
 
 		return true;

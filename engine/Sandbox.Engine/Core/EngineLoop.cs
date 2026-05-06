@@ -127,8 +127,31 @@ internal static class EngineLoop
 	{
 		using var __ = PerformanceStats.Timings.Input.Scope();
 
+#if !WIN
+		// One-shot + rate-limited trace to confirm the native Pump path runs on Linux.
+		// Removable once Wayland input is verified working.
+		if ( !_pumpFirstSeen )
+		{
+			_pumpFirstSeen = true;
+			Log.Info( "[InputDiag] EngineLoop.UpdateInput: first call to g_pInputService.Pump()" );
+		}
+		_pumpCallCount++;
+		if ( _pumpHeartbeat.Elapsed.TotalSeconds >= 2.0 )
+		{
+			Log.Info( $"[InputDiag] g_pInputService.Pump() called {_pumpCallCount} times in last {_pumpHeartbeat.Elapsed.TotalSeconds:F1}s" );
+			_pumpCallCount = 0;
+			_pumpHeartbeat.Restart();
+		}
+#endif
+
 		g_pInputService.Pump();
 	}
+
+#if !WIN
+	private static bool _pumpFirstSeen;
+	private static int _pumpCallCount;
+	private static readonly System.Diagnostics.Stopwatch _pumpHeartbeat = System.Diagnostics.Stopwatch.StartNew();
+#endif
 
 	internal static void FrameStart()
 	{

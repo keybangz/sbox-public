@@ -26,11 +26,19 @@ public static partial class Http
 			PooledConnectionLifetime = TimeSpan.FromMinutes( 2 ),
 			// Must be false — SocketsHttpHandler bypasses DelegatingHandler on redirects, allowing SSRF.
 			AllowAutoRedirect = false,
+			// Add aggressive timeouts to prevent hangs on Linux
+			ConnectTimeout = TimeSpan.FromSeconds( 10 ),
+			// Enable connection pooling for better performance
+			MaxConnectionsPerServer = 20,
+			// Keep connections alive
+			PooledConnectionIdleTimeout = TimeSpan.FromMinutes( 1 ),
 		};
 
 		// Gives us 1 http client per game, so cookies don't persist etc.
 		Client = new HttpClient( new SboxHttpHandler( socketHttpHandler ) );
-		Client.Timeout = TimeSpan.FromMinutes( 120 );
+		// Reduce default timeout from 120 minutes to 30 seconds for most requests
+		// Individual requests can override if needed
+		Client.Timeout = TimeSpan.FromSeconds( 30 );
 	}
 
 	/// <summary>
@@ -186,7 +194,8 @@ internal sealed class SboxHttpHandler : DelegatingHandler
 	protected override async Task<HttpResponseMessage> SendAsync( HttpRequestMessage request, CancellationToken cancellationToken )
 	{
 		HandleRequest( request );
-		var response = await base.SendAsync( request, cancellationToken );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		var response = await base.SendAsync( request, cancellationToken ).ConfigureAwait( false );
 
 		for ( int i = 0; i < MaxRedirects && IsRedirectStatus( response.StatusCode ); i++ )
 		{
@@ -197,7 +206,7 @@ internal sealed class SboxHttpHandler : DelegatingHandler
 
 			ApplyRedirect( request, status, location );
 			HandleRequest( request );
-			response = await base.SendAsync( request, cancellationToken );
+			response = await base.SendAsync( request, cancellationToken ).ConfigureAwait( false );
 		}
 
 		return response;

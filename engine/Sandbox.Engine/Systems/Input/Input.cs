@@ -19,7 +19,6 @@ public static partial class Input
 	public static Vector2 MouseDelta
 	{
 		get => Suppressed ? default : CurrentContext.MouseDelta;
-		set => CurrentContext.MouseDelta = value;
 	}
 
 	/// <summary>
@@ -66,6 +65,10 @@ public static partial class Input
 
 	internal static void AddMouseMovement( Vector2 delta )
 	{
+		// Write to ALL contexts, not just CurrentContext.
+		// This mirrors AddMouseWheel behavior and ensures Linux X11 input (which runs
+		// outside any game context Push scope) reaches all consumers regardless of
+		// which context is current when PollEvents() fires.
 		foreach ( var e in Contexts )
 		{
 			e.AccumMouseDelta += delta;
@@ -104,7 +107,11 @@ public static partial class Input
 		var halfDim = MathF.Max( Screen.Width, Screen.Height ) * 0.5f;
 		if ( halfDim < 1.0f ) halfDim = 1.0f;
 
-		AnalogLook = new( (MouseDelta.y / halfDim) * mouseSensitivity, (-MouseDelta.x / halfDim) * mouseSensitivity, 0 );
+		// Read MouseDelta (post-Flip committed value) not AccumMouseDelta (cleared by Flip).
+		// AddMouseMovement writes to AccumMouseDelta; Flip() promotes it to MouseDelta and clears AccumMouseDelta.
+		// Process() runs after Flip(), so we must read MouseDelta.
+		var rawDelta = CurrentContext?.MouseDelta ?? default;
+		AnalogLook = new( (rawDelta.y / halfDim) * mouseSensitivity, (-rawDelta.x / halfDim) * mouseSensitivity, 0 );
 
 		if ( MouseCursorVisible )
 		{

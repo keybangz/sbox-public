@@ -97,19 +97,40 @@ public partial class Texture
 		}
 	}
 
+	// List of animations pending disposal (waiting for their task to complete)
+	private static List<Animation> PendingDisposal = new();
+
 	internal static void Tick()
 	{
+		// First, process pending disposals non-blocking
+		for ( int i = PendingDisposal.Count - 1; i >= 0; i-- )
+		{
+			var pending = PendingDisposal[i];
+			if ( pending.UpdateTask == null || pending.UpdateTask.IsCompleted )
+			{
+				pending.Dispose();
+				PendingDisposal.RemoveAt( i );
+			}
+		}
+
 		for ( int i = Animations.Count - 1; i >= 0; i-- )
 		{
 			var animation = Animations[i];
 			var task = animation.UpdateTask;
 
-			// Texture has been disposed, remove it from this list.
+			// Texture has been disposed, move to pending disposal (non-blocking)
 			if ( !animation.Texture.TryGetTarget( out var texture ) )
 			{
-				task?.Wait();
 				Animations.RemoveAt( i );
-				animation.Dispose();
+				// If task is running, defer disposal; otherwise dispose immediately
+				if ( task != null && !task.IsCompleted )
+				{
+					PendingDisposal.Add( animation );
+				}
+				else
+				{
+					animation.Dispose();
+				}
 				continue;
 			}
 

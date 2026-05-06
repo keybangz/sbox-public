@@ -321,8 +321,71 @@ public class BaseFileSystem
 	{
 		// Log.Trace( $"CreateFileSystem( {path} ) [{GetFullPath(path)}]" );
 
-		var sub = new Zio.FileSystems.SubFileSystem( system, FixPath( path ), false );
+		var fixedPath = FixPath( path );
+
+		// On Linux, resolve the path to the actual casing on disk so that
+		// SubFileSystem's path validation works correctly when our delegate
+		// returns paths with the actual casing.
+		// Apply to ALL filesystem types (not just CaseInsensitivePhysicalFileSystem)
+		// because AggregateFileSystem and SubFileSystem can also wrap case-sensitive
+		// underlying filesystems on Linux.
+		if ( OperatingSystem.IsLinux() )
+		{
+			var resolvedPath = ResolvePathCaseInsensitive( fixedPath );
+			if ( resolvedPath != null )
+			{
+				fixedPath = resolvedPath;
+			}
+		}
+
+		var sub = new Zio.FileSystems.SubFileSystem( system, fixedPath, false );
 		return new BaseFileSystem( sub );
+	}
+
+	/// <summary>
+	/// Resolve a path case-insensitively on Linux.
+	/// Returns the path with actual casing on disk, or null if not found.
+	/// </summary>
+	private string ResolvePathCaseInsensitive( string path )
+	{
+		if ( !OperatingSystem.IsLinux() )
+			return path;
+
+		// Use the filesystem to check if the path exists and get its actual casing
+		try
+		{
+			// Try to enumerate the parent directory and find the matching entry
+			var segments = path.Split( new[] { '/' }, StringSplitOptions.RemoveEmptyEntries );
+			var currentPath = "/";
+
+			foreach ( var segment in segments )
+			{
+				var upath = new Zio.UPath( currentPath );
+				if ( !system.DirectoryExists( upath ) )
+					return null;
+
+				var found = false;
+				foreach ( var entry in system.EnumeratePaths( upath, "*", SearchOption.TopDirectoryOnly, Zio.SearchTarget.Both ) )
+				{
+					var entryName = entry.FullName.Split( '/' ).Last();
+					if ( string.Equals( entryName, segment, StringComparison.OrdinalIgnoreCase ) )
+					{
+						currentPath = entry.ToString();
+						found = true;
+						break;
+					}
+				}
+
+				if ( !found )
+					return null;
+			}
+
+			return currentPath;
+		}
+		catch
+		{
+			return null;
+		}
 	}
 
 

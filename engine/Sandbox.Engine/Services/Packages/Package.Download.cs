@@ -44,8 +44,10 @@ public partial class Package
 		options.Loading?.LoadingProgress( LoadingProgress.Create( $"Fetching '{Title}' Information" ) );
 
 		// make sure manifest is downloaded
-		await rev.DownloadManifestAsync( token );
-
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		await rev.DownloadManifestAsync( token ).ConfigureAwait( false );
+		await MainThread.Wait(); // switch back to main thread - TryAddToDownloadQueue requires it
+		
 		if ( rev.Manifest == null ) return null;
 
 		var entries = rev.Manifest.Files ?? Array.Empty<ManifestSchema.File>();
@@ -140,7 +142,8 @@ public partial class Package
 				options.Loading?.LoadingProgress( progress );
 			}
 
-			await Task.Delay( 16 );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await Task.Delay( 16 ).ConfigureAwait( false );
 
 			if ( hasError )
 			{
@@ -224,7 +227,8 @@ public partial class Package
 	{
 		var semaphore = activeDownloadLocks.GetOrAdd( entry.AbsolutePath, key => new SemaphoreSlim( 1 ) );
 
-		await semaphore.WaitAsync( token );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		await semaphore.WaitAsync( token ).ConfigureAwait( false );
 
 		try
 		{
@@ -233,20 +237,23 @@ public partial class Package
 
 			if ( entry.File.Size == 0 )
 			{
-				await System.IO.File.WriteAllTextAsync( entry.AbsolutePath, "", token );
+				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+				await System.IO.File.WriteAllTextAsync( entry.AbsolutePath, "", token ).ConfigureAwait( false );
 			}
 			else
 			{
 				var url = $"{entry.File.Url}";
 
-				var success = await Sandbox.Utility.Web.DownloadFile( url, entry.AbsolutePath, token, progress );
+				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+				var success = await Sandbox.Utility.Web.DownloadFile( url, entry.AbsolutePath, token, progress ).ConfigureAwait( false );
 				if ( !success ) throw new System.Exception( $"Failed to download file {url} to {entry.AbsolutePath}" );
 			}
 
 			//
 			// Make sure crc matches
 			//
-			if ( !await CheckFileCrc( entry.AbsolutePath, entry.File, token ) )
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			if ( !await CheckFileCrc( entry.AbsolutePath, entry.File, token ).ConfigureAwait( false ) )
 			{
 				// we should probably throw exception and abandon here?
 				Log.Warning( $"Downloaded file {entry.AbsolutePath} - checkfile failed" );
@@ -279,7 +286,12 @@ public partial class Package
 
 		if ( withCode )
 		{
-			await IGameInstanceDll.Current?.LoadPackageAssembliesAsync( this );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			var loadTask = IGameInstanceDll.Current?.LoadPackageAssembliesAsync( this );
+			if ( loadTask != null )
+			{
+				await loadTask.ConfigureAwait( false );
+			}
 		}
 
 		return fs;

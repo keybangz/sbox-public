@@ -1,25 +1,56 @@
-﻿using System.Runtime.InteropServices;
+﻿using System.IO;
+using System.Runtime.InteropServices;
+using Sandbox;
 
 namespace NativeEngine;
 
 /// <summary>
-/// Mimmicks the engine internal CreateInterface system, allowing us to 
+/// Mimmicks the engine internal CreateInterface system, allowing us to
 /// get the interfaces without asking native.
 /// </summary>
 internal static class CreateInterface
 {
-	static Dictionary<string, IntPtr> loadedModules = new();
+	static Dictionary<string, IntPtr> loadedModules = new( StringComparer.OrdinalIgnoreCase );
 
 	static IntPtr LoadModule( string dll )
 	{
 		if ( loadedModules.TryGetValue( dll, out var module ) )
 			return module;
 
-		if ( !NativeLibrary.TryLoad( dll, out module ) )
-			return default;
+		// Try loading directly
+		if ( NativeLibrary.TryLoad( dll, out module ) )
+		{
+			loadedModules[dll] = module;
+			return module;
+		}
 
-		loadedModules[dll] = module;
-		return module;
+		// Try with full paths based on platform
+		var gameDir = AppDomain.CurrentDomain.BaseDirectory;
+		string binFolder;
+		if ( OperatingSystem.IsLinux() )
+			binFolder = "linuxsteamrt64";
+		else if ( OperatingSystem.IsMacOS() )
+			binFolder = "osx64";
+		else
+			binFolder = "win64";
+
+		// Try game root
+		var fullPath = Path.Combine( gameDir, dll );
+		if ( NativeLibrary.TryLoad( fullPath, out module ) )
+		{
+			loadedModules[dll] = module;
+			return module;
+		}
+
+		// Try bin subdirectory
+		fullPath = Path.Combine( gameDir, "bin", binFolder, dll );
+		if ( NativeLibrary.TryLoad( fullPath, out module ) )
+		{
+			loadedModules[dll] = module;
+			return module;
+		}
+
+		return default;
 	}
 
 	[UnmanagedFunctionPointer( CallingConvention.Cdecl )]

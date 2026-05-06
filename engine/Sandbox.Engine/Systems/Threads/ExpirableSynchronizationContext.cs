@@ -339,11 +339,17 @@ internal class ExpirableSynchronizationContext : SynchronizationContext
 		d( state );
 	}
 
+#pragma warning disable CS0414 // assigned but value never used — intentional debug fields
+	private static int _postCount = 0;
+	private static int _globalOp = 0;
+#pragma warning restore CS0414
+	private static bool SyncDebugLogging => System.Environment.GetEnvironmentVariable( "SBOX_SYNC_DEBUG" ) == "1";
+
 	public override void Post( SendOrPostCallback d, object state )
 	{
+		var target = GetCurrentContext();
 		if ( !CheckValid( state, out var isCancelled ) ) return;
 
-		var target = GetCurrentContext();
 		var data = new Data( d, state, isCancelled ? this : target );
 
 		target.m_queue.Writer.TryWrite( data );
@@ -384,8 +390,15 @@ internal class ExpirableSynchronizationContext : SynchronizationContext
 		public bool IsCompleted { get; set; }
 	}
 
+	private static int _processQueueCount = 0;
+	private static Stopwatch _callbackStopwatch = new Stopwatch();
+	private static Stopwatch _processQueueStopwatch = new Stopwatch();
+	private const double CallbackThresholdMs = 50;
+	private const double ProcessQueueTimeBudgetMs = 16; // Aim for 60fps frame budget
+
 	public void ProcessQueue()
 	{
+		_processQueueCount++;
 		if ( _sCurrentProcessingContext != null )
 		{
 			return;
@@ -400,6 +413,8 @@ internal class ExpirableSynchronizationContext : SynchronizationContext
 
 		Interlocked.Increment( ref Frame );
 		Interlocked.Increment( ref _currentlyProcessingThreadCount );
+
+		_processQueueStopwatch.Restart();
 
 		try
 		{
@@ -424,7 +439,17 @@ internal class ExpirableSynchronizationContext : SynchronizationContext
 
 				try
 				{
+					_callbackStopwatch.Restart();
 					data.Callback( data.State );
+					if ( SyncDebugLogging )
+					{
+						var elapsed = _callbackStopwatch.Elapsed.TotalMilliseconds;
+						if ( elapsed > CallbackThresholdMs )
+						{
+							var name = data.State is Delegate deleg ? deleg.ToSimpleString() : data.State?.GetType()?.Name ?? "unknown";
+							System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] SyncContext callback took {elapsed:F0}ms: {name}\n" );
+						}
+					}
 				}
 				catch ( TaskCanceledException )
 				{
@@ -447,6 +472,12 @@ internal class ExpirableSynchronizationContext : SynchronizationContext
 				maxProcess--;
 
 				if ( maxProcess <= 0 )
+					break;
+
+				// Time budget: yield after 16ms to keep UI responsive
+				// Note: This won't help if a single callback takes 30+ seconds,
+				// but it will help with many small callbacks accumulating
+				if ( _processQueueStopwatch.Elapsed.TotalMilliseconds > ProcessQueueTimeBudgetMs )
 					break;
 			}
 		}

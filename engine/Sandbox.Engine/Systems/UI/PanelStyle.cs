@@ -277,14 +277,42 @@ public sealed class PanelStyle : Styles
 		BackgroundImage = texture;
 	}
 
+	// Monotonically-increasing token: incremented each time a new image load is requested.
+	// The async callback only applies its result if the token hasn't advanced since the load started.
+	private int _backgroundImageVersion = 0;
+
 	public void SetBackgroundImage( string image )
 	{
-		SetBackgroundImage( Texture.Load( image ) );
+		// Increment the version so any in-flight load for a previous image is ignored
+		var version = System.Threading.Interlocked.Increment( ref _backgroundImageVersion );
+		_ = SetBackgroundImageInternalAsync( image, version );
+	}
+
+	private async Task SetBackgroundImageInternalAsync( string image, int version )
+	{
+		try
+		{
+			var texture = await Texture.LoadAsync( image ).ConfigureAwait( false );
+
+			// Only apply if this is still the most-recently requested image and the panel is valid
+			if ( _backgroundImageVersion == version && panel != null && panel.IsValid )
+			{
+				SetBackgroundImage( texture );
+			}
+		}
+		catch ( System.Exception )
+		{
+			// Panel may have been deleted during async load, ignore
+		}
 	}
 
 	public async Task SetBackgroundImageAsync( string image )
 	{
-		SetBackgroundImage( await Texture.LoadAsync( image ) );
+		var texture = await Texture.LoadAsync( image ).ConfigureAwait( false );
+		if ( panel != null && panel.IsValid )
+		{
+			SetBackgroundImage( texture );
+		}
 	}
 
 	public void SetRect( Rect rect )

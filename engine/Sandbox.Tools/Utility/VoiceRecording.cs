@@ -1,4 +1,21 @@
-﻿using System.Runtime.InteropServices;
+#if LINUX
+namespace Editor;
+
+public static partial class EditorUtility
+{
+	public static class VoiceRecording
+	{
+		public static void Start( int samples = 44100, int bytesPerSecond = 192000 ) { }
+
+		public static void Stop() { }
+
+		public static void Flush() { }
+
+		public static bool Save( string path ) => false;
+	}
+}
+#else
+using System.Runtime.InteropServices;
 namespace Editor;
 
 public static partial class EditorUtility
@@ -45,3 +62,4 @@ public static partial class EditorUtility
 		}
 	}
 }
+#endif

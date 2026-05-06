@@ -163,11 +163,62 @@ public partial class Texture : Resource, IDisposable
 			var n = native;
 			native = IntPtr.Zero;
 
-			// Evict from NativeResourceCache so a new wrapper can be created
-			// if the same native pointer is reused (e.g. RenderTarget pool, TextBlock rebuild).
-			NativeResourceCache.Remove( n.GetBindingPtr().ToInt64() );
+			// Defensive check: verify handle is still valid before attempting disposal
+			// This prevents double-free and use-after-free issues
+			try
+			{
+				if ( !n.IsStrongHandleValid() )
+				{
+					if ( TextureDebug.Enabled )
+						Log.Warning( $"[Texture] Dispose: attempted to dispose invalid texture handle" );
+					return;
+				}
 
-			MainThread.Queue( () => n.DestroyStrongHandle() );
+				// Get binding pointer before destruction for cache eviction
+				var bindingPtr = n.GetBindingPtr();
+				if ( bindingPtr == IntPtr.Zero )
+				{
+					if ( TextureDebug.Enabled )
+						Log.Warning( $"[Texture] Dispose: texture has null binding pointer, skipping" );
+					return;
+				}
+
+				var instanceId = bindingPtr.ToInt64();
+
+				if ( TextureDebug.Enabled )
+					Log.Info( $"[Texture] Dispose: disposing texture 0x{instanceId:X}" );
+
+				// Evict from NativeResourceCache so a new wrapper can be created
+				// if the same native pointer is reused (e.g. RenderTarget pool, TextBlock rebuild).
+				NativeResourceCache.Remove( instanceId );
+
+				// Queue destruction on main thread to avoid threading issues
+				MainThread.Queue( () =>
+				{
+					try
+					{
+						// Double-check validity before actual destruction
+						if ( n.IsStrongHandleValid() )
+						{
+							if ( TextureDebug.Enabled )
+								Log.Info( $"[Texture] Dispose: destroying handle 0x{instanceId:X}" );
+							n.DestroyStrongHandle();
+						}
+						else if ( TextureDebug.Enabled )
+						{
+							Log.Warning( $"[Texture] Dispose: handle 0x{instanceId:X} became invalid before destruction" );
+						}
+					}
+					catch ( Exception ex )
+					{
+						Log.Error( $"[Texture] Exception during DestroyStrongHandle 0x{instanceId:X}: {ex.Message}" );
+					}
+				} );
+			}
+			catch ( Exception ex )
+			{
+				Log.Error( $"[Texture] Exception during texture disposal: {ex.Message}" );
+			}
 		}
 
 		base.Destroy();

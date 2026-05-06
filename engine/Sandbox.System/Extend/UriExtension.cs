@@ -1,20 +1,93 @@
 ﻿using System.Net.Sockets;
 using System.Net;
+using System.Collections.Concurrent;
 
 namespace Sandbox;
 
 public static partial class SandboxSystemExtensions
 {
-	/// <summary>
-	/// Does this Uri resolve to a private range IP address?
-	/// </summary>
-	internal static bool IsPrivate( this Uri uri )
+	// Cache DNS results to avoid repeated slow lookups
+	private static readonly ConcurrentDictionary<string, (bool IsPrivate, DateTime CacheTime)> _dnsCache = new();
+	private static readonly TimeSpan _dnsCacheExpiry = TimeSpan.FromMinutes( 5 );
+
+	// Known public domains that don't need DNS checks (Facepunch CDN, Steam, etc.)
+	private static readonly HashSet<string> _knownPublicDomains = new( StringComparer.OrdinalIgnoreCase )
 	{
-		// don't allow any domains that resolve to private or loopback ip addresses
-		if ( Dns.GetHostEntry( uri.DnsSafeHost ).AddressList.Any( x => x.IsPrivate() ) )
+		"facepunch.com",
+		"sbox.facepunch.com",
+		"asset.party",
+		"files.facepunch.com",
+		"steamcommunity.com",
+		"steamstatic.com",
+		"steampowered.com",
+		"cloudflare.com",
+		"githubusercontent.com",
+		"github.com",
+		"s3.amazonaws.com",
+		"sbox.game",
+	};
+
+	/// <summary>
+	/// Returns true if <paramref name="host"/> is an exact match for or a subdomain of
+	/// <paramref name="domain"/>.  Requires a proper dot boundary so that, for example,
+	/// "evilfacepunch.com" is NOT treated as a subdomain of "facepunch.com".
+	/// </summary>
+	private static bool IsHostInDomain( string host, string domain )
+	{
+		if ( string.Equals( host, domain, StringComparison.OrdinalIgnoreCase ) )
+			return true;
+
+		// subdomain check: host must end with ".<domain>"
+		if ( host.EndsWith( "." + domain, StringComparison.OrdinalIgnoreCase ) )
 			return true;
 
 		return false;
+	}
+
+	/// <summary>
+	/// Does this Uri resolve to a private range IP address?
+	/// Uses caching to avoid slow repeated DNS lookups on Linux.
+	/// </summary>
+	internal static bool IsPrivate( this Uri uri )
+	{
+		var host = uri.DnsSafeHost;
+
+		// Fast path: skip DNS for known public domains (exact match or dot-boundary subdomain)
+		foreach ( var domain in _knownPublicDomains )
+		{
+			if ( IsHostInDomain( host, domain ) )
+				return false;
+		}
+
+		// Check cache first
+		if ( _dnsCache.TryGetValue( host, out var cached ) &&
+		     DateTime.UtcNow - cached.CacheTime < _dnsCacheExpiry )
+		{
+			return cached.IsPrivate;
+		}
+
+		// Perform DNS lookup with timeout
+		try
+		{
+			var task = Dns.GetHostEntryAsync( host );
+			if ( !task.Wait( TimeSpan.FromSeconds( 2 ) ) )
+			{
+				// DNS lookup timed out - fail closed: treat as private to prevent SSRF
+				_dnsCache[host] = (true, DateTime.UtcNow);
+				return true;
+			}
+
+			var entry = task.Result;
+			var isPrivate = entry.AddressList.Any( x => x.IsPrivate() );
+			_dnsCache[host] = (isPrivate, DateTime.UtcNow);
+			return isPrivate;
+		}
+		catch
+		{
+			// DNS lookup failed - fail closed: treat as private to prevent SSRF
+			_dnsCache[host] = (true, DateTime.UtcNow);
+			return true;
+		}
 	}
 
 	/// <summary>

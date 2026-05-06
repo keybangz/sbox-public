@@ -282,101 +282,188 @@ public sealed class VideoPlayer : IDisposable, IWeakInteropHandle
 
 	internal void OnInitAudioInternal( int sampleRate, int channels )
 	{
-		SampleRate = sampleRate;
-		Channels = channels;
+		try
+		{
+			SampleRate = sampleRate;
+			Channels = channels;
 
-		MainThread.Queue( OnAudioReadyInternal );
+			MainThread.Queue( OnAudioReadyInternal );
+		}
+		catch ( System.Exception e )
+		{
+			Log.Warning( e, "VideoPlayer.OnInitAudioInternal failed" );
+		}
 	}
 
 	internal void OnFreeAudioInternal()
 	{
-		MainThread.Queue( FreeAudio );
+		try
+		{
+			MainThread.Queue( FreeAudio );
+		}
+		catch ( System.Exception e )
+		{
+			Log.Warning( e, "VideoPlayer.OnFreeAudioInternal failed" );
+		}
 	}
 
 	private void FreeAudio()
 	{
-		Sound?.Dispose();
-		Sound = null;
+		try
+		{
+			Sound?.Dispose();
+			Sound = null;
+		}
+		catch ( System.Exception e )
+		{
+			Log.Warning( e, "VideoPlayer.FreeAudio failed" );
+		}
 	}
 
 	internal void OnAudioReadyInternal()
 	{
-		FreeAudio();
-
-		var stream = native.GetAudioStream();
-		if ( stream is not null )
+		try
 		{
-			Sound = stream.Play();
-			if ( Sound is not null )
-			{
-				Sound.Position = Audio.Position;
-				Sound.ListenLocal = Audio.ListenLocal;
-				Sound.TargetMixer = Audio.TargetMixer;
-				Sound.Volume = Audio.Volume;
-				Sound.Distance = Audio.Distance;
-				Sound.Falloff = Audio.Falloff;
-				Sound.LipSync.Enabled = Audio.LipSync;
-			}
-		}
+			FreeAudio();
 
-		OnAudioReady?.Invoke();
+			if ( !native.IsValid )
+				return;
+
+			var stream = native.GetAudioStream();
+			if ( stream is not null )
+			{
+				Sound = stream.Play();
+				if ( Sound is not null && Audio is not null )
+				{
+					Sound.Position = Audio.Position;
+					Sound.ListenLocal = Audio.ListenLocal;
+					Sound.TargetMixer = Audio.TargetMixer;
+					Sound.Volume = Audio.Volume;
+					Sound.Distance = Audio.Distance;
+					Sound.Falloff = Audio.Falloff;
+					Sound.LipSync.Enabled = Audio.LipSync;
+				}
+			}
+
+			OnAudioReady?.Invoke();
+		}
+		catch ( System.Exception e )
+		{
+			Log.Warning( e, "VideoPlayer.OnAudioReadyInternal failed" );
+		}
 	}
 
 	internal void OnFinishedInternal()
 	{
-		MainThread.Queue( () =>
+		try
 		{
-			OnFinished?.Invoke();
-		} );
+			MainThread.Queue( () =>
+			{
+				OnFinished?.Invoke();
+			} );
+		}
+		catch ( System.Exception e )
+		{
+			Log.Warning( e, "VideoPlayer.OnFinishedInternal failed" );
+		}
 	}
 
 	internal void OnRepeatedInternal()
 	{
-		MainThread.Queue( () =>
+		try
 		{
-			OnRepeated?.Invoke();
-		} );
+			MainThread.Queue( () =>
+			{
+				OnRepeated?.Invoke();
+			} );
+		}
+		catch ( System.Exception e )
+		{
+			Log.Warning( e, "VideoPlayer.OnRepeatedInternal failed" );
+		}
 	}
 
 	internal void OnTextureCreatedInternal()
 	{
-		using var tex = Texture.FromNative( native.GetTexture() );
-		Texture.CopyFrom( tex );
-		Texture.IsLoaded = true;
+		try
+		{
+			if ( !native.IsValid )
+				return;
+
+			var nativeTex = native.GetTexture();
+			if ( nativeTex.IsNull )
+				return;
+
+			using var tex = Texture.FromNative( nativeTex );
+			if ( tex is null || Texture is null )
+				return;
+
+			Texture.CopyFrom( tex );
+			Texture.IsLoaded = true;
+		}
+		catch ( System.Exception e )
+		{
+			Log.Warning( e, "VideoPlayer.OnTextureCreatedInternal failed" );
+		}
 	}
 
 	internal bool WantsTextureData() => OnTextureData != null;
 
 	internal unsafe void OnTextureDataInternal( IntPtr data, int width, int height )
 	{
-		var size = new Vector2( width, height );
-		var dataSpan = new ReadOnlySpan<byte>( data.ToPointer(), width * height * 4 );
+		try
+		{
+			if ( data == IntPtr.Zero || width <= 0 || height <= 0 )
+				return;
 
-		OnTextureData?.Invoke( dataSpan, size );
+			var size = new Vector2( width, height );
+			var dataSpan = new ReadOnlySpan<byte>( data.ToPointer(), width * height * 4 );
+
+			OnTextureData?.Invoke( dataSpan, size );
+		}
+		catch ( System.Exception e )
+		{
+			Log.Warning( e, "VideoPlayer.OnTextureDataInternal failed" );
+		}
 	}
 
 	internal void OnLoadedInternal()
 	{
-		MainThread.Queue( () =>
+		try
 		{
-			OnLoaded?.Invoke();
-		} );
+			MainThread.Queue( () =>
+			{
+				OnLoaded?.Invoke();
+			} );
+		}
+		catch ( System.Exception e )
+		{
+			Log.Warning( e, "VideoPlayer.OnLoadedInternal failed" );
+		}
 	}
 
 	public void Dispose()
 	{
-		FreeAudio();
-
-		Texture.ParentObject = null;
-
-		if ( native.IsValid )
+		try
 		{
-			native.Destroy();
-			native = IntPtr.Zero;
-		}
+			FreeAudio();
 
-		InteropSystem.FreeWeak( this );
-		GC.SuppressFinalize( this );
+			if ( Texture is not null )
+				Texture.ParentObject = null;
+
+			if ( native.IsValid )
+			{
+				native.Destroy();
+				native = IntPtr.Zero;
+			}
+
+			InteropSystem.FreeWeak( this );
+			GC.SuppressFinalize( this );
+		}
+		catch ( System.Exception e )
+		{
+			Log.Warning( e, "VideoPlayer.Dispose failed" );
+		}
 	}
 
 

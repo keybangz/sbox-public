@@ -29,15 +29,17 @@ namespace Sandbox.Twitch
 
 			try
 			{
-				await _webSocket.Connect( EndpointURL );
+				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+				await _webSocket.Connect( EndpointURL ).ConfigureAwait( false );
 
-				await _webSocket.Send( "CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership" );
-				await _webSocket.Send( $"PASS oauth:{Engine.Streamer.Token}" );
-				await _webSocket.Send( $"NICK {Username}" );
+				await _webSocket.Send( "CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership" ).ConfigureAwait( false );
+				await _webSocket.Send( $"PASS oauth:{Engine.Streamer.Token}" ).ConfigureAwait( false );
+				await _webSocket.Send( $"NICK {Username}" ).ConfigureAwait( false );
 
 				while ( !fullyConnected )
 				{
-					await Task.Delay( 100 );
+					// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+					await Task.Delay( 100 ).ConfigureAwait( false );
 
 					if ( _webSocket == null )
 						return false;
@@ -51,8 +53,9 @@ namespace Sandbox.Twitch
 
 				Log.Warning( e, $"Failed to connect to {EndpointURL}, trying again in 1 second" );
 
-				await Task.Delay( 1000 );
-				return await Connect();
+				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+				await Task.Delay( 1000 ).ConfigureAwait( false );
+				return await Connect().ConfigureAwait( false );
 			}
 		}
 

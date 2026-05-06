@@ -37,7 +37,8 @@ public static partial class MenuUtility
 		var flags = GameLoadingFlags.Host | GameLoadingFlags.Reload;
 		if ( Application.IsEditor ) flags |= GameLoadingFlags.Developer; // todo - is the package we're loading a local package
 
-		await IGameInstanceDll.Current.LoadGamePackageAsync( ident, flags, ct );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		await IGameInstanceDll.Current.LoadGamePackageAsync( ident, flags, ct ).ConfigureAwait( false );
 	}
 
 	static bool _isJoiningLobby;

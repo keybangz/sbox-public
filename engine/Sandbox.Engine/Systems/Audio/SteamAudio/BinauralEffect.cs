@@ -5,6 +5,20 @@ class BinauralEffect : IDisposable
 	[ConVar] public static float snd_dir_power { get; set; } = 0.80f;
 	[ConVar] public static bool snd_steamaudio { get; set; } = true;
 
+	// On Linux, Steam Audio context creation fails, so we disable it
+	private static bool _steamAudioAvailable = CheckSteamAudioAvailable();
+
+	private static bool CheckSteamAudioAvailable()
+	{
+		// Disable Steam Audio on Linux for now - context creation fails
+		if ( System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform( System.Runtime.InteropServices.OSPlatform.Linux ) )
+		{
+			Logging.GetLogger( "SteamAudio" ).Warning( "Steam Audio disabled on Linux due to context initialization issues" );
+			return false;
+		}
+		return true;
+	}
+
 	PerChannel<float> _gains;
 	internal CBinauralEffect _native;
 
@@ -12,9 +26,9 @@ class BinauralEffect : IDisposable
 	{
 		// We self-compile Steam Audio with Binaural Effect on Windows, don't bother on other platforms for now
 		if ( !OperatingSystem.IsWindows() )
-			snd_steamaudio = false;
+			return;
 
-		if ( snd_steamaudio )
+		if ( snd_steamaudio && _steamAudioAvailable )
 		{
 			_native = CBinauralEffect.Create();
 		}

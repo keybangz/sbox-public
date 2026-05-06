@@ -19,22 +19,65 @@ using System.Runtime.InteropServices;
 
 internal static class NetCore
 {
-	[UnmanagedCallersOnly]
+	private static bool DebugLoggingEnabled =>
+		string.Equals( System.Environment.GetEnvironmentVariable( "SBOX_NETCORE_DEBUG" ), "1", StringComparison.Ordinal );
+
+	private static void DebugLog( string message )
+	{
+		if ( !DebugLoggingEnabled )
+			return;
+
+		System.IO.File.AppendAllText( "/tmp/netcore_debug.txt", message + "\n" );
+	}
+
+	// Delegate type for the entry point
+	[UnmanagedFunctionPointer( CallingConvention.Cdecl )]
+	public delegate int InitializeEngineDelegate( IntPtr gameFolderPtr );
+
+	// The actual implementation (without UnmanagedCallersOnly)
+	public static int InitializeEngineImpl( IntPtr gameFolderPtr )
+	{
+		try
+		{
+			DebugLog( "[NetCore] InitializeEngineImpl called" );
+
+			var gameFolder = Marshal.PtrToStringUTF8( gameFolderPtr );
+			DebugLog( $"[NetCore] gameFolder={gameFolder}" );
+
+			// Use Path.Combine for cross-platform compatibility
+			var managedFolder = System.IO.Path.Combine( gameFolder, "bin", "managed" );
+			DebugLog( $"[NetCore] managedFolder={managedFolder}" );
+
+			var assemblyPath = System.IO.Path.Combine( managedFolder, "Sandbox.Engine.dll" );
+			DebugLog( $"[NetCore] Loading assembly: {assemblyPath}" );
+
+			var assembly = Assembly.LoadFrom( assemblyPath );
+			DebugLog( $"[NetCore] Assembly loaded: {assembly.FullName}" );
+
+			var type = assembly.GetTypes().Where( x => x.Name == "NetCore" ).FirstOrDefault();
+			DebugLog( $"[NetCore] Found type: {type?.FullName}" );
+
+			var method = type.GetMethod( "InitializeInterop", BindingFlags.Static | BindingFlags.NonPublic );
+			DebugLog( $"[NetCore] Found method: {method?.Name}" );
+
+			DebugLog( "[NetCore] Invoking InitializeInterop..." );
+			method.Invoke( null, new object[] { gameFolder } );
+			DebugLog( "[NetCore] InitializeInterop completed" );
+
+			return 0;
+		}
+		catch ( Exception ex )
+		{
+			DebugLog( $"[NetCore] ERROR: {ex}" );
+			return -1;
+		}
+	}
+
+	// Entry point called by native code
+	[UnmanagedCallersOnly( CallConvs = new[] { typeof( System.Runtime.CompilerServices.CallConvCdecl ) } )]
 	public static int InitializeEngine( IntPtr gameFolderPtr )
 	{
-		//
-		// This should contain the minimal amount of logic needed to call InitializeInterop
-		//
-
-		var gameFolder = Marshal.PtrToStringUTF8( gameFolderPtr );
-		var managedFolder = $"{gameFolder}\\bin\\managed\\";
-
-		var assembly = Assembly.LoadFrom( $"{managedFolder}Sandbox.Engine.dll" );
-		var type = assembly.GetTypes().Where( x => x.Name == "NetCore" ).FirstOrDefault();
-		var method = type.GetMethod( "InitializeInterop", BindingFlags.Static | BindingFlags.NonPublic );
-
-		method.Invoke( null, new object[] { gameFolder } );
-
-		return 0;
+		DebugLog( "[NetCore] InitializeEngine called" );
+		return InitializeEngineImpl( gameFolderPtr );
 	}
 }

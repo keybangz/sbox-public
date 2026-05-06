@@ -111,24 +111,28 @@ namespace Steamworks
 			if ( !RequestUserInformation( steamid, nameonly ) )
 				return;
 
-			await Task.Delay( 100 );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await Task.Delay( 100 ).ConfigureAwait( false );
 
 			while ( RequestUserInformation( steamid, nameonly ) )
 			{
-				await Task.Delay( 50 );
+				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+				await Task.Delay( 50 ).ConfigureAwait( false );
 			}
 
 			//
 			// And extra wait here seems to solve avatars loading as [?]
 			//
-			await Task.Delay( 500 );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await Task.Delay( 500 ).ConfigureAwait( false );
 		}
 
 		internal static async Task<Data.Image?> GetSmallAvatarAsync( SteamId steamid )
 		{
 			if ( !IsInstalled ) return null;
 
-			await CacheUserInformationAsync( steamid, false );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await CacheUserInformationAsync( steamid, false ).ConfigureAwait( false );
 			return SteamUtils.GetImage( Internal.GetSmallFriendAvatar( steamid ) );
 		}
 
@@ -136,7 +140,8 @@ namespace Steamworks
 		{
 			if ( !IsInstalled ) return null;
 
-			await CacheUserInformationAsync( steamid, false );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await CacheUserInformationAsync( steamid, false ).ConfigureAwait( false );
 			return SteamUtils.GetImage( Internal.GetMediumFriendAvatar( steamid ) );
 		}
 
@@ -144,14 +149,16 @@ namespace Steamworks
 		{
 			if ( !IsInstalled ) return null;
 
-			await CacheUserInformationAsync( steamid, false );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			await CacheUserInformationAsync( steamid, false ).ConfigureAwait( false );
 
 			var imageid = Internal.GetLargeFriendAvatar( steamid );
 
 			// Wait for the image to download
 			while ( imageid == -1 )
 			{
-				await Task.Delay( 50 );
+				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+				await Task.Delay( 50 ).ConfigureAwait( false );
 				imageid = Internal.GetLargeFriendAvatar( steamid );
 			}
 

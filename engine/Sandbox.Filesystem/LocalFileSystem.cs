@@ -1,4 +1,6 @@
-﻿namespace Sandbox;
+﻿using System;
+
+namespace Sandbox;
 
 /// <summary>
 /// A directory on a disk
@@ -6,6 +8,18 @@
 internal class LocalFileSystem : BaseFileSystem
 {
 	Zio.FileSystems.PhysicalFileSystem Physical { get; }
+
+	/// <summary>
+	/// Enable debug logging for filesystem operations.
+	/// Set SBOX_FS_DEBUG=1 environment variable to enable.
+	/// </summary>
+	private static bool DebugLogging => Environment.GetEnvironmentVariable( "SBOX_FS_DEBUG" ) == "1";
+
+	private static void DebugLog( string message )
+	{
+		if ( !DebugLogging ) return;
+		Console.WriteLine( $"[LocalFileSystem] {message}" );
+	}
 
 	internal LocalFileSystem( string rootFolder, bool makereadonly = false )
 	{
@@ -25,10 +39,12 @@ internal class LocalFileSystem : BaseFileSystem
 
 		var rootPath = Physical.ConvertPathFromInternal( rootFolder );
 		system = new Zio.FileSystems.SubFileSystem( Physical, rootPath );
+		DebugLog( $"Created SubFileSystem with root='{rootPath}'" );
 
 		if ( makereadonly )
 		{
 			system = new Zio.FileSystems.ReadOnlyFileSystem( system );
+			DebugLog( "Wrapped in ReadOnlyFileSystem" );
 		}
 	}
 

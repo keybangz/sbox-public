@@ -18,7 +18,8 @@
       "NoWarn": "1701;1702;1591;",
       "TreatWarningsAsErrors": true,
       "AssemblyReferences": [
-        "Sandbox.Menu"
+        "Sandbox.Menu",
+        "package.local.base"
       ]
     },
     "CsProjName": "",

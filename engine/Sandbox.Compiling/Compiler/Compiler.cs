@@ -210,21 +210,41 @@ public sealed partial class Compiler : IDisposable
 		var output = new List<PortableExecutableReference>( FrameworkReferences.All.Values );
 		var foundHash = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
 
+		System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildReferencesAsync] {Name} refs={string.Join(',', archive.References)}\n" );
 		foreach ( var name in archive.References )
 		{
 			// We already got it from a package reference
 			// this is cool for when referencing something that includes package.base.dll
 			if ( foundHash.Contains( name ) )
+			{
+				System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildReferencesAsync] {Name} SKIP (already found): {name}\n" );
 				continue;
+			}
 
 			// FindReferenceAsync throws if not found
-
-			if ( await Group.FindReferenceAsync( name, this ) is { } mr )
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			PortableExecutableReference mr = null;
+			try
 			{
+				mr = await Group.FindReferenceAsync( name, this ).ConfigureAwait( false );
+			}
+			catch ( System.Exception ex )
+			{
+				System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildReferencesAsync] {Name} EXCEPTION for {name}: {ex.Message}\n" );
+				throw;
+			}
+			if ( mr is not null )
+			{
+				System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildReferencesAsync] {Name} FOUND: {name} -> {mr.FilePath ?? "(stream)"}\n" );
 				log.Trace( $"Found reference: {name}" );
 				output.Add( mr );
 			}
+			else
+			{
+				System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildReferencesAsync] {Name} NULL (self-ref or cyclic): {name}\n" );
+			}
 		}
+		System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildReferencesAsync] {Name} total refs resolved: {output.Count}\n" );
 
 		return output;
 	}

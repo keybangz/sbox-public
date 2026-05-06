@@ -39,6 +39,7 @@ public static class Launcher
 		{
 			foreach ( var p in existing )
 			{
+#if WIN
 				IntPtr handle = p.MainWindowHandle;
 				if ( IsIconic( handle ) )
 				{
@@ -46,8 +47,8 @@ public static class Launcher
 				}
 
 				SetForegroundWindow( handle );
+#endif
 			}
-
 			return true;
 		}
 

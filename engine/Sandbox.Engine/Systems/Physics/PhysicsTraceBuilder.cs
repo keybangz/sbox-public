@@ -357,7 +357,13 @@ public partial struct PhysicsTraceBuilder
 	[ThreadStatic]
 	static Func<PhysicsShape, bool> _currentfilterCallback;
 
-	[UnmanagedCallersOnly]
+	// Delegate for filter function (Linux compatible)
+	[UnmanagedFunctionPointer( CallingConvention.Cdecl )]
+	delegate byte FilterFunctionDelegate( int value );
+
+	static FilterFunctionDelegate _filterDelegate;
+	static IntPtr _filterDelegatePtr;
+
 	static byte FilterFunctionInternal( int value )
 	{
 		try
@@ -375,6 +381,16 @@ public partial struct PhysicsTraceBuilder
 			Log.Warning( e, $"Error in trace filter: {e.Message}" );
 			return 1;
 		}
+	}
+
+	static IntPtr GetFilterFunctionPtr()
+	{
+		if ( _filterDelegatePtr == IntPtr.Zero )
+		{
+			_filterDelegate = FilterFunctionInternal;
+			_filterDelegatePtr = Marshal.GetFunctionPointerForDelegate( _filterDelegate );
+		}
+		return _filterDelegatePtr;
 	}
 
 	readonly unsafe PhysicsTraceResult[] GetResults()
@@ -397,7 +413,7 @@ public partial struct PhysicsTraceBuilder
 
 		if ( filterCallback is not null )
 		{
-			r.FilterDelegate = (IntPtr)((delegate* unmanaged< int, byte >)&FilterFunctionInternal);
+			r.FilterDelegate = GetFilterFunctionPtr();
 			_currentfilterCallback = filterCallback;
 		}
 
@@ -439,7 +455,7 @@ public partial struct PhysicsTraceBuilder
 
 		if ( filterCallback is not null )
 		{
-			r.FilterDelegate = (IntPtr)((delegate* unmanaged< int, byte >)&FilterFunctionInternal);
+			r.FilterDelegate = GetFilterFunctionPtr();
 			_currentfilterCallback = filterCallback;
 		}
 

@@ -1,6 +1,7 @@
-﻿using Sandbox.Engine;
+using Sandbox.Engine;
 using SkiaSharp;
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using Topten.RichTextKit;
 
 namespace Sandbox;
@@ -35,40 +36,55 @@ internal class FontManager : FontMapper
 		}
 	}
 
-	struct LoadedTypeface
+	internal struct LoadedTypeface
 	{
 		public SKTypeface Typeface;
 		public bool IsMenu;
 	}
-	Dictionary<int, LoadedTypeface> LoadedFonts = new();
+	internal Dictionary<int, LoadedTypeface> LoadedFonts = new();
 	Dictionary<int, SKTypeface> Cache = new();
 
 	private void Load( System.IO.Stream stream )
 	{
-		if ( stream == null ) return;
-
-		var face = SKTypeface.FromStream( stream );
-		if ( face is null ) return;
-
-		bool isMenu = GlobalContext.Current == GlobalContext.Menu;
-
-		var hash = HashCode.Combine( face.FamilyName, face.FontWeight, face.FontSlant );
-		lock ( LoadedFonts )
+		if ( stream == null )
 		{
-			if ( LoadedFonts.ContainsKey( hash ) )
+			Log.Warning( "[FontManager] Load called with null stream" );
+			return;
+		}
+
+		try
+		{
+			var face = SKTypeface.FromStream( stream );
+			if ( face is null )
 			{
-				face.Dispose();
+				Log.Warning( "[FontManager] SKTypeface.FromStream returned null" );
 				return;
 			}
 
-			LoadedFonts[hash] = new()
-			{
-				Typeface = face,
-				IsMenu = isMenu
-			};
-		}
+			bool isMenu = GlobalContext.Current == GlobalContext.Menu;
 
-		Log.Trace( $"Loaded font {face.FamilyName} weight {face.FontWeight} (IsMenu: {isMenu})" );
+			var hash = HashCode.Combine( face.FamilyName, face.FontWeight, face.FontSlant );
+			lock ( LoadedFonts )
+			{
+				if ( LoadedFonts.ContainsKey( hash ) )
+				{
+					face.Dispose();
+					return;
+				}
+
+				LoadedFonts[hash] = new()
+				{
+					Typeface = face,
+					IsMenu = isMenu
+				};
+			}
+
+			Log.Trace( $"Loaded font {face.FamilyName} weight {face.FontWeight} (IsMenu: {isMenu})" );
+		}
+		catch ( System.Exception ex )
+		{
+			Log.Error( $"[FontManager] Error loading font from stream: {ex.Message}" );
+		}
 	}
 
 	List<FileWatch> watchers = new();
@@ -82,21 +98,56 @@ internal class FontManager : FontMapper
 		}
 
 		var fontFiles = fileSystem.FindFile( "/fonts/", "*.ttf", true )
-			.Union( fileSystem.FindFile( "/fonts/", "*.otf", true ) );
+			.Union( fileSystem.FindFile( "/fonts/", "*.otf", true ) )
+			.ToList();
 
-		Parallel.ForEach( fontFiles, ( string font ) =>
+		Log.Info( $"[FontManager] Found {fontFiles.Count} font files in /fonts/" );
+
+		try
 		{
-			Load( fileSystem.OpenRead( $"/fonts/{font}" ) );
-		} );
+			Parallel.ForEach( fontFiles, ( string font ) =>
+			{
+				Log.Info( $"[FontManager] Loading font: {font}" );
+				try
+				{
+					var stream = fileSystem.OpenRead( $"/fonts/{font}" );
+					if ( stream != null )
+					{
+						Load( stream );
+					}
+					else
+					{
+						Log.Warning( $"[FontManager] OpenRead returned null for: /fonts/{font}" );
+					}
+				}
+				catch ( System.Exception ex )
+				{
+					Log.Error( $"[FontManager] Error loading font {font}: {ex.Message}" );
+				}
+			} );
+		}
+		catch ( System.Exception ex )
+		{
+			Log.Error( $"[FontManager] Error finding font files: {ex.Message}" );
+		}
+
+		Log.Info( $"[FontManager] Loaded {LoadedFonts.Count} fonts total" );
 
 		// Load any new fonts
-		var ttfWatch = fileSystem.Watch( $"*.ttf" );
-		ttfWatch.OnChanges += ( w ) => OnFontFilesChanged( w, fileSystem );
-		var otfWatch = fileSystem.Watch( $"*.otf" );
-		otfWatch.OnChanges += ( w ) => OnFontFilesChanged( w, fileSystem );
+		try
+		{
+			var ttfWatch = fileSystem.Watch( $"*.ttf" );
+			ttfWatch.OnChanges += ( w ) => OnFontFilesChanged( w, fileSystem );
+			var otfWatch = fileSystem.Watch( $"*.otf" );
+			otfWatch.OnChanges += ( w ) => OnFontFilesChanged( w, fileSystem );
 
-		watchers.Add( ttfWatch );
-		watchers.Add( otfWatch );
+			watchers.Add( ttfWatch );
+			watchers.Add( otfWatch );
+		}
+		catch ( System.Exception ex )
+		{
+			Log.Warning( $"[FontManager] Error setting up font watchers: {ex.Message}" );
+		}
 	}
 
 	private void OnFontFilesChanged( FileWatch w, BaseFileSystem fs )
@@ -148,7 +199,44 @@ internal class FontManager : FontMapper
 		var f = GetBestTypeface( style );
 
 		// Fallback on system font
-		f ??= Default.TypefaceFromStyle( style, ignoreFontVariants );
+		if ( f is null )
+		{
+			try
+			{
+				f = Default.TypefaceFromStyle( style, ignoreFontVariants );
+			}
+			catch ( System.Exception ex )
+			{
+				Log.Warning( $"[FontManager] Default.TypefaceFromStyle failed: {ex.Message}" );
+			}
+		}
+
+		// Final fallback - try to create any default typeface
+		if ( f is null )
+		{
+			try
+			{
+				f = SKTypeface.CreateDefault();
+				if ( f is null )
+				{
+					// Try to get first loaded font as absolute fallback
+					if ( LoadedFonts.Count > 0 )
+					{
+						f = LoadedFonts.Values.First().Typeface;
+						Log.Warning( $"[FontManager] Using fallback font: {f?.FamilyName}" );
+					}
+				}
+			}
+			catch ( System.Exception ex )
+			{
+				Log.Warning( $"[FontManager] SKTypeface.CreateDefault failed: {ex.Message}" );
+			}
+		}
+
+		if ( f is null )
+		{
+			Log.Error( $"[FontManager] Could not find any font for family '{style.FontFamily}'. LoadedFonts count: {LoadedFonts.Count}" );
+		}
 
 		lock ( Cache )
 		{
@@ -184,4 +272,3 @@ internal class FontManager : FontMapper
 		}
 	}
 }
-

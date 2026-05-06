@@ -113,6 +113,25 @@ internal sealed class TextBlock : IDisposable
 		return s;
 	}
 
+	/// <summary>
+	/// Check if texture is ready, return false if still building (non-blocking)
+	/// </summary>
+	bool IsTextureReady()
+	{
+		if ( TextureRebuild == null ) return true;
+
+		// Non-blocking check - if not completed, skip this frame and render next frame
+		if ( !TextureRebuild.IsCompleted )
+			return false;
+
+		// Task completed, clear it
+		TextureRebuild = null;
+		return true;
+	}
+
+	/// <summary>
+	/// Wait for texture to be ready (blocking) - only use when necessary
+	/// </summary>
 	void WaitTextureReady()
 	{
 		if ( TextureRebuild == null ) return;
@@ -126,7 +145,8 @@ internal sealed class TextBlock : IDisposable
 	/// </summary>
 	internal void BuildDescriptors( RenderLayer target, BlendMode blendMode, Styles currentStyle, Rect textrect, float opacity )
 	{
-		WaitTextureReady();
+		// Non-blocking: skip rendering if texture is still being built
+		if ( !IsTextureReady() ) return;
 
 		if ( Texture is null ) return;
 		if ( BlockSize == 0 ) return;
@@ -215,7 +235,21 @@ internal sealed class TextBlock : IDisposable
 
 	public bool UpdateStyles( Styles style )
 	{
-		var fontFamily = style.FontFamily ?? "Arial";
+		// Use Poppins (bundled font) or fallback to common Linux fonts before Arial
+		var fontFamily = style.FontFamily ?? "Poppins";
+		if ( string.IsNullOrEmpty( style.FontFamily ) )
+		{
+			// Try to find a font that exists - Poppins is bundled, but fallback to system fonts
+			var fallbacks = new[] { "Poppins", "Liberation Sans", "DejaVu Sans", "Noto Sans", "Ubuntu", "Arial" };
+			foreach ( var fb in fallbacks )
+			{
+				if ( FontManager.Instance.LoadedFonts.Values.Any( f => f.Typeface.FamilyName.Equals( fb, StringComparison.OrdinalIgnoreCase ) ) )
+				{
+					fontFamily = fb;
+					break;
+				}
+			}
+		}
 		var fontColor = style.FontColor ?? Color.Black;
 		var fontSize = style.FontSize ?? Length.Pixels( 13 ).Value;
 

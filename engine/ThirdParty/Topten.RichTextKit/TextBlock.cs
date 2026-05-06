@@ -1,4 +1,4 @@
-﻿
+﻿#pragma warning disable CA2000
 // RichTextKit
 // Copyright © 2019-2020 Topten Software. All Rights Reserved.
 // 
@@ -1097,6 +1097,7 @@ namespace Topten.RichTextKit
 		void BuildFontRuns()
 		{
 			var originalLength = _codePoints.Length;
+
 			try
 			{
 				// Clearn unshaped run buffer
@@ -1306,7 +1307,15 @@ namespace Topten.RichTextKit
 		/// <returns>The Skia typeface</returns>
 		SKTypeface TypefaceFromStyle( IStyle style, bool ignoreFontVariants = false )
 		{
-			return (FontMapper ?? FontMapper.Default).TypefaceFromStyle( style, ignoreFontVariants );
+			var typeface = (FontMapper ?? FontMapper.Default).TypefaceFromStyle( style, ignoreFontVariants );
+
+			// Ensure we always return a valid typeface
+			if ( typeface == null )
+			{
+				typeface = SKTypeface.CreateDefault();
+			}
+
+			return typeface;
 		}
 
 

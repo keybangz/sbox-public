@@ -308,6 +308,13 @@ internal class DownloadPublicArtifacts( string name, bool nativeBinariesOnly = f
 
 	private static bool FileMatchesHash( string path, string expectedHash )
 	{
+		return FileMatchesHash( path, expectedHash, out _ );
+	}
+
+	private static bool FileMatchesHash( string path, string expectedHash, out bool isLocked )
+	{
+		isLocked = false;
+
 		if ( !File.Exists( path ) )
 		{
 			return false;
@@ -317,6 +324,14 @@ internal class DownloadPublicArtifacts( string name, bool nativeBinariesOnly = f
 		{
 			var hash = Utility.CalculateSha256( path );
 			return string.Equals( hash, expectedHash, StringComparison.OrdinalIgnoreCase );
+		}
+		catch ( IOException ex )
+		{
+			// File is locked or unreadable - treat as non-matching so it gets re-downloaded.
+			// Do not silently assume the file is correct; a locked/incomplete file should be retried.
+			Log.Warning( $"File {path} could not be read (locked or incomplete), will re-download: {ex.Message}" );
+			isLocked = true;
+			return false;
 		}
 		catch ( Exception ex )
 		{

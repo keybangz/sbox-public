@@ -1,4 +1,4 @@
-﻿
+
 using System.Runtime.InteropServices;
 
 namespace Sandbox.Engine.Utility.RayTrace;
@@ -15,7 +15,13 @@ public partial struct MeshTraceRequest
 	[ThreadStatic]
 	static Func<SceneObject, bool> _currentfilterCallback;
 
-	[UnmanagedCallersOnly]
+	// Delegate for filter function (Linux compatible)
+	[UnmanagedFunctionPointer( CallingConvention.Cdecl )]
+	delegate byte FilterFunctionDelegate( int value );
+
+	static FilterFunctionDelegate _filterDelegate;
+	static IntPtr _filterDelegatePtr;
+
 	static byte FilterFunctionInternal( int value )
 	{
 		try
@@ -35,6 +41,16 @@ public partial struct MeshTraceRequest
 		}
 	}
 
+	static IntPtr GetFilterFunctionPtr()
+	{
+		if ( _filterDelegatePtr == IntPtr.Zero )
+		{
+			_filterDelegate = FilterFunctionInternal;
+			_filterDelegatePtr = Marshal.GetFunctionPointerForDelegate( _filterDelegate );
+		}
+		return _filterDelegatePtr;
+	}
+
 	/// <summary>
 	/// Run the trace and return the result. The result will return the first hit.
 	/// </summary>
@@ -49,7 +65,7 @@ public partial struct MeshTraceRequest
 		{
 			if ( filterCallback is not null )
 			{
-				r.filterDelegate = (IntPtr)((delegate* unmanaged< int, byte >)&FilterFunctionInternal);
+				r.filterDelegate = GetFilterFunctionPtr();
 				_currentfilterCallback = filterCallback;
 			}
 
@@ -90,7 +106,7 @@ public partial struct MeshTraceRequest
 		{
 			if ( filterCallback is not null )
 			{
-				r.filterDelegate = (IntPtr)((delegate* unmanaged< int, byte >)&FilterFunctionInternal);
+				r.filterDelegate = GetFilterFunctionPtr();
 				_currentfilterCallback = filterCallback;
 			}
 

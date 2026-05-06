@@ -57,17 +57,23 @@ internal class Program
 			description: "Skip building managed code",
 			getDefaultValue: () => false );
 
+		var skipArtifactsOption = new Option<bool>(
+			"--skip-artifacts",
+			description: "Skip downloading public artifacts (useful for local rebuilds when binaries are already present)",
+			getDefaultValue: () => false );
+
 		buildCommand.AddOption( configOption );
 		buildCommand.AddOption( cleanOption );
 		buildCommand.AddOption( skipNativeOption );
 		buildCommand.AddOption( skipManagedOption );
+		buildCommand.AddOption( skipArtifactsOption );
 
-		buildCommand.SetHandler( ( BuildConfiguration config, bool clean, bool skipNative, bool skipManaged ) =>
+		buildCommand.SetHandler( ( BuildConfiguration config, bool clean, bool skipNative, bool skipManaged, bool skipArtifacts ) =>
 		{
-			var pipeline = Build.Create( config, clean, skipNative, skipManaged );
+			var pipeline = Build.Create( config, clean, skipNative, skipManaged, skipArtifacts );
 			ExitCode result = pipeline.Run();
 			Environment.ExitCode = (int)result;
-		}, configOption, cleanOption, skipNativeOption, skipManagedOption );
+		}, configOption, cleanOption, skipNativeOption, skipManagedOption, skipArtifactsOption );
 
 		rootCommand.Add( buildCommand );
 	}

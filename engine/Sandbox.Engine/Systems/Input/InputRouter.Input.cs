@@ -6,8 +6,21 @@ internal static partial class InputRouter
 {
 	static RealTimeSince timeSinceWindowActive;
 
+#if !WIN
+	private static bool _diagSeenMouseButton;
+	private static bool _diagSeenMouseMotion;
+	private static bool _diagSeenKey;
+#endif
+
 	internal static void OnMouseButton( ButtonCode button, bool down, int ikeymods )
 	{
+#if !WIN
+		if ( !_diagSeenMouseButton )
+		{
+			_diagSeenMouseButton = true;
+			Log.Info( $"[InputDiag] InputRouter.OnMouseButton FIRED button={button} down={down} (first hit from native)" );
+		}
+#endif
 		SetButtonState( button, down );
 
 		var mouse = Contexts.FirstOrDefault( x => x.MouseState != InputContext.InputState.Ignore );
@@ -68,6 +81,13 @@ internal static partial class InputRouter
 	/// </summary>
 	internal static void OnMouseMotion( float dx, float dy )
 	{
+#if !WIN
+		if ( !_diagSeenMouseMotion )
+		{
+			_diagSeenMouseMotion = true;
+			Log.Info( $"[InputDiag] InputRouter.OnMouseMotion FIRED dx={dx} dy={dy} (first hit from native)" );
+		}
+#endif
 		var delta = new Vector2( dx, dy );
 
 		MouseCursorDelta += delta;
@@ -231,6 +251,13 @@ internal static partial class InputRouter
 
 	internal static void OnKey( ButtonCode scanButtonCode, ButtonCode keyButtonCode, bool down, bool repeat, int ikeymods )
 	{
+#if !WIN
+		if ( !_diagSeenKey )
+		{
+			_diagSeenKey = true;
+			Log.Info( $"[InputDiag] InputRouter.OnKey FIRED scan={scanButtonCode} key={keyButtonCode} down={down} repeat={repeat} (first hit from native)" );
+		}
+#endif
 		if ( !repeat )
 		{
 			SetButtonState( scanButtonCode, down );

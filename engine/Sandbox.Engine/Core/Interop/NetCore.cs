@@ -1,4 +1,4 @@
-﻿internal static class NetCore
+internal static class NetCore
 {
 	static string DefaultNativeDllPath => true switch
 	{

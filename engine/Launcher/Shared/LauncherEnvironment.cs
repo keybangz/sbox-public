@@ -35,7 +35,7 @@ public static class LauncherEnvironment
 	{
 		AppDomain.CurrentDomain.AssemblyResolve += CurrentDomain_AssemblyResolve;
 
-		GamePath = AppContext.BaseDirectory;
+		GamePath = System.IO.Path.GetFullPath( AppContext.BaseDirectory );
 
 		// this exe is in the bin folder
 		if ( GamePath.EndsWith( System.IO.Path.Combine( "bin", PlatformName ) ) )
@@ -60,6 +60,13 @@ public static class LauncherEnvironment
 			System.Environment.SetEnvironmentVariable( "FACEPUNCH_ENGINE", GamePath, EnvironmentVariableTarget.User );
 		}
 
+		// Set SBOX_BIN_DIR so AppSystem.InitGame() can rewrite argv[0] for the native engine.
+		// This is needed when running ./sbox directly (without run.sh which sets it externally).
+		if ( string.IsNullOrEmpty( System.Environment.GetEnvironmentVariable( "SBOX_BIN_DIR" ) ) )
+		{
+			System.Environment.SetEnvironmentVariable( "SBOX_BIN_DIR", nativeDllPath );
+		}
+
 		UpdateNativeDllPath( nativeDllPath );
 	}
 
@@ -79,6 +86,18 @@ public static class LauncherEnvironment
 			var path = System.Environment.GetEnvironmentVariable( "PATH" );
 			path = $"{nativeDllPath};{path}";
 			System.Environment.SetEnvironmentVariable( "PATH", path );
+		}
+		else if ( OperatingSystem.IsLinux() )
+		{
+			var ldPath = System.Environment.GetEnvironmentVariable( "LD_LIBRARY_PATH" ) ?? "";
+			ldPath = $"{nativeDllPath}:{GamePath}:{ldPath}";
+			System.Environment.SetEnvironmentVariable( "LD_LIBRARY_PATH", ldPath );
+		}
+		else if ( OperatingSystem.IsMacOS() )
+		{
+			var dylibPath = System.Environment.GetEnvironmentVariable( "DYLD_LIBRARY_PATH" ) ?? "";
+			dylibPath = $"{nativeDllPath}:{GamePath}:{dylibPath}";
+			System.Environment.SetEnvironmentVariable( "DYLD_LIBRARY_PATH", dylibPath );
 		}
 	}
 

@@ -1618,6 +1618,8 @@ namespace Sandbox.UI
 			if ( GetTokenValueUnderParenthesis( p, "url", out string url ) )
 			{
 				url = url.Trim( ' ', '"', '\'' );
+				// Note: For http/https URLs, Texture.Load already returns a placeholder
+				// and loads asynchronously. For local files, it's synchronous but fast.
 				setImage( new Lazy<Texture>( () =>
 				{
 					return Texture.Load( url ) ?? Texture.Invalid;

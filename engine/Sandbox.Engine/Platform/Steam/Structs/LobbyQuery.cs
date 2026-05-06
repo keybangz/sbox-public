@@ -230,13 +230,15 @@ namespace Steamworks.Data
 
 			try
 			{
-				await lobbyQuerySemaphore.WaitAsync();
+				// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+				await lobbyQuerySemaphore.WaitAsync().ConfigureAwait( false );
 				ApplyFilters();
 
 				var task = SteamMatchmaking.Internal.RequestLobbyList();
 				while ( !task.IsCompleted )
 				{
-					await Task.Delay( 100, ct );
+					// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+					await Task.Delay( 100, ct ).ConfigureAwait( false );
 				}
 
 				LobbyMatchList_t? list = task.GetResult();

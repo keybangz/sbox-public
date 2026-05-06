@@ -22,9 +22,10 @@ public static partial class Http
 	/// <exception cref="InvalidOperationException">The request was not allowed, either an unallowed URI or header.</exception>
 	public static async Task<string> RequestStringAsync( string requestUri, string method = "GET", HttpContent content = null, Dictionary<string, string> headers = null, CancellationToken cancellationToken = default )
 	{
-		using var response = await RequestAsync( requestUri, method, content, headers: headers, cancellationToken: cancellationToken );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		using var response = await RequestAsync( requestUri, method, content, headers: headers, cancellationToken: cancellationToken ).ConfigureAwait( false );
 		response.EnsureSuccessStatusCode();
-		return await response.Content.ReadAsStringAsync( cancellationToken );
+		return await response.Content.ReadAsStringAsync( cancellationToken ).ConfigureAwait( false );
 	}
 
 	/// <summary>
@@ -40,9 +41,10 @@ public static partial class Http
 	/// <exception cref="InvalidOperationException">The request was not allowed, either an unallowed URI or header.</exception>
 	public static async Task<byte[]> RequestBytesAsync( string requestUri, string method = "GET", HttpContent content = null, Dictionary<string, string> headers = null, CancellationToken cancellationToken = default )
 	{
-		using var response = await RequestAsync( requestUri, method, content, headers: headers, cancellationToken: cancellationToken );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		using var response = await RequestAsync( requestUri, method, content, headers: headers, cancellationToken: cancellationToken ).ConfigureAwait( false );
 		response.EnsureSuccessStatusCode();
-		return await response.Content.ReadAsByteArrayAsync( cancellationToken );
+		return await response.Content.ReadAsByteArrayAsync( cancellationToken ).ConfigureAwait( false );
 	}
 
 	/// <summary>
@@ -58,9 +60,10 @@ public static partial class Http
 	/// <exception cref="InvalidOperationException">The request was not allowed, either an unallowed URI or header.</exception>
 	public static async Task<System.IO.Stream> RequestStreamAsync( string requestUri, string method = "GET", HttpContent content = null, Dictionary<string, string> headers = null, CancellationToken cancellationToken = default )
 	{
-		using var response = await RequestAsync( requestUri, method, content, headers: headers, cancellationToken: cancellationToken );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		using var response = await RequestAsync( requestUri, method, content, headers: headers, cancellationToken: cancellationToken ).ConfigureAwait( false );
 		response.EnsureSuccessStatusCode();
-		return await response.Content.ReadAsStreamAsync( cancellationToken );
+		return await response.Content.ReadAsStreamAsync( cancellationToken ).ConfigureAwait( false );
 	}
 
 	/// <summary>
@@ -76,9 +79,10 @@ public static partial class Http
 	/// <exception cref="InvalidOperationException">The request was not allowed, either an unallowed URI or header.</exception>
 	public static async Task<T> RequestJsonAsync<T>( string requestUri, string method = "GET", HttpContent content = null, Dictionary<string, string> headers = null, CancellationToken cancellationToken = default )
 	{
-		using var response = await RequestAsync( requestUri, method, content, headers: headers, cancellationToken: cancellationToken );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		using var response = await RequestAsync( requestUri, method, content, headers: headers, cancellationToken: cancellationToken ).ConfigureAwait( false );
 		response.EnsureSuccessStatusCode();
-		return await response.Content.ReadFromJsonAsync<T>( cancellationToken: cancellationToken );
+		return await response.Content.ReadFromJsonAsync<T>( cancellationToken: cancellationToken ).ConfigureAwait( false );
 	}
 
 	/// <summary>
@@ -101,7 +105,8 @@ public static partial class Http
 
 		using var request = CreateRequest( new HttpMethod( method ), requestUri, headers );
 		request.Content = content;
-		return await Client.SendAsync( request, cancellationToken );
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		return await Client.SendAsync( request, cancellationToken ).ConfigureAwait( false );
 	}
 
 	/// <summary>

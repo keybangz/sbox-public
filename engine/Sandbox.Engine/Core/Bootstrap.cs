@@ -141,6 +141,21 @@ internal static class Bootstrap
 	{
 		try
 		{
+		// Add native filesystem search paths for core content with correct casing
+		// This must happen after SourceEngineInit has set up the native filesystem
+		System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] Before InitializeNativeSearchPaths\n");
+		EngineFileSystem.InitializeNativeSearchPaths();
+		System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] After InitializeNativeSearchPaths\n");
+
+		// Mount downloaded package assets now that SourceEngineInit has initialized the native filesystem.
+		// This must happen after SourceEngineInit — NativeEngine.FullFileSystem.AddSymLink is not valid before that.
+		if ( !string.IsNullOrEmpty( EngineFileSystem.PendingDownloadAssetsPath ) )
+		{
+			System.IO.File.AppendAllText("/tmp/initgame_debug.txt", $"[Bootstrap.Init] Mounting downloaded assets from {EngineFileSystem.PendingDownloadAssetsPath}\n");
+			EngineFileSystem.MountDownloadedAssets( EngineFileSystem.PendingDownloadAssetsPath );
+			System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] Done mounting downloaded assets\n");
+		}
+
 			IToolsDll.Current?.Spin();
 
 #pragma warning disable CS0612 // Type or member is obsolete
@@ -169,45 +184,61 @@ internal static class Bootstrap
 			// Add built in projects for game&tools
 			// Game uses menu project but shouldn't be anything else
 			// Load everything else in ToolsDll
-			using ( var _ = StartupTiming?.ScopeTimer( $"BuiltIn Projects Init" ) )
-			{
-				SyncContext.RunBlocking( Project.InitializeBuiltIn() );
-			}
+		using ( var _ = StartupTiming?.ScopeTimer( $"BuiltIn Projects Init" ) )
+		{
+			System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] Before Project.InitializeBuiltIn\n");
+			SyncContext.RunBlocking( Project.InitializeBuiltIn() );
+			System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] After Project.InitializeBuiltIn\n");
+		}
 
-			InitEngineConVars();
+		System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] Before InitEngineConVars\n");
+		InitEngineConVars();
+		System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] After InitEngineConVars\n");
 
-			if ( IToolsDll.Current is not null )
-			{
-				using var x = StartupTiming?.ScopeTimer( $"IToolsDll Bootstrap Init" );
-				SyncContext.RunBlocking( IToolsDll.Current.Initialize() );
-			}
+		if ( IToolsDll.Current is not null )
+		{
+			using var x = StartupTiming?.ScopeTimer( $"IToolsDll Bootstrap Init" );
+			System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] Before IToolsDll.Current.Initialize\n");
+			SyncContext.RunBlocking( IToolsDll.Current.Initialize() );
+			System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] After IToolsDll.Current.Initialize\n");
+		}
 
-			//
-			// Init vr system
-			//
-			VRSystem.Init();
+		//
+		// Init vr system
+		//
+		System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] Before VRSystem.Init\n");
+		VRSystem.Init();
+		System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] After VRSystem.Init\n");
 
+			System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] Before Screen.UpdateFromEngine\n");
 			Screen.UpdateFromEngine();
+			System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] After Screen.UpdateFromEngine\n");
 
 			if ( !Application.IsHeadless && !Application.IsStandalone )
 			{
-				// we really want the items available before we continue
-				// here we'll wait up to 5 seconds for them, but they're
-				// generally available completely immediately.
-				using var timeout = new CancellationTokenSource( 5000 );
-				SyncContext.RunBlocking( Services.Inventory.WaitForSteamInventoryItems( timeout.Token ) );
+			// we really want the items available before we continue
+			// here we'll wait up to 5 seconds for them, but they're
+			// generally available completely immediately.
+			using var timeout = new CancellationTokenSource( 5000 );
+			System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] Before WaitForSteamInventoryItems\n");
+			SyncContext.RunBlocking( Services.Inventory.WaitForSteamInventoryItems( timeout.Token ) );
+			System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] After WaitForSteamInventoryItems\n");
 			}
 
 			if ( IMenuDll.Current is not null )
 			{
 				using var x = StartupTiming?.ScopeTimer( $"MenuBootstrap" );
+				System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] Before IMenuDll.Current.Initialize\n");
 				SyncContext.RunBlocking( IMenuDll.Current.Initialize() );
+				System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] After IMenuDll.Current.Initialize\n");
 			}
 
 			if ( IGameInstanceDll.Current is not null )
 			{
 				using var x = StartupTiming?.ScopeTimer( $"IGameMenuDll Bootstrap" );
+				System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] Before IGameInstanceDll.Current.Initialize\n");
 				SyncContext.RunBlocking( IGameInstanceDll.Current.Initialize() );
+				System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] After IGameInstanceDll.Current.Initialize\n");
 			}
 
 			if ( SteamClient.IsValid && ErrorReporter.IsUsingSentry )
@@ -249,12 +280,15 @@ internal static class Bootstrap
 				Log.Info( "Bootstrap Init Done" );
 			}
 
-			//
-			// Networking bootstrap
-			//
-			Networking.Bootstrap();
+		//
+		// Networking bootstrap
+		//
+		System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] Before Networking.Bootstrap\n");
+		Networking.Bootstrap();
+		System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] After Networking.Bootstrap\n");
+		System.IO.File.AppendAllText("/tmp/initgame_debug.txt", "[Bootstrap.Init] Completed successfully\n");
 
-			if ( Application.IsJoinLocal )
+		if ( Application.IsJoinLocal )
 			{
 				NetworkConsoleCommands.ConnectToServer( "local" );
 			}
@@ -286,7 +320,10 @@ internal static class Bootstrap
 		Sandbox.Utility.Steam.InitializeClient();
 		ThreadSafe.MarkMainThread();
 
+#if WIN
+		// SetMinThreads is only available on Windows
 		ThreadPool.SetMinThreads( Environment.ProcessorCount, Environment.ProcessorCount );
+#endif
 
 		TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
 		AppDomain.CurrentDomain.UnhandledException += ( _, args ) => Log.Error( args.ExceptionObject as Exception, "AppDomain unhandled exception" );

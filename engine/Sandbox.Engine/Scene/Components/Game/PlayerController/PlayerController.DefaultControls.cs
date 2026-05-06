@@ -2,186 +2,191 @@
 
 public sealed partial class PlayerController : Component
 {
-	/// <summary>
-	/// The direction we're looking in input space.
-	/// </summary>
-	[Sync( SyncFlags.Interpolate )]
-	public Angles EyeAngles { get; set; }
+    /// <summary>
+    /// The direction we're looking in input space.
+    /// </summary>
+    [Sync(SyncFlags.Interpolate)]
+    public Angles EyeAngles { get; set; }
 
-	/// <summary>
-	/// The player's eye position, in first person mode
-	/// </summary>
-	public Vector3 EyePosition => EyeTransform.Position;
+    /// <summary>
+    /// The player's eye position, in first person mode
+    /// </summary>
+    public Vector3 EyePosition => EyeTransform.Position;
 
-	/// <summary>
-	/// The player's eye transform, in first person mode
-	/// </summary>
-	public Transform EyeTransform { get; private set; }
+    /// <summary>
+    /// The player's eye transform, in first person mode
+    /// </summary>
+    public Transform EyeTransform { get; private set; }
 
-	/// <summary>
-	/// True if this player is ducking
-	/// </summary>
-	[Sync]
-	public bool IsDucking { get; set; }
+    /// <summary>
+    /// True if this player is ducking
+    /// </summary>
+    [Sync]
+    public bool IsDucking { get; set; }
 
-	/// <summary>
-	/// The distance from the top of the head to the closest ceiling.
-	/// </summary>
-	public float Headroom { get; set; }
+    /// <summary>
+    /// The distance from the top of the head to the closest ceiling.
+    /// </summary>
+    public float Headroom { get; set; }
 
 
-	protected override void OnUpdate()
-	{
-		UpdateGroundEyeRotation();
+    protected override void OnUpdate()
+    {
+        UpdateGroundEyeRotation();
 
-		if ( Scene.IsEditor )
-			return;
+        if (Scene.IsEditor)
+            return;
 
-		UpdateEyeTransform();
+        UpdateEyeTransform();
 
-		if ( !IsProxy )
-		{
-			GameObject.RunEvent<IEvents>( x => x.PreInput() );
+        if (!IsProxy)
+        {
+            GameObject.RunEvent<IEvents>(x => x.PreInput());
 
-			if ( UseLookControls )
-			{
-				UpdateEyeAngles();
-				UpdateLookAt();
-			}
+            if (UseLookControls)
+            {
+                UpdateEyeAngles();
+                UpdateLookAt();
+            }
 
-			if ( UseCameraControls )
-			{
-				UpdateCameraPosition();
-			}
+            if (UseCameraControls)
+            {
+                UpdateCameraPosition();
+            }
 
-			UpdateEyeTransform();
-		}
+            UpdateEyeTransform();
+        }
 
-		UpdateBodyVisibility();
+        UpdateBodyVisibility();
 
-		if ( UseAnimatorControls && Renderer.IsValid() )
-		{
-			UpdateAnimation( Renderer );
-		}
-	}
+        if (UseAnimatorControls && Renderer.IsValid())
+        {
+            UpdateAnimation(Renderer);
+        }
+    }
 
-	protected override void OnFixedUpdate()
-	{
-		if ( Scene.IsEditor ) return;
+    protected override void OnFixedUpdate()
+    {
+        // if (Scene.IsEditor) return;
 
-		UpdateHeadroom();
-		UpdateFalling();
+        UpdateHeadroom();
+        UpdateFalling();
 
-		prevPosition = WorldPosition;
+        prevPosition = WorldPosition;
 
-		if ( IsProxy ) return;
-		if ( !UseInputControls ) return;
+        Log.Info($"[PlayerController.OnFixedUpdate] IsProxy={IsProxy} UseInputControls={UseInputControls} AnalogMove={Input.AnalogMove} Down(forward)={Input.Down("forward")}");
 
-		InputMove();
-		UpdateDucking( Input.Down( "duck" ) );
-		InputJump();
+        if (IsProxy) return;
+        if (!UseInputControls) return;
 
-		UpdateEyeTransform();
-	}
+        InputMove();
+        UpdateDucking(Input.Down("duck"));
 
-	void UpdateHeadroom()
-	{
-		var tr = TraceBody( WorldPosition + Vector3.Up * CurrentHeight * 0.5f, WorldPosition + Vector3.Up * (100 + CurrentHeight * 0.5f), 0.75f, 0.5f );
-		Headroom = tr.Distance;
-	}
+        InputJump();
 
-	bool _wasFalling = false;
-	float fallDistance = 0;
-	Vector3 prevPosition;
+        UpdateEyeTransform();
+    }
 
-	void UpdateFalling()
-	{
-		if ( Mode is null || !Mode.AllowFalling )
-		{
-			_wasFalling = false;
-			fallDistance = 0;
-			return;
-		}
 
-		if ( !IsOnGround || _wasFalling )
-		{
-			var fallDelta = WorldPosition - prevPosition;
-			if ( fallDelta.z < 0.0f )
-			{
-				_wasFalling = true;
-				fallDistance -= fallDelta.z;
-			}
-		}
+    void UpdateHeadroom()
 
-		if ( IsOnGround )
-		{
-			if ( _wasFalling && fallDistance > 1.0f )
-			{
-				IEvents.PostToGameObject( GameObject, x => x.OnLanded( fallDistance, Velocity ) );
+    {
+        var tr = TraceBody(WorldPosition + Vector3.Up * CurrentHeight * 0.5f, WorldPosition + Vector3.Up * (100 + CurrentHeight * 0.5f), 0.75f, 0.5f);
+        Headroom = tr.Distance;
+    }
 
-				// play land sounds
-				if ( EnableFootstepSounds )
-				{
-					var volume = Velocity.Length.Remap( 50, 800, 0.5f, 5 );
-					var vel = Velocity.Length;
+    bool _wasFalling = false;
+    float fallDistance = 0;
+    Vector3 prevPosition;
 
-					PlayFootstepSound( WorldPosition, volume, 0 );
-					PlayFootstepSound( WorldPosition, volume, 1 );
-				}
-			}
+    void UpdateFalling()
+    {
+        if (Mode is null || !Mode.AllowFalling)
+        {
+            _wasFalling = false;
+            fallDistance = 0;
+            return;
+        }
 
-			_wasFalling = false;
-			fallDistance = 0;
-		}
-	}
+        if (!IsOnGround || _wasFalling)
+        {
+            var fallDelta = WorldPosition - prevPosition;
+            if (fallDelta.z < 0.0f)
+            {
+                _wasFalling = true;
+                fallDistance -= fallDelta.z;
+            }
+        }
 
-	Transform localGroundTransform;
-	int groundHash;
+        if (IsOnGround)
+        {
+            if (_wasFalling && fallDistance > 1.0f)
+            {
+                IEvents.PostToGameObject(GameObject, x => x.OnLanded(fallDistance, Velocity));
 
-	void UpdateGroundEyeRotation()
-	{
-		if ( GroundObject is null )
-		{
-			groundHash = default;
-			return;
-		}
+                // play land sounds
+                if (EnableFootstepSounds)
+                {
+                    var volume = Velocity.Length.Remap(50, 800, 0.5f, 5);
+                    var vel = Velocity.Length;
 
-		if ( !RotateWithGround )
-		{
-			groundHash = default;
-			return;
-		}
+                    PlayFootstepSound(WorldPosition, volume, 0);
+                    PlayFootstepSound(WorldPosition, volume, 1);
+                }
+            }
 
-		var hash = HashCode.Combine( GroundObject );
+            _wasFalling = false;
+            fallDistance = 0;
+        }
+    }
 
-		// Get out transform locally to the ground object
-		var localTransform = GroundObject.WorldTransform.ToLocal( WorldTransform );
+    Transform localGroundTransform;
+    int groundHash;
 
-		// Work out the rotation delta chance since last frame
-		var delta = localTransform.Rotation.Inverse * localGroundTransform.Rotation;
+    void UpdateGroundEyeRotation()
+    {
+        if (GroundObject is null)
+        {
+            groundHash = default;
+            return;
+        }
 
-		// we only care about the yaw
-		var deltaYaw = delta.Angles().yaw;
+        if (!RotateWithGround)
+        {
+            groundHash = default;
+            return;
+        }
 
-		//DebugDrawSystem.Current.Text( WorldPosition, $"{delta.Angles().yaw}" );
+        var hash = HashCode.Combine(GroundObject);
 
-		// If we're on the same ground and we've rotated
-		if ( hash == groundHash && deltaYaw != 0 )
-		{
-			// rotate the eye angles
-			EyeAngles = EyeAngles.WithYaw( EyeAngles.yaw + deltaYaw );
+        // Get out transform locally to the ground object
+        var localTransform = GroundObject.WorldTransform.ToLocal(WorldTransform);
 
-			// rotate the body to avoid it animating to the new position
-			if ( UseAnimatorControls && Renderer.IsValid() )
-			{
-				Renderer.WorldRotation *= new Angles( 0, deltaYaw, 0 );
-			}
-		}
+        // Work out the rotation delta chance since last frame
+        var delta = localTransform.Rotation.Inverse * localGroundTransform.Rotation;
 
-		// Keep for next frame
-		groundHash = hash;
-		localGroundTransform = localTransform;
-	}
+        // we only care about the yaw
+        var deltaYaw = delta.Angles().yaw;
+
+        //DebugDrawSystem.Current.Text( WorldPosition, $"{delta.Angles().yaw}" );
+
+        // If we're on the same ground and we've rotated
+        if (hash == groundHash && deltaYaw != 0)
+        {
+            // rotate the eye angles
+            EyeAngles = EyeAngles.WithYaw(EyeAngles.yaw + deltaYaw);
+
+            // rotate the body to avoid it animating to the new position
+            if (UseAnimatorControls && Renderer.IsValid())
+            {
+                Renderer.WorldRotation *= new Angles(0, deltaYaw, 0);
+            }
+        }
+
+        // Keep for next frame
+        groundHash = hash;
+        localGroundTransform = localTransform;
+    }
 
 
 

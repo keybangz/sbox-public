@@ -82,14 +82,13 @@ internal partial class ManagerWriter : BaseWriter
 
 		StartBlock( "internal unsafe static partial class NativeInterop" );
 		{
-			WriteLine( "static IntPtr _nativeLibraryHandle;" );
-			WriteLine( "static bool _initialized;" );
-			WriteLine();
-
 			ErrorFunction();
 
 			WriteLine( "[UnmanagedFunctionPointer( CallingConvention.Cdecl )]" );
 			WriteLine( "delegate void NetCoreImportDelegate( int hash, void* imports, void* exports, int* structSizes );" );
+			WriteLine();
+			WriteLine( "static bool _initialized;" );
+			WriteLine( "static IntPtr _nativeLibraryHandle;" );
 			WriteLine();
 
 			StartBlock( "internal static void Initialize()" );
@@ -233,6 +232,7 @@ internal partial class ManagerWriter : BaseWriter
 
 					foreach ( Variable f in c.Variables )
 					{
+						// Getter: incoming=true (receiving value from native)
 						WriteLine( $"{namespc}.{InternalNative}.Get__{f.MangledName} = (delegate* unmanaged[SuppressGCTransition]<IntPtr, {f.Return.GetManagedDelegateType( true )}>)( nativeFunctions[{i++}] );" );
 						WriteLine( $"{namespc}.{InternalNative}.Set__{f.MangledName} = (delegate* unmanaged[SuppressGCTransition]<IntPtr, {f.Return.GetManagedDelegateType( false )}, void>)( nativeFunctions[{i++}] );" );
 					}
@@ -244,18 +244,8 @@ internal partial class ManagerWriter : BaseWriter
 					WriteLine( "onError( $\"{___e.Message}\\n\\n{___e.StackTrace}\" );" );
 				}
 				EndBlock();
-
-
+				WriteLine();
 				WriteLine( "_initialized = true;" );
-			}
-			EndBlock();
-
-			StartBlock( "internal static void Free()" );
-			{
-				WriteLine( "if ( _nativeLibraryHandle == IntPtr.Zero ) return;" );
-				WriteLine( "NativeLibrary.Free( _nativeLibraryHandle );" );
-				WriteLine( "_nativeLibraryHandle = IntPtr.Zero;" );
-				WriteLine( "_initialized = false;" );
 			}
 			EndBlock();
 		}
@@ -351,3 +341,7 @@ internal partial class ManagerWriter : BaseWriter
 		EndBlock();
 	}
 }
+
+
+
+

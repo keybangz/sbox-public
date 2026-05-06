@@ -1,6 +1,8 @@
 # Ignore all files by default
 *
 !*/
+.opencode/
+.beaconignore
 
 # Git
 !.gitignore
@@ -46,6 +48,17 @@
 !*.sh
 !*.py
 
+# Linux native client files
+!linux/**
+!*.c
+
+# Only allow .so files in the linux/ directory (wrapper libs)
+# Native engine binaries should NOT be committed
+/game/bin/**/*.so
+/game/*.so
+/engine/Tools/**/publish*/*.so
+/engine/Tools/**/bin_standalone/*.so
+
 #
 # Some junk
 #
@@ -83,6 +96,9 @@ engine/TestResults/
 #
 /game/.source2
 /game/_toolsettings
+
+# Transients (compiled assets)
+/game/**/Transients/
 /game/bin/**/*.pdb
 /game/bin/**/*.dll
 /game/bin/**/*.xml
@@ -101,3 +117,6 @@ engine/TestResults/
 /game/tools
 /game/aftermath_dumps
 /game/gamecache
+linux/docs/reverse_engineering/ida_output/resource_compiler_dll_info.txt
+linux/docs/reverse_engineering/scripts/resource_compiler_dll_info.txt
+/MEMORY.md

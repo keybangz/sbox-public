@@ -64,11 +64,38 @@
 
     void OpenAvatarScene()
     {
+        LogAvatarTransition("[Navbar] OpenAvatarScene() START");
+
         var options = new SceneLoadOptions();
-        options.ShowLoadingScreen = true;
-        options.SetScene("/scenes/avatar.scene");
+		options.ShowLoadingScreen = true;
+
+		// Use minimal avatar scene for debugging if SBOX_MINIMAL_AVATAR=1
+		var useMinimal = System.Environment.GetEnvironmentVariable("SBOX_MINIMAL_AVATAR") == "1";
+		var scenePath = useMinimal ? "/scenes/avatar_minimal.scene" : "/scenes/avatar.scene";
+
+		if (useMinimal)
+			Log.Info("[Avatar] Using minimal avatar scene for debugging");
+
+		LogAvatarTransition($"[Navbar] Loading scene: {scenePath}");
+		LogAvatarTransition($"[Navbar] Current ActiveScene: {Game.ActiveScene?.Name ?? "null"}");
+
+		options.SetScene(scenePath);
 
         Game.ActiveScene.Load(options);
+
+        LogAvatarTransition("[Navbar] OpenAvatarScene() - Load() called, returning");
+    }
+
+    private static void LogAvatarTransition(string message)
+    {
+        var timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+        var logLine = $"[AVATAR {timestamp}] {message}";
+        Log.Info(logLine);
+        try
+        {
+            System.IO.File.AppendAllText("/tmp/sbox_avatar.log", logLine + "\n");
+        }
+        catch { }
     }
 
     protected override int BuildHash() => HashCode.Combine(ComputedClass);

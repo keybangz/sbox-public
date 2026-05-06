@@ -72,7 +72,8 @@ public class CachingHandler : DelegatingHandler
 	{
 		if ( request.Method != HttpMethod.Get )
 		{
-			return await base.SendAsync( request, cancellationToken );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			return await base.SendAsync( request, cancellationToken ).ConfigureAwait( false );
 		}
 
 		var cacheKey = request.RequestUri.ToString();
@@ -86,11 +87,12 @@ public class CachingHandler : DelegatingHandler
 		}
 
 		{
-			var response = await base.SendAsync( request, cancellationToken );
+			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+			var response = await base.SendAsync( request, cancellationToken ).ConfigureAwait( false );
 
 			if ( response.IsSuccessStatusCode )
 			{
-				var content = await response.Content.ReadAsStringAsync();
+				var content = await response.Content.ReadAsStringAsync( cancellationToken ).ConfigureAwait( false );
 				_cache.Set( cacheKey, content, TimeSpan.FromMinutes( 1 ) );
 
 				return new HttpResponseMessage( System.Net.HttpStatusCode.OK )
@@ -154,7 +156,7 @@ class BackendHttpHandler : DelegatingHandler
 		AddHeaders( request );
 
 		tries++;
-		var response = await base.SendAsync( request, cancellationToken );
+		var response = await base.SendAsync( request, cancellationToken ).ConfigureAwait( false );
 
 		if ( backend_debug )
 		{
@@ -168,14 +170,14 @@ class BackendHttpHandler : DelegatingHandler
 		{
 			if ( tries <= 5 )
 			{
-				await Task.Delay( 500 * tries );
+				await Task.Delay( 500 * tries ).ConfigureAwait( false );
 				goto retry;
 			}
 		}
 
 		if ( response.StatusCode == System.Net.HttpStatusCode.BadRequest )
 		{
-			eventRecord.SetValue( "message", response.Content.ReadAsStringAsync().Result );
+			eventRecord.SetValue( "message", await response.Content.ReadAsStringAsync( cancellationToken ).ConfigureAwait( false ) );
 		}
 
 		eventRecord.SetValue( "status", (int)response.StatusCode );

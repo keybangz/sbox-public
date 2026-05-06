@@ -29,6 +29,11 @@ public partial class Panel
 			if ( size.x <= 1 ) return;
 			if ( size.y <= 1 ) return;
 
+			// Guard against oversized render targets (e.g. DPI double-scaling on Linux)
+			// GetRenderTarget enforces a 16384px max — skip layer if we'd exceed it
+			if ( size.x > 16384 ) return;
+			if ( size.y > 16384 ) return;
+
 			_panelLayerSize = size;
 		}
 		else

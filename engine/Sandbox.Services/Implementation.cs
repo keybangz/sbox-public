@@ -64,7 +64,8 @@ class CustomJsonContentSerializer : IHttpContentSerializer
 {
 	public async Task<T> FromHttpContentAsync<T>( HttpContent content, CancellationToken cancellationToken = default )
 	{
-		var str = await content.ReadAsStringAsync();
+		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
+		var str = await content.ReadAsStringAsync( cancellationToken ).ConfigureAwait( false );
 		if ( string.IsNullOrWhiteSpace( str ) ) return default;
 
 		return System.Text.Json.JsonSerializer.Deserialize<T>( str, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true } );
