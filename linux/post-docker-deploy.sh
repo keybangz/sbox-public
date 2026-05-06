@@ -46,7 +46,9 @@ fi
 echo "  [OK] DXC shim deployed ($(du -sh "$BIN_DIR/libdxcompiler_wrapper.so" | cut -f1))"
 
 # --- Step 2: Build libsbox_init.so and patch game/sbox ---
-# libsbox_init.so combines OpenSSL provider init + permissive free() validation.
+# libsbox_init.so combines OpenSSL provider init + permissive free() validation
+# + Wayland→SDL3 input injection (so engine2's embedded SDL receives keyboard
+# and mouse events when running on a native Wayland compositor).
 # It is injected as a DT_NEEDED dependency of game/sbox via patchelf so it loads
 # automatically on every launch — no LD_PRELOAD or wrapper script required.
 # This step must re-run after every Docker build because Docker overwrites game/sbox.
@@ -55,7 +57,9 @@ echo "[2/4] Building libsbox_init.so and patching game/sbox..."
 
 # Build the combined init library
 cd "$SCRIPT_DIR/interpose"
-g++ -shared -fPIC -O2 -Wall -Wextra -std=c++17 -o libsbox_init.so sbox_init.cpp -ldl
+g++ -shared -fPIC -O2 -Wall -Wextra -std=c++17 -o libsbox_init.so \
+    sbox_init.cpp wayland_input.cpp \
+    -ldl -lpthread -lwayland-client -lxkbcommon
 echo "  [OK] libsbox_init.so built ($(du -sh libsbox_init.so | cut -f1))"
 
 # Deploy to bin dir so the loader finds it via RPATH

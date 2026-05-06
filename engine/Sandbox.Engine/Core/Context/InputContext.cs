@@ -151,10 +151,9 @@ internal sealed class InputContext
 	{
 		if ( delta.Length == 0 ) return;
 
-		if ( MouseState == InputState.Game || MouseCapture || InputRouter._mouseCaptureMode )
+		if ( MouseState == InputState.Game || MouseCapture )
 		{
 			OnMouseMotion?.Invoke( delta );
-			Sandbox.Input.AddMouseMovement( delta );
 			return;
 		}
 
@@ -213,10 +212,6 @@ internal sealed class InputContext
 		TargetUISystem.InputEventQueue.AddButtonEvent( keyButtonCode, false, modifiers );
 
 		var name = InputSystem.CodeToString( scanButtonCode );
-#if !WIN
-		if ( string.IsNullOrWhiteSpace( name ) )
-			name = LinuxX11Input.ButtonCodeToName( scanButtonCode );
-#endif
 		if ( !string.IsNullOrWhiteSpace( name ) )
 		{
 			OnGameButton?.Invoke( scanButtonCode, name, false );
@@ -228,10 +223,6 @@ internal sealed class InputContext
 		if ( TrappingKeys )
 		{
 			var name = InputSystem.CodeToString( scanButtonCode );
-#if !WIN
-			if ( string.IsNullOrWhiteSpace( name ) )
-				name = LinuxX11Input.ButtonCodeToName( scanButtonCode );
-#endif
 			if ( !string.IsNullOrWhiteSpace( name ) )
 			{
 				TrappedKeys.Add( name );
@@ -279,10 +270,6 @@ internal sealed class InputContext
 		if ( MouseState == InputState.Game || gameToo || !pressed )
 		{
 			var name = InputSystem.CodeToString( button );
-#if !WIN
-			if ( string.IsNullOrWhiteSpace( name ) )
-				name = LinuxX11Input.ButtonCodeToName( button );
-#endif
 			if ( !string.IsNullOrWhiteSpace( name ) )
 			{
 				OnGameButton?.Invoke( button, name, pressed );
@@ -393,27 +380,11 @@ internal sealed class InputContext
 			}
 		}
 
-		// Fire OnGameButton when keyboard isn't explicitly Ignored, or on release,
-		// or when Linux capture mode is active (PollEvents runs before UISystem sets KeyboardState=Game).
-		// On Linux, also fire when a game instance is loaded — UISystem sets KeyboardState=Game one frame
-		// late, so the very first keypress after load would be silently dropped without this.
-#if WIN
-		if ( KeyboardState != InputState.Ignore || !down || InputRouter.GameWantsCapture )
-#else
-		if ( KeyboardState != InputState.Ignore || !down || InputRouter.GameWantsCapture || IGameInstance.Current is not null )
-#endif
+		// always allow the actions to "release" when UI pops up,
+		// but don't allow new presses
+		if ( KeyboardState == InputState.Game || !down )
 		{
 			var name = InputSystem.CodeToString( scanButtonCode );
-#if !WIN
-			// Linux: native CodeToString returns null for our ButtonCode values.
-			// Use our own translation table instead.
-			if ( string.IsNullOrWhiteSpace( name ) )
-				name = LinuxX11Input.ButtonCodeToName( scanButtonCode );
-			if ( string.IsNullOrWhiteSpace( name ) )
-				name = LinuxX11Input.ButtonCodeToName( keyButtonCode );
-
-			Log.Info( $"[InputContext.OnButton] name={name ?? "null"} scan={scanButtonCode} key={keyButtonCode} down={down} KeyboardState={KeyboardState} GameWantsCapture={InputRouter.GameWantsCapture} OnGameButton={(OnGameButton != null ? "set" : "null")}" );
-#endif
 			if ( !string.IsNullOrWhiteSpace( name ) )
 			{
 				OnGameButton?.Invoke( scanButtonCode, name, down );

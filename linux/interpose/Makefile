@@ -72,10 +72,12 @@ libsdl3_dynapi_interpose.so: sdl3_dynapi_interpose.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
 	@echo "Built $@"
 
-# Combined startup init — OpenSSL provider init + permissive free()
+# Combined startup init — OpenSSL provider init + permissive free() + Wayland input injection
 # Loaded as DT_NEEDED by game/sbox so it runs automatically without LD_PRELOAD.
-libsbox_init.so: sbox_init.cpp
-	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
+# wayland_input.cpp synthesizes SDL_Events into libengine2's embedded SDL3 event queue
+# because that SDL build silently produces zero events on Wayland sessions.
+libsbox_init.so: sbox_init.cpp wayland_input.cpp
+	$(CXX) $(CXXFLAGS) -o $@ sbox_init.cpp wayland_input.cpp $(LDFLAGS) -lwayland-client -lxkbcommon
 	@echo "Built $@"
 
 clean:
