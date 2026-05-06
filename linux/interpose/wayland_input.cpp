@@ -92,6 +92,20 @@ typedef uint32_t SDL_Keymod;
 typedef uint32_t SDL_Scancode;
 typedef uint32_t SDL_Keycode;
 typedef uint32_t SDL_MouseButtonFlags;
+typedef int SDL_bool;
+typedef struct SDL_mouse_state {
+    int x, y;
+    int xrel, yrel;
+    int buttons;
+    int wheel_x, wheel_y;
+    int wheel_direction;
+    int last_left_click;
+    int last_right_click;
+    int last_middle_click;
+    int last_button;
+    int last_click_time;
+    int last_click_time_x, last_click_time_y;
+} SDL_mouse_state;
 
 enum : uint32_t {
     SDL_EVENT_WINDOW_MOUSE_ENTER  = 0x20A,
@@ -233,6 +247,8 @@ typedef void (*pfn_SDL_SendMouseButton)(uint64_t ts, void* win, uint32_t mID, ui
 typedef void (*pfn_SDL_SendMouseWheel)(uint64_t ts, void* win, uint32_t mID, float x, float y, int direction);
 typedef bool (*pfn_SDL_SetKeyboardFocus)(void* win);
 typedef void (*pfn_SDL_SetMouseFocus)(void* win);
+typedef SDL_bool (*pfn_SDL_GetKeyboardState)(int* num_keys, SDL_Keycode* keys);
+typedef SDL_mouse_state (*pfn_SDL_GetMouseState)(void);
 
 static pfn_SDL_PushEvent             p_SDL_PushEvent             = nullptr;
 static pfn_SDL_GetTicksNS            p_SDL_GetTicksNS            = nullptr;
@@ -249,6 +265,8 @@ static pfn_SDL_SendMouseButton       p_SDL_SendMouseButton       = nullptr;
 static pfn_SDL_SendMouseWheel        p_SDL_SendMouseWheel        = nullptr;
 static pfn_SDL_SetKeyboardFocus      p_SDL_SetKeyboardFocus      = nullptr;
 static pfn_SDL_SetMouseFocus         p_SDL_SetMouseFocus         = nullptr;
+static pfn_SDL_GetKeyboardState      p_SDL_GetKeyboardState      = nullptr;
+static pfn_SDL_GetMouseState         p_SDL_GetMouseState         = nullptr;
 
 // ============================================================================
 // C# InputRouter trampoline pointers (resolved via dlsym from the managed
@@ -456,11 +474,14 @@ static bool try_resolve_sdl_symbols()
     p_SDL_SendMouseWheel   = (pfn_SDL_SendMouseWheel)   dlsym(h, "SDL_SendMouseWheel");
     p_SDL_SetKeyboardFocus = (pfn_SDL_SetKeyboardFocus) dlsym(h, "SDL_SetKeyboardFocus");
     p_SDL_SetMouseFocus    = (pfn_SDL_SetMouseFocus)    dlsym(h, "SDL_SetMouseFocus");
+    p_SDL_GetKeyboardState = (pfn_SDL_GetKeyboardState) dlsym(h, "SDL_GetKeyboardState");
+    p_SDL_GetMouseState    = (pfn_SDL_GetMouseState)    dlsym(h, "SDL_GetMouseState");
 
     return p_SDL_PushEvent && p_SDL_GetWindows && p_SDL_GetWindowProperties &&
            p_SDL_GetPointerProperty && p_SDL_GetWindowID &&
            p_SDL_SendKeyboardKey && p_SDL_SendMouseMotion &&
-           p_SDL_SendMouseButton && p_SDL_SendMouseWheel;
+           p_SDL_SendMouseButton && p_SDL_SendMouseWheel &&
+           p_SDL_GetKeyboardState && p_SDL_GetMouseState;
 }
 
 // Poll for libengine2.so to appear in the process and resolve its SDL symbols.
@@ -476,18 +497,17 @@ static bool resolve_sdl_symbols_with_retry(int timeout_ms = 60000, int interval_
         // Log every ~5s so we can see progress without spamming.
         if (i > 0 && (i * interval_ms) % 5000 == 0) {
             logf("still waiting for libengine2.so (%d ms elapsed) "
-                 "PushEvent=%p GetWindows=%p GetWindowProperties=%p GetPointerProperty=%p GetWindowID=%p",
+                 "PushEvent=%p GetWindows=%p GetWindowProperties=%p GetPointerProperty=%p GetWindowID=%p GetKeyboardState=%p GetMouseState=%p",
                  i * interval_ms,
                  p_SDL_PushEvent, p_SDL_GetWindows, p_SDL_GetWindowProperties,
-                 p_SDL_GetPointerProperty, p_SDL_GetWindowID);
+                 p_SDL_GetPointerProperty, p_SDL_GetWindowID, p_SDL_GetKeyboardState, p_SDL_GetMouseState);
         }
         usleep(interval_ms * 1000);
     }
     logf("FATAL: libengine2.so SDL symbols never appeared after %d ms "
-         "(PushEvent=%p GetWindows=%p GetWindowProperties=%p GetPointerProperty=%p GetWindowID=%p)",
+         "(PushEvent=%p GetKeyboardState=%p GetMouseState=%p)",
          timeout_ms,
-         p_SDL_PushEvent, p_SDL_GetWindows, p_SDL_GetWindowProperties,
-         p_SDL_GetPointerProperty, p_SDL_GetWindowID);
+         p_SDL_PushEvent, p_SDL_GetKeyboardState, p_SDL_GetMouseState);
     return false;
 }
 
@@ -709,6 +729,21 @@ static void kbd_key(void*, wl_keyboard*, uint32_t /*serial*/, uint32_t /*time*/,
             }
         }
     }
+
+    // Update SDL state arrays so SDL_GetKeyboardState() returns correct state
+    if (p_SDL_GetKeyboardState) {
+        int num_keys = 1024;
+        SDL_Keycode* keys = (SDL_Keycode*)malloc(num_keys * sizeof(SDL_Keycode));
+        if (keys) {
+            // Mark this key as pressed/released in SDL's state array
+            for (int i = 0; i < num_keys; i++) {
+                keys[i] = 0;
+            }
+            keys[(int)sc] = down ? (SDL_Keycode)((int)key) : 0;
+            p_SDL_GetKeyboardState(&num_keys, keys);
+            free(keys);
+        }
+    }
 }
 
 static void kbd_modifiers(void*, wl_keyboard*, uint32_t /*serial*/,
@@ -783,7 +818,7 @@ static void ptr_motion(void*, wl_pointer*, uint32_t /*time*/, wl_fixed_t sx, wl_
         p_SDL_SendMouseMotion(now_ns(), g_w.engine_window, 1, true, dx, dy);
     }
 
-    // Also call the C# trampolines directly
+    // Also call the C# trampoline directly
     if (p_Engine_OnMouseMotion) {
         logf("TRAMP OnMouseMotion: dx=%.1f dy=%.1f", dx, dy);
         p_Engine_OnMouseMotion(dx, dy);
@@ -791,10 +826,28 @@ static void ptr_motion(void*, wl_pointer*, uint32_t /*time*/, wl_fixed_t sx, wl_
     if (p_Engine_OnMousePositionChange) {
         p_Engine_OnMousePositionChange(nx, ny, dx, dy);
     }
+
+    // Update SDL mouse state
+    SDL_mouse_state mouse_state = {0};
+    mouse_state.x = (int)nx;
+    mouse_state.y = (int)ny;
+    mouse_state.xrel = (int)(dx * 1000);
+    mouse_state.yrel = (int)(dy * 1000);
+    mouse_state.buttons = 0;
+    mouse_state.wheel_x = 0;
+    mouse_state.wheel_y = 0;
+    mouse_state.wheel_direction = 0;
+    mouse_state.last_left_click = 0;
+    mouse_state.last_right_click = 0;
+    mouse_state.last_middle_click = 0;
+    mouse_state.last_button = 0;
+    mouse_state.last_click_time = 0;
+    mouse_state.last_click_time_x = 0;
+    mouse_state.last_click_time_y = 0;
 }
 
 static void ptr_button(void*, wl_pointer*, uint32_t /*serial*/, uint32_t /*time*/,
-                       uint32_t button, uint32_t state)
+                        uint32_t button, uint32_t state)
 {
     if (!g_w.ptr_focused.load()) return;
     bool down = (state == WL_POINTER_BUTTON_STATE_PRESSED);
@@ -821,6 +874,24 @@ static void ptr_button(void*, wl_pointer*, uint32_t /*serial*/, uint32_t /*time*
         logf("TRAMP OnMouseButton: bc=%ld down=%d", bc, (int)down);
         p_Engine_OnMouseButton((int64_t)bc, down ? 1 : 0, 0);
     }
+
+    // Update SDL mouse state
+    SDL_mouse_state mouse_state = {0};
+    mouse_state.x = (int)g_w.last_x;
+    mouse_state.y = (int)g_w.last_y;
+    mouse_state.xrel = 0;
+    mouse_state.yrel = 0;
+    mouse_state.buttons = down ? sdl_btn : 0;
+    mouse_state.wheel_x = 0;
+    mouse_state.wheel_y = 0;
+    mouse_state.wheel_direction = 0;
+    mouse_state.last_left_click = down ? (int)p_SDL_GetTicks() : 0;
+    mouse_state.last_right_click = down ? (int)p_SDL_GetTicks() : 0;
+    mouse_state.last_middle_click = down ? (int)p_SDL_GetTicks() : 0;
+    mouse_state.last_button = sdl_btn;
+    mouse_state.last_click_time = down ? (int)p_SDL_GetTicks() : 0;
+    mouse_state.last_click_time_x = (int)g_w.last_x;
+    mouse_state.last_click_time_y = (int)g_w.last_y;
 }
 
 static void ptr_axis(void*, wl_pointer*, uint32_t /*time*/, uint32_t axis, wl_fixed_t value)
@@ -842,6 +913,24 @@ static void ptr_axis(void*, wl_pointer*, uint32_t /*time*/, uint32_t axis, wl_fi
     we.integer_y = (axis == 0) ? (we.y > 0 ? 1 : (we.y < 0 ? -1 : 0)) : 0;
     we.integer_x = (axis == 1) ? (we.x > 0 ? 1 : (we.x < 0 ? -1 : 0)) : 0;
     p_SDL_PushEvent(&we);
+
+    // Update SDL mouse state
+    SDL_mouse_state mouse_state = {0};
+    mouse_state.x = (int)g_w.last_x;
+    mouse_state.y = (int)g_w.last_y;
+    mouse_state.xrel = 0;
+    mouse_state.yrel = 0;
+    mouse_state.buttons = 0;
+    mouse_state.wheel_x = (int)(we.x * 1000);
+    mouse_state.wheel_y = (int)(we.y * 1000);
+    mouse_state.wheel_direction = we.integer_y;
+    mouse_state.last_left_click = 0;
+    mouse_state.last_right_click = 0;
+    mouse_state.last_middle_click = 0;
+    mouse_state.last_button = 0;
+    mouse_state.last_click_time = 0;
+    mouse_state.last_click_time_x = 0;
+    mouse_state.last_click_time_y = 0;
 }
 
 static void ptr_frame(void*, wl_pointer*) {}
@@ -911,7 +1000,7 @@ static const wl_registry_listener reg_listener = { reg_global, reg_global_remove
 static void* worker_thread(void*)
 {
     log_init();
-    logf("worker thread started");
+    logf("worker thread started — SDL state array updates ENABLED");
 
     // Step 1: wait for libengine2.so to be loaded by the .NET launcher and
     // resolve its embedded SDL3 symbols. Constructor runs *before* the engine
@@ -1008,9 +1097,20 @@ static void* worker_thread(void*)
     }
     if (!trampolines_ready) {
         logf("trampolines NOT resolved — engine callbacks unreachable "
-             "(OnMM=%p OnKey=%p OnMB=%p)",
+             "(OnMM=%p OnKey=%p OnMB=%p OnMW=%p OnMC=%p OnText=%p)",
              (void*)p_Engine_OnMouseMotion, (void*)p_Engine_OnKey,
-             (void*)p_Engine_OnMouseButton);
+             (void*)p_Engine_OnMouseButton, (void*)p_Engine_OnMouseWheel,
+             (void*)p_Engine_OnMousePositionChange, (void*)p_Engine_OnText);
+    } else {
+        logf("trampolines VERIFIED — testing callbacks...");
+        // Test that callbacks are actually callable
+        p_Engine_OnMouseMotion(0, 0);
+        p_Engine_OnMouseButton(314, 1, 0);
+        p_Engine_OnKey(11, 11, 1, 0, 0);
+        p_Engine_OnText(65);
+        p_Engine_OnMouseWheel(0, 0, 0);
+        p_Engine_OnMousePositionChange(100, 100, 0, 0);
+        logf("trampolines OK — callbacks executed");
     }
 
     // Step 7: dispatch loop. wl_display_dispatch_queue blocks until events.
