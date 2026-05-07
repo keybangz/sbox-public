@@ -186,7 +186,6 @@ public partial class RootPanel : Panel
 		_preLayoutPhaseStopwatch.Restart();
 		BuildStyleRules();
 		if ( _preLayoutPhaseStopwatch.Elapsed.TotalMilliseconds > 50 )
-			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] RootPanel.BuildStyleRules took {_preLayoutPhaseStopwatch.Elapsed.TotalMilliseconds:F0}ms\n" );
 
 		PushRootValues();
 
@@ -196,7 +195,6 @@ public partial class RootPanel : Panel
 		_preLayoutPhaseStopwatch.Restart();
 		PreLayout( cascade );
 		if ( _preLayoutPhaseStopwatch.Elapsed.TotalMilliseconds > 50 )
-			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] RootPanel.PreLayout(cascade) took {_preLayoutPhaseStopwatch.Elapsed.TotalMilliseconds:F0}ms\n" );
 	}
 
 	internal void CalculateLayout()

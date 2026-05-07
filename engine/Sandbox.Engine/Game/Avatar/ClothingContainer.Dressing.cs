@@ -17,7 +17,6 @@ public partial class ClothingContainer
 		Log.Info( logLine );
 		try
 		{
-			System.IO.File.AppendAllText( "/tmp/sbox_avatar.log", logLine + "\n" );
 		}
 		catch { }
 	}

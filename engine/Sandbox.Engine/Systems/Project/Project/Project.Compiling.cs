@@ -91,7 +91,6 @@ public partial class Project
 			if ( compilerName == "local.toolbase" ) compilerName = "toolbase";
 
 			Log.Trace( $"Create Compiler `{compilerName}`" );
-			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[Project.Compiling] CreateCompiler name={compilerName} codePath={codePath} exists={System.IO.Directory.Exists(codePath)}\n" );
 
 			Compiler = CompileGroup.CreateCompiler( compilerName, codePath, compilerSettings );
 
@@ -250,20 +249,14 @@ public partial class Project
 
 	internal static async Task<bool> CompileAsync()
 	{
-		System.IO.File.AppendAllText( "/tmp/compileasync_debug.txt", $"[CompileAsync] Start, IsBuilding={CompileGroup.IsBuilding}\n" );
 		while ( CompileGroup.IsBuilding )
 		{
 			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
 			await Task.Delay( 50 ).ConfigureAwait( false );
 		}
 
-		System.IO.File.AppendAllText( "/tmp/compileasync_debug.txt", $"[CompileAsync] After wait loop, calling BuildAsync\n" );
 		CompileGroup.AllowFastHotload = HotloadManager.hotload_fast;
-
-		// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
-		var result = await CompileGroup.BuildAsync().ConfigureAwait( false );
-		System.IO.File.AppendAllText( "/tmp/compileasync_debug.txt", $"[CompileAsync] BuildAsync returned: {result}\n" );
-		return result;
+		return await CompileGroup.BuildAsync().ConfigureAwait( false );
 	}
 
 	internal static IEnumerable<Microsoft.CodeAnalysis.Diagnostic> GetCompileDiagnostics()

@@ -10,10 +10,7 @@ public static class Launcher
 
 	private static void WriteDebugFileLine( string message )
 	{
-		if ( !FileDebugLoggingEnabled )
-			return;
-
-		System.IO.File.AppendAllText( "/tmp/launcher_debug.txt", $"{message}\n" );
+		// Debug logging disabled
 	}
 
 	public static int Main()

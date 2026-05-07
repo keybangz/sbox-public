@@ -154,7 +154,6 @@ internal sealed class MenuDll : IMenuDll
 			FontManager.Instance.LoadAll( FileSystem.Mounted );
 			var fontElapsed = System.Environment.TickCount64 - fontStart;
 			if ( fontElapsed > 100 )
-				System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[INIT] FontManager.LoadAll took {fontElapsed}ms\n" );
 		}
 
 		// Wait for both compilation and account update in parallel
@@ -170,7 +169,6 @@ internal sealed class MenuDll : IMenuDll
 			var waitStart = System.Environment.TickCount64;
 			await Task.WhenAll( tasksToWait );
 			var waitElapsed = System.Environment.TickCount64 - waitStart;
-			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[INIT] Compile & Account wait took {waitElapsed}ms\n" );
 		}
 
 		Enroller.LoadPackage( "local.menu#local" );
@@ -196,7 +194,6 @@ internal sealed class MenuDll : IMenuDll
 			SetupMenuScene();
 			var sceneElapsed = System.Environment.TickCount64 - sceneStart;
 			if ( sceneElapsed > 100 )
-				System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[INIT] SetupMenuScene took {sceneElapsed}ms\n" );
 		}
 
 		IMenuSystem.Current = TypeLibrary.Create<IMenuSystem>( "MenuSystem", true );
@@ -371,7 +368,6 @@ internal sealed class MenuDll : IMenuDll
 		// Check time budget after each major operation
 		if ( _tickStopwatch.ElapsedMilliseconds > TickTimeBudgetMs * 10 )
 		{
-			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[MENU_TICK] MenuSystem.Tick took {_tickStopwatch.ElapsedMilliseconds}ms, skipping rest\n" );
 			return;
 		}
 
@@ -386,7 +382,6 @@ internal sealed class MenuDll : IMenuDll
 
 		if ( _tickStopwatch.ElapsedMilliseconds > TickTimeBudgetMs * 10 )
 		{
-			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[MENU_TICK] Loader.Tick caused timeout at {_tickStopwatch.ElapsedMilliseconds}ms\n" );
 			return;
 		}
 
@@ -401,7 +396,6 @@ internal sealed class MenuDll : IMenuDll
 
 		if ( _tickStopwatch.ElapsedMilliseconds > TickTimeBudgetMs * 10 )
 		{
-			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[MENU_TICK] MenuScene.Tick caused timeout at {_tickStopwatch.ElapsedMilliseconds}ms\n" );
 			return;
 		}
 

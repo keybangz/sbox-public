@@ -94,7 +94,7 @@ public static class TextureLoadQueue
 				long loadTime = Environment.TickCount64 - loadStart;
 				if ( loadTime > 100 )
 				{
-					System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[TEXTURE_QUEUE] Single load took {loadTime}ms, queue remaining: {_queue.Count}\n" );
+					// Debug logging disabled
 				}
 
 				// Mark panel as render dirty so it re-renders with the loaded texture

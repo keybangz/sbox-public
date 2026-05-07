@@ -200,9 +200,6 @@ public abstract partial class Component : BytePack.ISerializer
 
 		var elapsed = System.Environment.TickCount64 - startTime;
 		if ( elapsed > 100 )
-		{
-			System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[COMPONENT] PostDeserialize {GetType().FullName} took {elapsed}ms\n" );
-		}
 	}
 
 	/// <summary>

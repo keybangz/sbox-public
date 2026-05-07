@@ -64,7 +64,6 @@ class CallbackBatch : System.IDisposable
 					if ( elapsed > 100 )
 					{
 						var targetName = action.Target?.GetType()?.FullName ?? "unknown";
-						System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[CALLBACK] {action.Callback} on {targetName} took {elapsed}ms\n" );
 					}
 				}
 				catch ( System.Exception e )

@@ -195,7 +195,6 @@ public partial class Panel
 						panelInfo += $"#{ElementName}";
 					if ( Class?.Any() == true )
 						panelInfo += $".{string.Join( ".", Class )}";
-					System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[TIME_BUDGET] SLOW: {elapsed}ms after {_preLayoutProcessedCount} panels, panel: {panelInfo}\n" );
 				}
 				return;
 			}

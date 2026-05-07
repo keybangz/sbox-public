@@ -447,7 +447,6 @@ internal class ExpirableSynchronizationContext : SynchronizationContext
 						if ( elapsed > CallbackThresholdMs )
 						{
 							var name = data.State is Delegate deleg ? deleg.ToSimpleString() : data.State?.GetType()?.Name ?? "unknown";
-							System.IO.File.AppendAllText( "/tmp/block_debug.txt", $"[BLOCK] SyncContext callback took {elapsed:F0}ms: {name}\n" );
 						}
 					}
 				}

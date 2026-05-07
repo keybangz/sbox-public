@@ -1,233 +1,278 @@
 # 🐧 s&box Linux Native Client
 
-**Status:** ✅ STABLE - Optimized menu UI performance!
+**Branch:** `linux-native-client`
+**Status:** ✅ STABLE
+**Purpose:** Native Linux client for s&box (no Wine/Proton required)
 
-<img width="1911" height="1072" alt="Screenshot_20260307_015248" src="https://github.com/user-attachments/assets/4411404f-be8a-4b1e-afa4-1f3b7d23f80f" />
+<img width="1911" height="1072" alt="Screenshot" src="https://github.com/user-attachments/assets/4411404f-be8a-4b1e-afa4-1f3b7d23f80f" />
 
-This fork contains fixes and modifications to run s&box natively on Linux.
+---
 
-### Quick Start (Linux)
+## 1. Project Identity
+
+This is the **s&box Linux Native Client** fork, maintained on the `linux-native-client` branch. The parent project ([Facepunch/sbox-public](https://github.com/Facepunch/sbox-public)) does not ship a native Linux client. This fork exists to fill that gap.
+
+**What this fork provides:**
+- Native Linux client for s&box (Source 2 game engine)
+- No Wine, no Proton — runs directly on Linux
+- Linux-specific interpose system for bridging managed C# to native engine libs
+- SDL3/X11/Wayland input handling without dependency on Valve's Windows-only binaries
+
+---
+
+## 2. What This Branch Is
+
+The `linux-native-client` branch adds Linux platform support to the s&box engine. Key changes from upstream:
+
+| Component | Change |
+|-----------|--------|
+| **Input system** | SDL3/X11/Wayland hybrid input polling — direct P/Invoke to `libSDL3.so` |
+| **Native interop** | Delegate-based function pointers instead of `UnmanagedCallersOnly` (GC-safe on Linux) |
+| **Library resolution** | `DLLImportResolver` handles all native library loading (`steam_api64` → `libsteam_api.so`) |
+| **DXC wrapper** | 16KB shim converting UTF-16 → UTF-32 for Linux DXC compatibility |
+| **Performance** | Texture load queue, time budgets, DNS caching, HTTP optimization |
+| **Filesystem** | Case-insensitive ext4 overlay for Windows path compatibility |
+| **Input capture** | X11 cursor warp with synthetic event filtering; Wayland uses SDL pointer constraints |
+
+**Why this fork exists:** Facepunch does not ship a native Linux client for s&box. This fork bridges the managed C# engine to Valve's native Linux binaries using an LD_PRELOAD interpose layer.
+
+---
+
+## 3. Build Instructions
+
+### Docker-based Full Compile
+
+The official build uses a Docker container with a Wine-based Windows toolchain to compile the managed C# code.
 
 ```bash
-# Clone the repository
-git clone <repo-url> sbox-keybangz
-cd sbox-keybangz
-
-# Run the Docker build (this downloads all game files)
-cd .. && ./sbox-public-linux-docker/sbox-install.sh compile ./sbox-keybangz/
-cd sbox-keybangz
-
-# Restore patched files that Docker overwrites (REQUIRED after every Docker build)
-./linux/post-docker-deploy.sh
-
-# Run the game
-cd linux && ./run.sh
+# Full compile — downloads game files, builds managed code
+# SBOX_SKIP_ARTIFACTS=1 skips incremental checks, forces full rebuild
+SBOX_SKIP_ARTIFACTS=1 ./sbox-public-linux-docker/sbox-install.sh compile ./
 ```
 
-### Post-Docker Redeployment (Required)
+### Post-Deploy (MANDATORY after every build)
 
-**After every Docker build**, you **must** run `./linux/post-docker-deploy.sh` to restore patched files.
+Docker's install process overwrites patched files. **You must** run this after every Docker build:
 
-Docker's install process overwrites our critical patches:
+```bash
+./linux/post-docker-deploy.sh
+```
 
 | Patched File | Docker's Version | Our Patched Version |
 |--------------|------------------|---------------------|
 | `libdxcompiler.so` | 37MB broken DXC | 16KB thin shim wrapper |
 | `Sandbox.AppSystem.dll` | Broken SDL window registration | `RegisterWindowWithSDL` + `SetEngineState` fixes |
-| `Sandbox.Engine.dll` | Various runtime issues | `MainThread.Wait`, `Panel.Layer` guard, downloads folder fix |
+| `Sandbox.Engine.dll` | Runtime issues | `MainThread.Wait`, `Panel.Layer` guard, downloads folder fix |
 
-Run this after every Docker build:
+### Alternative Rebuild Script
+
 ```bash
+./linux/rebuild.sh
+```
+
+This wraps the Docker build + post-deploy in one command.
+
+---
+
+## 4. Run Instructions
+
+### Standard Launch
+
+```bash
+cd linux && ./run.sh
+```
+
+### Debug Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `SDL_VIDEODRIVER=x11` | Force X11 video driver (Wayland init fails silently) |
+| `SBOX_VALGRIND=1` | Run under Valgrind memory debugger |
+| `SBOX_GDB=1` | Run under GDB debugger |
+| `SBOX_ASAN=1` | Run with AddressSanitizer |
+| `SBOX_INTERPOSE=1` | Enable interpose library debugging |
+| `SBOX_AUDIO_DEBUG=1` | Enable audio system debug output |
+| `SBOX_INPUT_TRACE=1` | Trace input events (Linux only) |
+| `SBOX_DEBUG=1` | General debug logging |
+
+### Key LD_PRELOAD Stacks (documented in `run.sh`)
+
+```
+libopenssl_init_interpose.so     — Force-init libcrypto before engine2
+libdeepbind_interpose.so       — RTLD_DEEPBIND on Valve engine libs
+libpermissive_free_interpose.so — Prevent SIGABRT from invalid free()
+libsdl3_dynapi_interpose.so     — SDL dynapi symbol redirect
+```
+
+---
+
+## 5. Pipeline Overview
+
+### Flow: Docker Build → Post-Deploy → Run
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  sbox-public-linux-docker/sbox-install.sh compile ./        │
+│  (Wine-based Windows toolchain, managed C# compilation)     │
+└────────────────────┬────────────────────────────────────────┘
+                     │ overwrites patched files
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  ./linux/post-docker-deploy.sh                              │
+│  • Rebuilds libdxcompiler_wrapper.so (DXC UTF-16→UTF-32)   │
+│  • Rebuilds Sandbox.AppSystem.dll + Sandbox.Engine.dll       │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  ./linux/run.sh                                            │
+│  • LD_PRELOAD interpose stack                              │
+│  • SDL_VIDEODRIVER=x11                                     │
+│  • ./sbox (native AppHost binary)                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### What's Built
+
+- **Managed C# code** — compiled via Docker/Wine into `game/bin/linuxsteamrt64/`
+- **Native interpose libs** — built from `linux/interpose/*.cpp` via `make`
+- **DXC wrapper** — `libdxcompiler_wrapper.so` (16KB shim)
+
+### What's in `game/bin/linuxsteamrt64/`
+
+| Library | Role |
+|---------|------|
+| `libengine2.so` | Native engine entry point |
+| `libsteam_api.so` | Steam API binding |
+| `libtier0.so` | Valve tier0 utilities |
+| `librendersystemvulkan.so` | Vulkan render system |
+| `librendersystemempty.so` | Empty render system fallback |
+| `libSDL3.so.0.4.8` | SDL3 library (SONAME: `libSDL3.so.0`) |
+| `libdxcompiler_wrapper.so` | DXC UTF-16→UTF-32 shim |
+| `libdxcompiler.so` → `libdxcompiler_wrapper.so` | Symlink for DXC entry point |
+
+### The Interpose System
+
+The interpose layer uses `LD_PRELOAD` to bridge gaps between Valve's native Linux binaries and s&box's managed engine:
+
+| Library | Purpose |
+|---------|---------|
+| `libopenssl_init_interpose.so` | Forces `libcrypto` initialization before `libengine2` loads |
+| `libdeepbind_interpose.so` | Applies `RTLD_DEEPBIND` to Valve libs to resolve symbol conflicts |
+| `libpermissive_free_interpose.so` | Intercepts `free()` calls to prevent SIGABRT from invalid pointers |
+| `libsdl3_dynapi_interpose.so` | Redirects `dlsym("SDL_Foo_REAL")` → `dlsym("SDL_Foo")` — required because `librendersystemvulkan.so` uses dlsym to load 1,251 SDL symbols |
+
+**Source:** `linux/interpose/*.cpp`
+
+---
+
+## 6. Known Issues
+
+### Shader Compilation — Native Interop Access Violation
+
+Shader compilation can fail with an access violation during native interop calls. This is **not a code issue** — it is a binary compatibility problem between the managed C# interop layer and Valve's compiled native shader compiler binaries. The DXC wrapper shim handles UTF-16→UTF-32 conversion, but certain shader paths exercise code paths that trigger the violation.
+
+**Workaround:** Retry shader compilation or use precompiled shaders where available.
+
+### Wayland vs X11 Behavior Differences
+
+- **Wayland:** Cursor warp is handled by the compositor via `zwp_pointer_constraints_v1`. `SDL_SetWindowRelativeMouseMode` is used directly.
+- **X11:** Manual cursor warp with synthetic event filtering is used. `SetCursorPosition` checks `IsWayland` and returns early on Wayland.
+
+If input feels wrong on Wayland, try forcing X11:
+```bash
+SDL_VIDEODRIVER=x11 ./linux/run.sh
+```
+
+### Capture Debounce
+
+The input capture state machine debounces capture release at 0.1s to prevent tooltip hover from flickering capture off. This is intentional.
+
+### Scene Loading Performance
+
+Scene loading takes ~80 seconds due to native model/mesh/collider deserialization. This cannot be optimized from managed code — it is a property of the native binaries.
+
+---
+
+## 7. File Structure
+
+```
+sbox-keybangz/
+├── README.md                    # This file
+├── .gitignore                  # Ignores .so artifacts
+│
+├── linux/                      # Linux-specific scripts and code
+│   ├── run.sh                 # Game launch script
+│   ├── setup.sh               # Symlink setup
+│   ├── rebuild.sh             # Docker build + post-deploy wrapper
+│   ├── post-docker-deploy.sh   # Restore patched files after Docker
+│   ├── bootstrap.sh           # DXC wrapper compilation
+│   ├── dxc_wrapper.c          # DXC UTF-16→UTF-32 shim source
+│   └── interpose/             # LD_PRELOAD libraries
+│       ├── sdl3_dynapi_interpose.cpp
+│       ├── openssl_init_interpose.cpp
+│       ├── deepbind_interpose.cpp
+│       └── permissive_free_interpose.cpp
+│
+├── sbox-public-linux-docker/ # Docker build environment (submodule)
+│   └── sbox-install.sh       # Docker build + run script
+│
+├── game/
+│   ├── bin/linuxsteamrt64/    # Native engine binaries
+│   │   ├── libengine2.so
+│   │   ├── libsteam_api.so
+│   │   ├── libtier0.so
+│   │   ├── librendersystemvulkan.so
+│   │   ├── libSDL3.so.0.4.8
+│   │   ├── libdxcompiler_wrapper.so
+│   │   └── libdxcompiler.so → libdxcompiler_wrapper.so
+│   └── addons/
+│
+└── engine/                     # Managed C# engine source
+    └── Sandbox.Engine/
+```
+
+### .gitignore Notes
+
+- `linux/interpose/*.so` — compiled interpose libraries are ignored
+- **Do NOT commit compiled binaries**
+
+---
+
+## 8. Git Conventions
+
+| Rule | Reason |
+|------|--------|
+| **Never commit `.so` files** | Compiled artifacts belong in builds only |
+| **Preprocessor: `#if !WIN`** | Use `#if WIN` / `#if !WIN` — never `#if LINUX` |
+| **Indentation: tabs, 4-space** | Per `.editorconfig` |
+| **Line endings: CRLF** | Per `.editorconfig` |
+| **No CI workflows** | Manual builds only |
+
+---
+
+## Quick Reference
+
+```bash
+# Clone
+git clone <repo-url> sbox-keybangz
+cd sbox-keybangz
+
+# Build (full compile)
+SBOX_SKIP_ARTIFACTS=1 ./sbox-public-linux-docker/sbox-install.sh compile ./
+
+# Restore patched files (MANDATORY)
 ./linux/post-docker-deploy.sh
+
+# Run
+cd linux && ./run.sh
+
+# Or with debugging
+SBOX_GDB=1 ./linux/run.sh
+SBOX_VALGRIND=1 ./linux/run.sh
 ```
 
-### What's New: Linux Performance Optimizations (March 2026)
-
-Major performance improvements for the Linux native client:
-
-- **🚀 Menu UI now smooth** - Fixed 5-30 second frame freezes, now runs at 50-250ms
-- **📦 Incremental texture loading** - TextureLoadQueue prevents blocking during rendering
-- **🌐 DNS caching** - Fixed Linux-specific DNS resolution delays (5-15s → instant)
-- **⚡ HTTP client optimization** - Reduced timeout from 120min to 30s, added connection pooling
-- **⏱️ Time budgets** - Prevents any single operation from blocking the main thread
-
-### Previous Updates: Automated Cross-Platform Support
-
-- **92% fewer symlinks** - Reduced from 441 to ~35 symlinks
-- **Case-insensitive filesystem layer** - Handles `Code` vs `code`, `Assets` vs `assets` automatically
-- **Cross-platform native library loading** - Automatic resolution of `steam_api64` → `libsteam_api.so`, etc.
-- **Automated setup script** - `linux/setup.sh` creates all required symlinks automatically
-- **X11 input polling** - Native mouse position and button state using X11 (no SDL3 dependency)
-- **Shader/texture loading fixes** - Proper colorgrading shader and DDGI texture initialization
-- **DXC wrapper auto-setup** - `bootstrap.sh` automatically compiles and installs the DXC shader compiler wrapper
-- **Deprecated Steam API cleanup** - Removed Stadia-related P/Invoke calls that caused PreJIT warnings
-
-### Code Changes Summary
-
-#### Core Interop & Native Loading
-| File | Change |
-|------|--------|
-| `InteropGen/Writer/ManagerWriter.cs` | Use delegate-based function pointers instead of `UnmanagedCallersOnly` for Linux |
-| `InteropGen/Writer/ManagerWriter.Imports.cs` | Disabled `[SuppressGCTransition]` (causes GC mode issues on Linux) |
-| `InteropGen/Writer/ManagerWriter.Exports.cs` | Added delegate storage to prevent GC collection, Linux-compatible exports |
-| `Sandbox.Engine/Core/Interop/NetCore.cs` | Use absolute paths for native library loading on Linux/macOS |
-| `Sandbox.Engine/Core/Interop/CreateInterface.cs` | Added fallback path resolution for Linux native libraries |
-| `Sandbox.NetCore/NetCore.cs` | Changed entry point to use delegates instead of `UnmanagedCallersOnly` |
-| `Sandbox.Reflection/Utility.cs` | Skip `[UnmanagedCallersOnly]` methods during PreJIT (crashes on Linux) |
-
-#### Physics & Ray Tracing
-| File | Change |
-|------|--------|
-| `Sandbox.Engine/Systems/Physics/PhysicsTraceBuilder.cs` | Replaced `[UnmanagedCallersOnly]` with delegate-based callbacks |
-| `Sandbox.Engine/Utility/RayTrace/MeshTraceRequest.cs` | Replaced `[UnmanagedCallersOnly]` with delegate-based callbacks |
-
-#### Rendering & Shaders
-| File | Change |
-|------|--------|
-| `Sandbox.Engine/Systems/Render/ShaderCompile/ShaderCompile.cs` | Load Linux `.so` libraries, added debug logging |
-| `Sandbox.Engine/Systems/Render/Multimedia/LinuxCursorCapture.cs` | **New file**: Linux cursor/input capture using X11 (stub implementations for cursor, X11 polling for input) |
-
-#### Font & Text Rendering
-| File | Change |
-|------|--------|
-| `Sandbox.Engine/Systems/Render/TextRendering/FontManager.cs` | Added null checks, debug logging for font loading |
-| `Sandbox.Engine/Systems/UI/Engine/TextBlock.cs` | Linux font fallbacks (Poppins → Liberation Sans → DejaVu, etc.) |
-| `ThirdParty/RichTextKit/FontMapper.cs` | Windows → Linux font mapping (Arial → Liberation Sans, etc.) |
-| `ThirdParty/RichTextKit/FontFallback/FontFallback.cs` | Null typeface handling to prevent crashes |
-| `ThirdParty/RichTextKit/FontFallback/DefaultCharacterMatcher.cs` | Added Linux fallback font families |
-| `ThirdParty/RichTextKit/TextBlock.cs` | Debug logging for BuildFontRuns |
-
-#### Audio
-| File | Change |
-|------|--------|
-| `Sandbox.Engine/Systems/Audio/SteamAudio/BinauralEffect.cs` | Disabled Steam Audio on Linux (context creation fails) |
-
-#### Menu & UI
-| File | Change |
-|------|--------|
-| `Sandbox.Menu/MenuDll.cs` | Added debug logging for menu initialization |
-| `game/addons/menu/.../Footer.razor` | Initialize `ActiveFriends` to prevent null reference |
-
-#### Build System & Tools
-| File | Change |
-|------|--------|
-| `Sandbox.AppSystem/ToolAppSystem.cs` | Handle both `/` and `\` path separators |
-| `Tools/SboxBuild/Steps/BuildContent.cs` | Support Linux `contentbuilder` path |
-| `Tools/InteropGen/Program.cs` | Added `Main()` entry point |
-| `Tools/InteropGen/Arguments/ArgDefinedStruct.cs` | Fixed struct pointer passing |
-| `Sandbox.Tools/Utility/VoiceRecording.cs` | Stub implementation for Linux |
-| `Launcher/StandaloneTest/Launcher.cs` | Skip Windows-only code on Linux |
-
-#### Runtime Configuration
-| File | Change |
-|------|--------|
-| `game/*.runtimeconfig.json` | Updated for Linux runtime compatibility |
-
-#### Cross-Platform Filesystem & Libraries (NEW)
-| File | Change |
-|------|--------|
-| `Sandbox.Filesystem/CaseInsensitivePhysicalFileSystem.cs` | **New file**: Case-insensitive path resolution for Linux |
-| `Sandbox.Filesystem/LocalFileSystem.cs` | Use case-insensitive filesystem on Linux |
-| `Sandbox.Filesystem/BaseFileSystem.cs` | Case-insensitive SubFileSystem path resolution |
-| `Sandbox.Engine/Core/Interop/NativeLibraryResolver.cs` | **New file**: Cross-platform native library loading with `steam_api64` → `libsteam_api.so` mapping |
-| `Sandbox.Engine/Systems/Project/Project/Project.cs` | Case-insensitive Code/Assets/Editor path lookup |
-| `Sandbox.Engine/Systems/Filesystem/EngineFileSystem.cs` | Native search path initialization for Linux |
-| `Sandbox.Engine/Core/Bootstrap.cs` | Initialize native search paths after engine init |
-| `Sandbox.AppSystem/AppSystem.cs` | Cross-platform Steam API loading |
-| `Sandbox.AppSystem/QtAppSystem.cs` | Cross-platform Steam API loading |
-| `Sandbox.AppSystem/MissingDependancyDiagnosis.cs` | Platform-specific dependency checking |
-| `Sandbox.GameInstance/GameInstanceDll.cs` | Preserve path casing on Linux |
-| `Launcher/Launcher.cs` | Cross-platform paths, LD_LIBRARY_PATH setup |
-| `Launcher/Shared/LauncherEnvironment.cs` | Platform-appropriate library path variables |
-| `linux/setup.sh` | **New file**: Automated setup script |
-| `linux/run.sh` | **New file**: Game launch script |
-
-#### Input System (NEW)
-| File | Change |
-|------|--------|
-| `Sandbox.Engine/Systems/Input/InputRouter.cs` | X11 native input polling for mouse position/buttons |
-| `Sandbox.Engine/Systems/Input/InputRouter.Input.cs` | X11 display/window handling with P/Invoke declarations |
-| `Sandbox.Engine/Systems/Render/Multimedia/LinuxCursorCapture.cs` | Extended X11 cursor capture with window focus detection |
-
-#### Rendering Pipeline (NEW)
-| File | Change |
-|------|--------|
-| `Sandbox.Engine/Systems/Render/Graphics.Hooks.cs` | Debug hooks for render pipeline investigation |
-| `Sandbox.Engine/Systems/Render/RenderPipeline/RenderPipeline.Static.cs` | Static pipeline initialization fixes |
-
-#### Compilation & Threading (NEW)
-| File | Change |
-|------|--------|
-| `Sandbox.Compiling/CompileGroup.cs` | Build tracing for compiler diagnostics |
-| `Sandbox.Compiling/Compiler/Compiler.Build.cs` | Enhanced build logging |
-| `Sandbox.Engine/Systems/Threads/SyncContext.cs` | Sync context operation tracing |
-| `Sandbox.Engine/Systems/Threads/ExpirableSynchronizationContext.cs` | Improved async context handling |
-| `Sandbox.Engine/Core/EngineLoop.cs` | Engine loop debugging and callback tracing |
-
-#### Linux Performance Optimizations (NEW - March 2026)
-| File | Change |
-|------|--------|
-| `Sandbox.Engine/Systems/UI/TextureLoadQueue.cs` | **New file**: Incremental texture loading queue (5 textures/frame, 32ms budget) |
-| `Sandbox.Engine/Systems/UI/Styles/BaseStyles.Textures.cs` | Non-blocking texture accessors with panel tracking for re-render |
-| `Sandbox.Engine/Systems/UI/Render/PanelRenderer.Background.cs` | Pass panel reference when loading textures |
-| `Sandbox.Engine/Systems/UI/Render/PanelRenderer.cs` | Time budget for BuildCommandLists |
-| `Sandbox.Engine/Systems/UI/Panel/Panel.cs` | Time budget for TickInternal (50ms budget) |
-| `Sandbox.Engine/Systems/UI/Panel/Panel.Layout.cs` | Time budget for PreLayout |
-| `Sandbox.Engine/Systems/UI/UISystem.cs` | TextureLoadQueue processing each frame |
-| `Sandbox.Engine/Systems/Threads/MainThread.cs` | Time budget for queue processing (8ms budget) |
-| `Sandbox.Menu/MenuDll.cs` | Time budget for menu tick operations |
-| `Sandbox.Engine/Utility/Web/Http.cs` | HTTP timeout 30s (was 120min), connection pooling, 10s connect timeout |
-| `Sandbox.System/Extend/UriExtension.cs` | DNS caching with 5min TTL, known domains whitelist, async DNS with 2s timeout |
-
-#### Launch System (NEW)
-| File | Change |
-|------|--------|
-| `Launcher/Sbox/Launcher.cs` | Launch via `dotnet sbox.dll` instead of native executable on Linux |
-| `bootstrap.sh` | Linux bootstrap script with automated DXC wrapper compilation and installation |
-
-#### Steam API Fixes (NEW)
-| File | Change |
-|------|--------|
-| `Sandbox.Engine/Platform/Steam/Generated/SteamStructFunctions.cs` | Removed deprecated Stadia P/Invoke calls (Google Stadia shutdown 2023) |
-| `Sandbox.Engine/Core/Interop/NativeLibraryResolver.cs` | Added `steam_api64` → `libsteam_api.so` library mapping for P/Invoke resolution |
-
-### DXC Shader Compiler Wrapper
-
-The DirectX Shader Compiler (DXC) on Linux expects UTF-32 encoded arguments, but s&box passes UTF-16. A thin wrapper library intercepts DXC calls and performs the conversion.
-
-- **Wrapper:** `game/bin/linuxsteamrt64/libdxcompiler_wrapper.so` (16KB thin shim)
-- **Symlink:** `game/bin/linuxsteamrt64/libdxcompiler.so → libdxcompiler_wrapper.so`
-- **Original:** `game/bin/linuxsteamrt64/libdxcompiler.so.real` (37MB Docker version - backed up)
-- **Build:** `cd linux && make` or run `./linux/post-docker-deploy.sh`
-
-### Setup (Automated)
-
-The `linux/setup.sh` script automatically creates required symlinks:
-
-1. **Library soname symlinks** - Required by Linux dynamic linking (e.g., `libswscale.so.9 → libswscale.so.9.100`)
-2. **Engine library symlinks** - Required by native C++ `dlopen` calls (e.g., `libengine2.so → bin/linuxsteamrt64/libengine2.so`)
-3. **Resource directory symlinks** - Links game resources from `addons/base/Assets/` to game root
-
-**Note:** Case-sensitivity symlinks have been removed. The filesystem uses a case-insensitive ext4 overlay, so symlinks like `assets→Assets` are no longer needed (and would conflict).
-
-#### Manual Setup (if needed)
-```bash
-cd linux
-./setup.sh
-```
-
-### Known Issues
-- **Scene loading still takes ~80 seconds** - This is due to native model/mesh/collider deserialization which cannot be optimized from managed code
-- RenderDoc warnings appear but don't affect functionality
-- Some seasonal/downloaded assets may show as missing
-
-## DXC Wrapper Source
-
-The DXC wrapper source code is located in `linux/dxc_wrapper.c`. To build:
-
-```bash
-gcc -shared -fPIC -o libdxcompiler.so dxc_wrapper.c -ldl
-```
+---
 
 ## Credits
 

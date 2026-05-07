@@ -30,7 +30,6 @@ partial class Compiler
 	/// </summary>
 	public void UpdateFromArchive( CodeArchive a )
 	{
-		System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[UpdateFromArchive] {Name} archive.CompilerName={a?.CompilerName} SyntaxTrees={a?.SyntaxTrees.Count} caller={new System.Diagnostics.StackTrace(1, false).GetFrame(0)?.GetMethod()?.DeclaringType?.Name}.{new System.Diagnostics.StackTrace(1, false).GetFrame(0)?.GetMethod()?.Name}\n" );
 		_currentArchive = a;
 
 		CopyReferencesFromArchive( a );
@@ -56,7 +55,6 @@ partial class Compiler
 	/// </summary>
 	internal async Task BuildAsync()
 	{
-		System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[Compiler.BuildAsync] Start for {Name}\n" );
 		Assert.True( IsBuilding, $"{nameof( PreBuild )} must be called first" );
 
 		log.Trace( "Build Start" );
@@ -71,26 +69,18 @@ partial class Compiler
 		{
 			// Do the expensive archive building on a worker thread
 			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
-			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[Compiler.BuildAsync] {Name} before Task.Run BuildArchive\n" );
 			var archive = await Task.Run( () => BuildArchive( output ) ).ConfigureAwait( false );
-			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[Compiler.BuildAsync] {Name} after Task.Run BuildArchive\n" );
 
 			// Build a list of references, waiting for other compilers to finish if needed
 			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
-			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[Compiler.BuildAsync] {Name} before BuildReferencesAsync\n" );
 			var refs = await BuildReferencesAsync( archive ).ConfigureAwait( false );
-			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[Compiler.BuildAsync] {Name} after BuildReferencesAsync\n" );
 
 			// Actually compile, again on a worker thread since it's expensive
 			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
-			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[Compiler.BuildAsync] {Name} before Task.Run BuildInternal\n" );
 			await Task.Run( () =>
 			{
-				System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[Compiler.BuildAsync] {Name} INSIDE Task.Run BuildInternal (thread pool)\n" );
 				BuildInternal( refs, output );
-				System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[Compiler.BuildAsync] {Name} BuildInternal completed (thread pool)\n" );
 			} ).ConfigureAwait( false );
-			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[Compiler.BuildAsync] {Name} after Task.Run BuildInternal (back on main)\n" );
 		}
 		catch ( System.Exception e )
 		{
@@ -121,7 +111,6 @@ partial class Compiler
 	{
 		if ( _currentArchive is not null )
 		{
-			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildArchive] {Name} EARLY RETURN _currentArchive SyntaxTrees={_currentArchive.SyntaxTrees.Count} FileMap={_currentArchive.FileMap.Count} CompilerName={_currentArchive.CompilerName}\n" );
 			output.Archive = _currentArchive;
 			return _currentArchive;
 		}
@@ -221,7 +210,7 @@ partial class Compiler
 		if ( processor.Diagnostics.Any( x => x.Severity == DiagnosticSeverity.Error ) )
 		{
 			foreach ( var d in processor.Diagnostics.Where( x => x.Severity == DiagnosticSeverity.Error ) )
-				System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildInternal] {Name} PROCESSOR ERROR: {d}\n" );
+				Log.Warning( d.ToString() );
 			return;
 		}
 		}
@@ -237,7 +226,7 @@ partial class Compiler
 		if ( output.Diagnostics.Any( x => x.Severity == DiagnosticSeverity.Error ) )
 		{
 			foreach ( var d in output.Diagnostics.Where( x => x.Severity == DiagnosticSeverity.Error ) )
-				System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildInternal] {Name} BLACKLIST ERROR: {d}\n" );
+				Log.Warning( d.ToString() );
 			return;
 		}
 		}
@@ -248,11 +237,7 @@ partial class Compiler
 			var emitOptions = new EmitOptions()
 				.WithDebugInformationFormat( DebugInformationFormat.Embedded );
 
-			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildInternal] {Name} SyntaxTrees={compiler.SyntaxTrees.Length} DefineConstants={_config.DefineConstants}\n" );
 			BuildResult = compiler.Emit( peStream: peStream, xmlDocumentationStream: xmlStream, options: emitOptions );
-			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildInternal] {Name} Emit done: Success={BuildResult.Success}, DiagCount={BuildResult.Diagnostics.Length}\n" );
-		foreach ( var d in BuildResult.Diagnostics )
-			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildInternal] {Name} DIAG [{d.Severity}]: {d}\n" );
 
 			if ( BuildResult.Success )
 			{
@@ -282,8 +267,6 @@ partial class Compiler
 			}
 
 			output.AssemblyData = peStream.ToArray();
-			output.XmlDocumentation = System.Text.Encoding.UTF8.GetString( xmlStream.ToArray() );
-			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildInternal] {Name} AssemblyData.Length={output.AssemblyData.Length}\n" );
 			if ( Name == "base" && output.AssemblyData.Length > 0 )
 				System.IO.File.WriteAllBytes( "/tmp/base_assembly_dump.dll", output.AssemblyData );
 		}
@@ -292,9 +275,8 @@ partial class Compiler
 
 		if ( !BuildResult.Success )
 		{
-			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildInternal] {Name} EMIT FAILED: BuildResult.Success=false, DiagCount={BuildResult.Diagnostics.Length}\n" );
 			foreach ( var d in BuildResult.Diagnostics )
-				System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[BuildInternal] {Name} DIAG [{d.Severity}]: {d}\n" );
+				Log.Error( d.ToString() );
 			return;
 		}
 

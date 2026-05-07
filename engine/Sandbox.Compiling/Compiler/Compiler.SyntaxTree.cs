@@ -16,7 +16,6 @@ partial class Compiler
 	/// </summary>
 	private void GetSyntaxTree( CodeArchive archive, CSharpParseOptions options )
 	{
-		System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[GetSyntaxTree] {Name} SourceLocations.Count={SourceLocations.Count}\n" );
 		try
 		{
 			foreach ( var location in SourceLocations )
@@ -26,7 +25,6 @@ partial class Compiler
 		}
 		catch ( System.Exception e )
 		{
-			System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[GetSyntaxTree] {Name} EXCEPTION: {e.GetType().Name}: {e.Message}\n{e.StackTrace}\n" );
 			Log.Warning( e, e.Message );
 		}
 	}
@@ -92,7 +90,6 @@ partial class Compiler
 	{
 		var files = filesystem.FindFile( "/", "*.*", true );
 		var fileList = files.ToList();
-		System.IO.File.AppendAllText( "/tmp/compiler_build_debug.txt", $"[CollectFromFilesystem] {Name} root='{filesystem.GetFullPath("/")}' fileCount={fileList.Count} files=[{string.Join(",", fileList.Take(5))}]\n" );
 		files = fileList;
 
 		var oldTrees = incrementalState.HasState ? incrementalState.SyntaxTrees

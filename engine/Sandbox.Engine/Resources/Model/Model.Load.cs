@@ -14,11 +14,7 @@ public partial class Model
 
 		try
 		{
-			var logPath = "/tmp/sbox_model_load.log";
-			var timestamp = DateTime.Now.ToString( "HH:mm:ss.fff" );
-			var threadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
-			var logLine = $"[{timestamp}][T{threadId}] {message}\n";
-			System.IO.File.AppendAllText( logPath, logLine );
+			// Debug logging disabled
 		}
 		catch
 		{

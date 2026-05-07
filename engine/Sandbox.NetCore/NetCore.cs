@@ -24,10 +24,7 @@ internal static class NetCore
 
 	private static void DebugLog( string message )
 	{
-		if ( !DebugLoggingEnabled )
-			return;
-
-		System.IO.File.AppendAllText( "/tmp/netcore_debug.txt", message + "\n" );
+		// Debug logging disabled
 	}
 
 	// Delegate type for the entry point

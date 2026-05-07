@@ -212,7 +212,6 @@ public class CompileGroup : IDisposable
 	/// </summary>
 	public async Task<bool> BuildAsync()
 	{
-		System.IO.File.AppendAllText( "/tmp/buildasync_debug.txt", $"[BuildAsync] Start, IsBuilding={IsBuilding}, NeedsBuild={NeedsBuild}\n" );
 		if ( IsBuilding )
 			throw new System.Exception( "Tried to build but a build is already in process" );
 
@@ -220,7 +219,6 @@ public class CompileGroup : IDisposable
 
 		if ( !NeedsBuild )
 		{
-			System.IO.File.AppendAllText( "/tmp/buildasync_debug.txt", $"[BuildAsync] No build needed, returning\n" );
 			log.Trace( $"BuildAsync Finish - no build needed" );
 			return BuildResult.Success;
 		}
@@ -274,7 +272,6 @@ public class CompileGroup : IDisposable
 			if ( compileList.Count == 0 )
 				throw new System.Exception( "Compile list is empty - this should never happen (NeedsBuild check should prevent it)" );
 
-			System.IO.File.AppendAllText( "/tmp/buildasync_debug.txt", $"[BuildAsync] Building {compileList.Count()} compilers, toCompile={toCompile.Length}\n" );
 			log.Trace( $"Building {compileList.Count()} compilers" );
 
 			OnCompileStarted.InvokeWithWarning();
@@ -286,11 +283,9 @@ public class CompileGroup : IDisposable
 				compiler.PreBuild();
 			}
 
-			System.IO.File.AppendAllText( "/tmp/buildasync_debug.txt", $"[BuildAsync] Starting Task.WhenAll\n" );
 			// Do the actual build, let compilers wait for each other as needed
 			// ConfigureAwait(false) prevents SynchronizationContext capture deadlocks on Linux
 			await Task.WhenAll( toCompile.Select( x => x.BuildAsync() ) ).ConfigureAwait( false );
-			System.IO.File.AppendAllText( "/tmp/buildasync_debug.txt", $"[BuildAsync] Task.WhenAll completed\n" );
 
 			//
 			// Accumulate the build result

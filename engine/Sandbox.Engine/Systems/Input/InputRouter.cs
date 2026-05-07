@@ -64,6 +64,9 @@ internal static partial class InputRouter
 	/// </summary>
 	static HashSet<GamepadCode> PressedControllerButtons = new HashSet<GamepadCode>();
 
+	[UnmanagedFunctionPointer( CallingConvention.Cdecl )]
+	private delegate void WaylandPollDelegate();
+
 	/// <summary>
 	/// Returns the number of seconds escape has been held down
 	/// </summary>
@@ -101,11 +104,13 @@ internal static partial class InputRouter
 		// processed on the main thread (safe for managed runtime).
 		try
 		{
-			Log.Info( "[InputDiag] Calling sbox_wayland_input_poll" );
 			var ptr = NativeEngine.ExternalInvoker.ResolveSymbol( "sbox_wayland_input_poll" );
-			Log.Info( $"[InputDiag] sbox_wayland_input_poll resolved ptr={ptr}" );
-			NativeEngine.ExternalInvoker.InvokeExternal( "sbox_wayland_input_poll" );
-			Log.Info( "[InputDiag] sbox_wayland_input_poll returned" );
+			if ( ptr != IntPtr.Zero )
+			{
+				// Call directly via delegate to bypass InvokeExternal's libdl dependency
+				var del = Marshal.GetDelegateForFunctionPointer<WaylandPollDelegate>( ptr );
+				del();
+			}
 		}
 		catch ( System.Exception e )
 		{

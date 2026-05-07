@@ -62,7 +62,6 @@ public class ToolAppSystem : AppSystem, IDisposable
 			var spaceIdx = commandLine.IndexOf( ' ' );
 			var rest = spaceIdx >= 0 ? commandLine.Substring( spaceIdx ) : "";
 			commandLine = fakeArgv0 + rest;
-			System.IO.File.AppendAllText( "/tmp/inittool_debug.txt", $"[InitTool] Rewrote commandLine argv[0] to: {fakeArgv0}\n" );
 		}
 
 		_appSystem = CMaterialSystem2AppSystemDict.Create( createInfo.ToMaterialSystem2AppSystemDictCreateInfo() );

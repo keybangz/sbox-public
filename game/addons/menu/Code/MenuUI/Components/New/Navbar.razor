@@ -90,10 +90,9 @@
     {
         var timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
         var logLine = $"[AVATAR {timestamp}] {message}";
-        Log.Info(logLine);
+		Log.Info(logLine);
         try
         {
-            System.IO.File.AppendAllText("/tmp/sbox_avatar.log", logLine + "\n");
         }
         catch { }
     }

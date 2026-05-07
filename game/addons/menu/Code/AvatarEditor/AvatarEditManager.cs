@@ -11,7 +11,6 @@ public sealed partial class AvatarEditManager : Component
 		Log.Info( logLine );
 		try
 		{
-			System.IO.File.AppendAllText( "/tmp/sbox_avatar.log", logLine + "\n" );
 		}
 		catch { }
 	}
