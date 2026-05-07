@@ -39,14 +39,18 @@ public static class Launcher
 		{
 			foreach ( var p in existing )
 			{
-#if WIN
-				IntPtr handle = p.MainWindowHandle;
-				if ( IsIconic( handle ) )
-				{
-					ShowWindow( handle, SW_RESTORE );
-				}
+#if !WIN
+			// No-op on Linux: cannot programmatically bring window to foreground across processes
+			// without a desktop-specific API (X11/wayland). Returning true to skip duplicate launch.
+			return true;
+#else
+			IntPtr handle = p.MainWindowHandle;
+			if ( IsIconic( handle ) )
+			{
+				ShowWindow( handle, SW_RESTORE );
+			}
 
-				SetForegroundWindow( handle );
+			SetForegroundWindow( handle );
 #endif
 			}
 			return true;
