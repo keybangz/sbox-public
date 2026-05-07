@@ -48,66 +48,54 @@ internal static class WaylandTrampolines
 
     private static bool _registered = false;
 
-    /// <summary>
-    /// Attempts to register trampolines once. Safe to call repeatedly.
-    /// </summary>
     public static void TryRegisterOnce()
     {
         if (_registered) return;
 
+        IntPtr ptrMouseMotion = Marshal.GetFunctionPointerForDelegate(_mouseMotion);
+        IntPtr ptrMouseButton = Marshal.GetFunctionPointerForDelegate(_mouseButton);
+        IntPtr ptrKey = Marshal.GetFunctionPointerForDelegate(_key);
+        IntPtr ptrText = Marshal.GetFunctionPointerForDelegate(_text);
+        IntPtr ptrMouseWheel = Marshal.GetFunctionPointerForDelegate(_mouseWheel);
+        IntPtr ptrMousePositionChange = Marshal.GetFunctionPointerForDelegate(_mousePositionChange);
+
+        Log.Info($"[InputDiag] Wayland delegate ptrs: mouseMotion={ptrMouseMotion}, mouseButton={ptrMouseButton}, key={ptrKey}, text={ptrText}, mouseWheel={ptrMouseWheel}, mousePositionChange={ptrMousePositionChange}");
+
         try
         {
-            // Try DllImport first
-            IntPtr ptrMouseMotion = Marshal.GetFunctionPointerForDelegate(_mouseMotion);
-            IntPtr ptrMouseButton = Marshal.GetFunctionPointerForDelegate(_mouseButton);
-            IntPtr ptrKey = Marshal.GetFunctionPointerForDelegate(_key);
-            IntPtr ptrText = Marshal.GetFunctionPointerForDelegate(_text);
-            IntPtr ptrMouseWheel = Marshal.GetFunctionPointerForDelegate(_mouseWheel);
-            IntPtr ptrMousePositionChange = Marshal.GetFunctionPointerForDelegate(_mousePositionChange);
+            IntPtr registerPtr = NativeEngine.ExternalInvoker.ResolveSymbol("sbox_wayland_register_trampolines");
+            if (registerPtr != IntPtr.Zero)
+            {
+                Log.Info($"[InputDiag] Resolved sbox_wayland_register_trampolines at {registerPtr}");
+                RegisterTrampolinesDelegate registerDelegate = Marshal.GetDelegateForFunctionPointer<RegisterTrampolinesDelegate>(registerPtr);
+                registerDelegate(ptrMouseMotion, ptrMouseButton, ptrKey, ptrText, ptrMouseWheel, ptrMousePositionChange);
+                Log.Info($"[InputDiag] Wayland trampolines registered via ResolveSymbol; native ptr={registerPtr}");
+                _registered = true;
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"[InputDiag] Failed to resolve or invoke sbox_wayland_register_trampolines via ResolveSymbol: {ex.Message}");
+        }
 
+        try
+        {
             sbox_wayland_register_trampolines(ptrMouseMotion, ptrMouseButton, ptrKey, ptrText, ptrMouseWheel, ptrMousePositionChange);
             Log.Info("[InputDiag] Wayland trampolines registered via DllImport");
             _registered = true;
         }
-        catch (DllNotFoundException)
+        catch (DllNotFoundException ex)
         {
-            // Fallback to ResolveSymbol
-            try
-            {
-                IntPtr registerPtr = NativeEngine.ExternalInvoker.ResolveSymbol("sbox_wayland_register_trampolines");
-                if (registerPtr != IntPtr.Zero)
-                {
-                    Log.Info($"[InputDiag] Resolved sbox_wayland_register_trampolines at {registerPtr}");
-                    RegisterTrampolinesDelegate registerDelegate = Marshal.GetDelegateForFunctionPointer<RegisterTrampolinesDelegate>(registerPtr);
-
-                    IntPtr ptrMouseMotion = Marshal.GetFunctionPointerForDelegate(_mouseMotion);
-                    IntPtr ptrMouseButton = Marshal.GetFunctionPointerForDelegate(_mouseButton);
-                    IntPtr ptrKey = Marshal.GetFunctionPointerForDelegate(_key);
-                    IntPtr ptrText = Marshal.GetFunctionPointerForDelegate(_text);
-                    IntPtr ptrMouseWheel = Marshal.GetFunctionPointerForDelegate(_mouseWheel);
-                    IntPtr ptrMousePositionChange = Marshal.GetFunctionPointerForDelegate(_mousePositionChange);
-
-                    registerDelegate(ptrMouseMotion, ptrMouseButton, ptrKey, ptrText, ptrMouseWheel, ptrMousePositionChange);
-                    Log.Info("[InputDiag] Wayland trampolines registered via ResolveSymbol");
-                    _registered = true;
-                }
-                else
-                {
-                    Log.Warning("[InputDiag] sbox_wayland_register_trampolines symbol not found, trampolines not registered");
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Warning($"[InputDiag] Failed to register Wayland trampolines via ResolveSymbol: {ex.Message}");
-            }
+            Log.Warning($"[InputDiag] DllNotFoundException during DllImport fallback: {ex.Message}");
         }
-        catch (EntryPointNotFoundException)
+        catch (EntryPointNotFoundException ex)
         {
-            Log.Warning("[InputDiag] sbox_wayland_register_trampolines entry point not found, trampolines not registered");
+            Log.Warning($"[InputDiag] EntryPointNotFoundException during DllImport fallback: {ex.Message}");
         }
         catch (Exception ex)
         {
-            Log.Warning($"[InputDiag] Failed to register Wayland trampolines: {ex.Message}");
+            Log.Warning($"[InputDiag] Failed to register Wayland trampolines via DllImport: {ex.Message}");
         }
     }
 }
