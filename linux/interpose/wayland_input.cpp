@@ -537,18 +537,6 @@ static bool try_resolve_sdl_symbols()
     // (we'll fallback to PushEvent and trampolines), but log their presence.
     if (!p_SDL_PushEvent) return false;
 
-    // Runtime ABI smoke test: push a synthetic event and verify SDL accepts it
-    SDL_WindowEvent test_ev{};
-    test_ev.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
-    test_ev.timestamp = 1;
-    test_ev.windowID = 0; // invalid, but SDL_PushEvent should still accept the struct
-    int push_result = p_SDL_PushEvent(&test_ev);
-    logf("ABI smoke test: SDL_PushEvent returned %d (expected >=0)", push_result);
-    if (push_result < 0) {
-        logf("FATAL: SDL_PushEvent rejected our event struct — ABI mismatch");
-        return false;
-    }
-
     return p_SDL_GetWindows && p_SDL_GetWindowProperties &&
            p_SDL_GetPointerProperty && p_SDL_GetWindowID;
 }
@@ -626,6 +614,9 @@ struct WaylandState {
     uint32_t mods_latched   = 0;
     uint32_t mods_locked    = 0;
     uint32_t mods_group     = 0;
+
+    // worker status: 0=not started, 1=running, 2=failed, 3=success
+    std::atomic<int> worker_status{0};
 };
 
 static WaylandState g_w;
@@ -640,9 +631,12 @@ enum EventType { EVT_MOUSE_MOTION=1, EVT_MOUSE_BUTTON=2, EVT_KEY=3, EVT_WINDOW_F
 struct Event {
     EventType type;
     // payload
-    float f1, f2, f3, f4;
+    SDL_WindowID window_id;
+    float floating[4];
     int32_t i1, i2, i3;
 };
+
+static std::atomic<bool> g_running{true};
 
 static std::mutex g_event_mutex;
 static std::vector<Event> g_event_queue;
@@ -650,6 +644,10 @@ static std::vector<Event> g_event_queue;
 static void enqueue_event(const Event &e)
 {
     std::lock_guard<std::mutex> l(g_event_mutex);
+    // Bounded queue: drop oldest if over 1000 events
+    if (g_event_queue.size() > 1000) {
+        g_event_queue.erase(g_event_queue.begin());
+    }
     g_event_queue.push_back(e);
 }
 
@@ -695,8 +693,13 @@ extern "C" void sbox_wayland_input_poll()
         switch (ev.type) {
         case EVT_WINDOW_FOCUS: {
             // ev.i1 == 1 -> gained, 0 -> lost
+            // ev.floating[0] == 1.0f -> keyboard focus, 2.0f -> mouse focus
             if (ev.i1) {
-                if (p_SDL_SetKeyboardFocus) p_SDL_SetKeyboardFocus(g_w.engine_window);
+                if (ev.floating[0] == 1.0f) {
+                    if (p_SDL_SetKeyboardFocus) p_SDL_SetKeyboardFocus(g_w.engine_window);
+                } else if (ev.floating[0] == 2.0f) {
+                    if (p_SDL_SetMouseFocus) p_SDL_SetMouseFocus(g_w.engine_window);
+                }
                 if (p_SDL_PushEvent) {
                     SDL_WindowEvent we{}; we.type = SDL_EVENT_WINDOW_FOCUS_GAINED; we.timestamp = now_ns(); we.windowID = g_w.engine_window_id; p_SDL_PushEvent(&we);
                 }
@@ -707,7 +710,7 @@ extern "C" void sbox_wayland_input_poll()
             }
         } break;
         case EVT_MOUSE_MOTION: {
-            float dx = ev.f1, dy = ev.f2, nx = ev.f3, ny = ev.f4;
+            float dx = ev.floating[0], dy = ev.floating[1], nx = ev.floating[2], ny = ev.floating[3];
             if (p_SDL_SendMouseMotion) {
                 p_SDL_SendMouseMotion(now_ns(), g_w.engine_window, kSDLDefaultMouseID, true, dx, dy);
             } else if (p_SDL_PushEvent) {
@@ -735,7 +738,7 @@ extern "C" void sbox_wayland_input_poll()
             if (p_Engine_OnKey) p_Engine_OnKey((int64_t)key, (int64_t)key, down ? 1 : 0, 0, 0);
         } break;
         case EVT_MOUSE_WHEEL: {
-            float wx = ev.f1, wy = ev.f2;
+            float wx = ev.floating[0], wy = ev.floating[1];
             if (p_SDL_SendMouseWheel) p_SDL_SendMouseWheel(now_ns(), g_w.engine_window, kSDLDefaultMouseID, wx, wy, 0);
             else if (p_SDL_PushEvent) { SDL_MouseWheelEvent we{}; we.type = SDL_EVENT_MOUSE_WHEEL; we.timestamp = now_ns(); we.windowID = g_w.engine_window_id; we.which = kSDLDefaultMouseID; we.x = wx; we.y = wy; p_SDL_PushEvent(&we); }
             if (p_Engine_OnMouseWheel) p_Engine_OnMouseWheel((int32_t)wx, (int32_t)wy, 0);
@@ -744,48 +747,7 @@ extern "C" void sbox_wayland_input_poll()
     }
 }
 
-// ============================================================================
-// xkb keysym -> SDL keycode mapping (small subset; covers ASCII + arrows + mods)
-// ============================================================================
 
-static SDL_Keycode keysym_to_sdl_keycode(xkb_keysym_t ks)
-{
-    // For ASCII-printable keysyms < 0x80, SDL_Keycode == lower 7 bits in SDL3
-    // (actually SDL3 uses Unicode codepoints for printable keys).
-    if (ks >= 0x20 && ks < 0x7F) return (SDL_Keycode)ks;
-    switch (ks) {
-        case XKB_KEY_Return:    case XKB_KEY_KP_Enter:   return 0x0D;
-        case XKB_KEY_Escape:                              return 0x1B;
-        case XKB_KEY_BackSpace:                           return 0x08;
-        case XKB_KEY_Tab:       case XKB_KEY_KP_Tab:      return 0x09;
-        case XKB_KEY_space:                               return 0x20;
-        case XKB_KEY_Delete:                              return 0x7F;
-        case XKB_KEY_Left:                                return 0x40000050;
-        case XKB_KEY_Right:                               return 0x4000004F;
-        case XKB_KEY_Up:                                  return 0x40000052;
-        case XKB_KEY_Down:                                return 0x40000051;
-        case XKB_KEY_Home:                                return 0x4000004A;
-        case XKB_KEY_End:                                 return 0x4000004D;
-        case XKB_KEY_Page_Up:                             return 0x4000004B;
-        case XKB_KEY_Page_Down:                           return 0x4000004E;
-        case XKB_KEY_Insert:                              return 0x40000049;
-        case XKB_KEY_F1:  return 0x4000003A;  case XKB_KEY_F2:  return 0x4000003B;
-        case XKB_KEY_F3:  return 0x4000003C;  case XKB_KEY_F4:  return 0x4000003D;
-        case XKB_KEY_F5:  return 0x4000003E;  case XKB_KEY_F6:  return 0x4000003F;
-        case XKB_KEY_F7:  return 0x40000040;  case XKB_KEY_F8:  return 0x40000041;
-        case XKB_KEY_F9:  return 0x40000042;  case XKB_KEY_F10: return 0x40000043;
-        case XKB_KEY_F11: return 0x40000044;  case XKB_KEY_F12: return 0x40000045;
-        case XKB_KEY_Shift_L:   return 0x400000E1;
-        case XKB_KEY_Shift_R:   return 0x400000E5;
-        case XKB_KEY_Control_L: return 0x400000E0;
-        case XKB_KEY_Control_R: return 0x400000E4;
-        case XKB_KEY_Alt_L:     return 0x400000E2;
-        case XKB_KEY_Alt_R:     return 0x400000E6;
-        case XKB_KEY_Super_L:   return 0x400000E3;
-        case XKB_KEY_Super_R:   return 0x400000E7;
-    }
-    return 0;
-}
 
 // evdev -> SDL_Scancode (USB HID page 0x07 codes used by SDL3)
 static SDL_Scancode evdev_to_sdl_scancode(uint32_t key)
@@ -807,22 +769,7 @@ static SDL_Scancode evdev_to_sdl_scancode(uint32_t key)
     return 0;
 }
 
-static SDL_Keymod xkb_to_sdl_mods()
-{
-    SDL_Keymod m = 0;
-    if (!g_w.kbstate) return m;
-    if (xkb_state_mod_name_is_active(g_w.kbstate, XKB_MOD_NAME_SHIFT, XKB_STATE_MODS_EFFECTIVE) > 0)
-        m |= SDL_KMOD_LSHIFT;
-    if (xkb_state_mod_name_is_active(g_w.kbstate, XKB_MOD_NAME_CTRL, XKB_STATE_MODS_EFFECTIVE) > 0)
-        m |= SDL_KMOD_LCTRL;
-    if (xkb_state_mod_name_is_active(g_w.kbstate, XKB_MOD_NAME_ALT, XKB_STATE_MODS_EFFECTIVE) > 0)
-        m |= SDL_KMOD_LALT;
-    if (xkb_state_mod_name_is_active(g_w.kbstate, XKB_MOD_NAME_LOGO, XKB_STATE_MODS_EFFECTIVE) > 0)
-        m |= SDL_KMOD_LGUI;
-    if (xkb_state_mod_name_is_active(g_w.kbstate, XKB_MOD_NAME_CAPS, XKB_STATE_MODS_EFFECTIVE) > 0)
-        m |= SDL_KMOD_CAPS;
-    return m;
-}
+
 
 // ============================================================================
 // wl_keyboard listener
@@ -860,9 +807,14 @@ static void kbd_enter(void*, wl_keyboard*, uint32_t /*serial*/, wl_surface* surf
     logf("kbd_enter: surface=%p ours=%d", (void*)surface, ours);
     if (!ours) return;
 
-    // SDL3's SendKeyboardKey validates that the target window has keyboard
-    // focus. Without this the internal dispatch ignores our key events.
-    p_SDL_SetKeyboardFocus(g_w.engine_window);
+    // Enqueue focus event for main thread to process (SDL focus setters
+    // may not be thread-safe from the Wayland dispatch thread).
+    Event ev{};
+    ev.type = EVT_WINDOW_FOCUS;
+    ev.window_id = g_w.engine_window_id;
+    ev.floating[0] = 1.0f; // keyboard focus gained
+    ev.i1 = 1;
+    enqueue_event(ev);
 
     SDL_WindowEvent we{};
     we.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
@@ -896,7 +848,6 @@ static void kbd_key(void*, wl_keyboard*, uint32_t /*serial*/, uint32_t /*time*/,
     if (!g_w.kbd_focused.load()) return;
 
     bool down = (state == WL_KEYBOARD_KEY_STATE_PRESSED);
-    uint64_t bc = evdev_to_button_code(key);
 
     // Enqueue for main-thread processing via sbox_wayland_input_poll.
     SDL_Scancode sc = evdev_to_sdl_scancode(key);
@@ -932,8 +883,14 @@ static void ptr_enter(void*, wl_pointer*, uint32_t /*serial*/, wl_surface* surfa
     logf("ptr_enter: surface=%p ours=%d", (void*)surface, ours);
     if (!ours) return;
 
-    // Queue the enter + focus update for main thread processing.
-    p_SDL_SetMouseFocus(g_w.engine_window);
+    // Enqueue focus event for main thread to process (SDL focus setters
+    // may not be thread-safe from the Wayland dispatch thread).
+    Event ev{};
+    ev.type = EVT_WINDOW_FOCUS;
+    ev.window_id = g_w.engine_window_id;
+    ev.floating[0] = 2.0f; // mouse focus gained
+    ev.i1 = 1;
+    enqueue_event(ev);
     g_w.last_x = wl_fixed_to_double(sx);
     g_w.last_y = wl_fixed_to_double(sy);
     Event e{}; e.type = EVT_WINDOW_FOCUS; e.i1 = 1; enqueue_event(e);
@@ -959,7 +916,7 @@ static void ptr_motion(void*, wl_pointer*, uint32_t /*time*/, wl_fixed_t sx, wl_
     if (dx == 0.0f && dy == 0.0f) return;
 
     // Enqueue for main-thread processing via sbox_wayland_input_poll.
-    Event e{}; e.type = EVT_MOUSE_MOTION; e.f1 = dx; e.f2 = dy; e.f3 = nx; e.f4 = ny; enqueue_event(e);
+    Event e{}; e.type = EVT_MOUSE_MOTION; e.floating[0] = dx; e.floating[1] = dy; e.floating[2] = nx; e.floating[3] = ny; enqueue_event(e);
 }
 
 static void ptr_button(void*, wl_pointer*, uint32_t /*serial*/, uint32_t /*time*/,
@@ -995,7 +952,7 @@ static void ptr_axis(void*, wl_pointer*, uint32_t /*time*/, uint32_t axis, wl_fi
     // Enqueue for main-thread processing via sbox_wayland_input_poll.
     float wx = (axis == 1) ? v / 10.0f : 0.0f;
     float wy = (axis == 0) ? -v / 10.0f : 0.0f;
-    Event e{}; e.type = EVT_MOUSE_WHEEL; e.f1 = wx; e.f2 = wy; enqueue_event(e);
+    Event e{}; e.type = EVT_MOUSE_WHEEL; e.floating[0] = wx; e.floating[1] = wy; enqueue_event(e);
 }
 
 static void ptr_frame(void*, wl_pointer*) {}
@@ -1091,6 +1048,20 @@ static void* worker_thread(void*)
     g_w.engine_window    = engine_window;  // store for SDL_Send* calls
     free(windows);
 
+    // Runtime ABI smoke test: now that we have a valid windowID, verify SDL_PushEvent accepts our event struct
+    if (g_w.engine_window_id != 0 && p_SDL_PushEvent) {
+        SDL_WindowEvent test_ev{};
+        test_ev.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
+        test_ev.timestamp = 1;
+        test_ev.windowID = g_w.engine_window_id;
+        int push_result = p_SDL_PushEvent(&test_ev);
+        logf("ABI smoke test: SDL_PushEvent returned %d (expected >=0)", push_result);
+        if (push_result < 0) {
+            logf("FATAL: SDL_PushEvent rejected our event struct — ABI mismatch");
+            return nullptr;
+        }
+    }
+
     const char* drv = p_SDL_GetCurrentVideoDriver ? p_SDL_GetCurrentVideoDriver() : nullptr;
     logf("engine SDL window=%p id=%u driver=%s", engine_window, g_w.engine_window_id,
          drv ? drv : "?");
@@ -1149,81 +1120,17 @@ static void* worker_thread(void*)
         logf("p_SDL_SetMouseFocus called");
     }
 
-    // Step 6: start a background thread that continuously tries to resolve
-    // managed trampolines exported by the .NET runtime. The managed assembly
-    // may load well after our worker starts; make resolution asynchronous so
-    // we can pick them up whenever they appear.
-    auto tramp_resolver = [](void*) -> void* {
-        logf("trampoline resolver starting");
-        const char* syms[] = {
-            "SandboxEngine_InputRouter_OnMouseMotion",
-            "SandboxEngine_InputRouter_OnMouseButton",
-            "SandboxEngine_InputRouter_OnKey",
-            "SandboxEngine_InputRouter_OnText",
-            "SandboxEngine_InputRouter_OnMouseWheel",
-            "SandboxEngine_InputRouter_OnMousePositionChange",
-            nullptr
-        };
-        const int MAX_RESOLVER_ATTEMPTS = 120;
-        int resolver_attempts = 0;
-        while (true) {
-            resolver_attempts++;
-            if (resolver_attempts > MAX_RESOLVER_ATTEMPTS) {
-                logf("resolver max attempts (%d) reached, giving up", MAX_RESOLVER_ATTEMPTS);
-                break;
-            }
-            if (g_trampolines_registered.load()) {
-                logf("trampolines already registered, stopping resolver");
-                break;
-            }
-            void* mmm = dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnMouseMotion");
-            void* mmb = dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnMouseButton");
-            void* mk  = dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnKey");
-            void* mt  = dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnText");
-            void* mmw = dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnMouseWheel");
-            void* mpc = dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnMousePositionChange");
-            if (mmm) p_Engine_OnMouseMotion = (pfn_Engine_OnMouseMotion)mmm;
-            if (mmb) p_Engine_OnMouseButton = (pfn_Engine_OnMouseButton)mmb;
-            if (mk)  p_Engine_OnKey         = (pfn_Engine_OnKey)mk;
-            if (mt)  p_Engine_OnText        = (pfn_Engine_OnText)mt;
-            if (mmw) p_Engine_OnMouseWheel  = (pfn_Engine_OnMouseWheel)mmw;
-            if (mpc) p_Engine_OnMousePositionChange = (pfn_Engine_OnMousePositionChange)mpc;
+    // Step 6: background trampoline resolver is disabled — managed side
+    // must call sbox_wayland_register_trampolines() directly.
+    // (The resolver lambda and pthread_create were here but are unused.)
 
-            if (p_Engine_OnMouseMotion && p_Engine_OnKey && p_Engine_OnMouseButton) {
-                logf("trampolines resolved after %d attempts", resolver_attempts);
-                // Do NOT call managed trampolines from this background thread —
-                // calling into managed code from an arbitrary native thread can
-                // crash the runtime. Just record the pointers and stop resolving.
-                break;
-            }
+    logf("trampoline resolver thread disabled — managed side must call sbox_wayland_register_trampolines");
 
-            if ((resolver_attempts & 31) == 0 || resolver_attempts > MAX_RESOLVER_ATTEMPTS) {
-                // Periodically log the dlsym results for diagnosis.
-                logf("trampoline attempt %d: OnMM=%s OnKey=%s OnMB=%s OnMW=%s OnMC=%s OnText=%s",
-                     resolver_attempts,
-                     p_Engine_OnMouseMotion ? "(set)" : "(nil)",
-                     p_Engine_OnKey ? "(set)" : "(nil)",
-                     p_Engine_OnMouseButton ? "(set)" : "(nil)",
-                     p_Engine_OnMouseWheel ? "(set)" : "(nil)",
-                     p_Engine_OnMousePositionChange ? "(set)" : "(nil)",
-                     p_Engine_OnText ? "(set)" : "(nil)");
-                for (int i = 0; syms[i]; ++i) {
-                    void* p = dlsym(RTLD_DEFAULT, syms[i]);
-                    logf("dlsym(%s) -> %s", syms[i], p ? "(set)" : "(nil)");
-                }
-            }
-            usleep(500000); // 500ms
-        }
-        return nullptr;
-    };
-
-    pthread_t tr_tid;
-    // pthread_create(&tr_tid, nullptr, tramp_resolver, nullptr);
-    logf("trampoline resolver thread started");
+    g_w.worker_status.store(1, std::memory_order_relaxed);
 
     // Step 7: dispatch loop. wl_display_dispatch_queue blocks until events.
     // Heartbeat removed — replaced by atomic dispatch_count read from sbox_wayland_input_poll()
-    while (true) {
+    while (g_running.load(std::memory_order_relaxed)) {
         int ret = wl_display_dispatch_queue(g_w.display, g_w.queue);
         if (ret < 0) {
             logf("wl_display_dispatch_queue returned %d (errno=%d %s) — exiting",
@@ -1295,5 +1202,12 @@ void sbox_wayland_input_cleanup()
     if (g_w.registry) { wl_registry_destroy(g_w.registry); g_w.registry = nullptr; }
     if (g_w.queue)    { wl_event_queue_destroy(g_w.queue); g_w.queue = nullptr; }
     if (g_log)        { fclose(g_log); g_log = nullptr; }
+    g_running.store(false, std::memory_order_relaxed);
+    g_w.worker_status.store(2, std::memory_order_relaxed);
     logf("wayland_input cleanup complete");
+}
+
+extern "C" __attribute__((visibility("default"))) int sbox_wayland_input_status()
+{
+    return g_w.worker_status.load(std::memory_order_relaxed);
 }
