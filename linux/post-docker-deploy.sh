@@ -28,8 +28,8 @@ cd "$SCRIPT_DIR"
 make -B
 echo "  [OK] libdxcompiler_wrapper.so rebuilt ($(du -sh libdxcompiler_wrapper.so | cut -f1))"
 
-echo "  Deploying to $BIN_DIR..."
-cp -f libdxcompiler_wrapper.so "$BIN_DIR/libdxcompiler_wrapper.so"
+# echo "  Deploying to $BIN_DIR..."
+# cp -f libdxcompiler_wrapper.so "$BIN_DIR/libdxcompiler_wrapper.so"
 # Ensure symlink exists: libdxcompiler.so -> libdxcompiler_wrapper.so
 if [ ! -L "$BIN_DIR/libdxcompiler.so" ]; then
     ln -sf libdxcompiler_wrapper.so "$BIN_DIR/libdxcompiler.so"

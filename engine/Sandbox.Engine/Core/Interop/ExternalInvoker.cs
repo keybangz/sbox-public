@@ -76,10 +76,10 @@ namespace NativeEngine
             return IntPtr.Zero;
         }
 
-        [DllImport("libc.so.6", EntryPoint = "dlsym")]
+        [DllImport("libc.so.6", EntryPoint = "dlsym", CharSet = CharSet.Ansi)]
         static extern IntPtr dlsym_libc(IntPtr handle, string name);
 
-        [DllImport("libc.so.6", EntryPoint = "dlopen")]
+        [DllImport("libc.so.6", EntryPoint = "dlopen", CharSet = CharSet.Ansi)]
         static extern IntPtr dlopen_libc(string fileName, int flags);
 
         // dlopen is used as a fallback to open our interpose library directly.

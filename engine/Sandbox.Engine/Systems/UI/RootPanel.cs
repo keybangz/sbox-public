@@ -9,359 +9,359 @@ namespace Sandbox.UI;
 /// </summary>
 public partial class RootPanel : Panel
 {
-	/// <summary>
-	/// Bounds of the panel, i.e. its size and position on the screen.
-	/// </summary>
-	public Rect PanelBounds { get; set; } = new Rect( 0, 0, 512, 512 );
+    /// <summary>
+    /// Bounds of the panel, i.e. its size and position on the screen.
+    /// </summary>
+    public Rect PanelBounds { get; set; } = new Rect(0, 0, 512, 512);
 
-	/// <summary>
-	/// If any of our panels are visible and want mouse input (pointer-events != none) then
-	/// this will be set to true.
-	/// </summary>
-	internal bool ChildrenWantMouseInput { get; set; }
+    /// <summary>
+    /// If any of our panels are visible and want mouse input (pointer-events != none) then
+    /// this will be set to true.
+    /// </summary>
+    internal bool ChildrenWantMouseInput { get; set; }
 
-	/// <summary>
-	/// The scale of this panel and its children.
-	/// </summary>
-	public float Scale { get; protected set; } = 1.0f;
+    /// <summary>
+    /// The scale of this panel and its children.
+    /// </summary>
+    public float Scale { get; protected set; } = 1.0f;
 
-	/// <summary>
-	/// If set to true this panel won't be rendered to the screen like a normal panel.
-	/// This is true when the panel is drawn via other means (like as a world panel).
-	/// </summary>
-	public bool RenderedManually { get; set; }
+    /// <summary>
+    /// If set to true this panel won't be rendered to the screen like a normal panel.
+    /// This is true when the panel is drawn via other means (like as a world panel).
+    /// </summary>
+    public bool RenderedManually { get; set; }
 
-	/// <summary>
-	/// True if this is a world panel, so should be skipped when determining cursor visibility etc
-	/// </summary>
-	public virtual bool IsWorldPanel { get; set; }
+    /// <summary>
+    /// True if this is a world panel, so should be skipped when determining cursor visibility etc
+    /// </summary>
+    public virtual bool IsWorldPanel { get; set; }
 
-	/// <summary>
-	/// If this panel belongs to a VR overlay
-	/// </summary>
-	public bool IsVR { get; internal set; }
+    /// <summary>
+    /// If this panel belongs to a VR overlay
+    /// </summary>
+    public bool IsVR { get; internal set; }
 
-	/// <summary>
-	/// If this panel should be rendered with ~4K resolution.
-	/// </summary>
-	public bool IsHighQualityVR { get; internal set; }
+    /// <summary>
+    /// If this panel should be rendered with ~4K resolution.
+    /// </summary>
+    public bool IsHighQualityVR { get; internal set; }
 
-	/// <summary>
-	/// Current global mouse position, projected onto plane for world panels.
-	/// </summary>
-	internal Vector2 MousePos;
+    /// <summary>
+    /// Current global mouse position, projected onto plane for world panels.
+    /// </summary>
+    internal Vector2 MousePos;
 
-	/// <summary>
-	/// Single flat command list used by the flat rendering path.
-	/// All panels record into this one list instead of per-panel lists.
-	/// </summary>
-	internal readonly CommandList PanelCommandList;
+    /// <summary>
+    /// Single flat command list used by the flat rendering path.
+    /// All panels record into this one list instead of per-panel lists.
+    /// </summary>
+    internal readonly CommandList PanelCommandList;
 
-	public RootPanel()
-	{
-		Style.Width = Length.Percent( 100 );
-		Style.Height = Length.Percent( 100 );
+    public RootPanel()
+    {
+        Style.Width = Length.Percent(100);
+        Style.Height = Length.Percent(100);
 
-		PanelCommandList = new CommandList( $"UI Root: {GetType().Name}" );
+        PanelCommandList = new CommandList($"UI Root: {GetType().Name}");
 
-		GlobalContext.Current.UISystem.AddRoot( this );
-		AddToLists();
+        GlobalContext.Current.UISystem.AddRoot(this);
+        AddToLists();
 
-		StyleSheet.Load( "/styles/rootpanel.scss" );
-	}
+        StyleSheet.Load("/styles/rootpanel.scss");
+    }
 
-	public override void Delete( bool immediate = true )
-	{
-		base.Delete( immediate );
-	}
+    public override void Delete(bool immediate = true)
+    {
+        base.Delete(immediate);
+    }
 
-	public override void OnDeleted()
-	{
-		base.OnDeleted();
+    public override void OnDeleted()
+    {
+        base.OnDeleted();
 
-		GlobalContext.Current.UISystem.RemoveRoot( this );
-	}
+        GlobalContext.Current.UISystem.RemoveRoot(this);
+    }
 
-	internal override void AddToLists()
-	{
-		base.AddToLists();
+    internal override void AddToLists()
+    {
+        base.AddToLists();
 
-		Sandbox.Internal.IPanel.InspectablePanels.Add( this );
-	}
+        Sandbox.Internal.IPanel.InspectablePanels.Add(this);
+    }
 
-	internal override void RemoveFromLists()
-	{
-		base.RemoveFromLists();
+    internal override void RemoveFromLists()
+    {
+        base.RemoveFromLists();
 
-		Sandbox.Internal.IPanel.InspectablePanels.Remove( this );
-	}
+        Sandbox.Internal.IPanel.InspectablePanels.Remove(this);
+    }
 
-	/// <summary>
-	/// This is called from tests to emulate the regular root panel simulate loop
-	/// </summary>
-	internal void Layout()
-	{
-		TickInternal();
-		PreLayout();
-		CalculateLayout();
-		PostLayout();
-	}
+    /// <summary>
+    /// This is called from tests to emulate the regular root panel simulate loop
+    /// </summary>
+    internal void Layout()
+    {
+        TickInternal();
+        PreLayout();
+        CalculateLayout();
+        PostLayout();
+    }
 
-	int layoutHash;
+    int layoutHash;
 
-	/// <summary>
-	/// Called before layout to lock the bounds of this root panel to the screen size (which is passed).
-	/// Internally this sets PanelBounds to rect and calls UpdateScale.
-	/// </summary>
-	protected virtual void UpdateBounds( Rect rect )
-	{
-		PanelBounds = rect;
+    /// <summary>
+    /// Called before layout to lock the bounds of this root panel to the screen size (which is passed).
+    /// Internally this sets PanelBounds to rect and calls UpdateScale.
+    /// </summary>
+    protected virtual void UpdateBounds(Rect rect)
+    {
+        PanelBounds = rect;
 
-		if ( IsVR && IsHighQualityVR )
-		{
-			PanelBounds = new Rect( 0, 0, 3840, 2400 );
-			return;
-		}
-	}
+        if (IsVR && IsHighQualityVR)
+        {
+            PanelBounds = new Rect(0, 0, 3840, 2400);
+            return;
+        }
+    }
 
-	/// <summary>
-	/// Work out scaling here. Default is to scale relative to the screen being
-	/// 1920 wide. ie - scale = screensize.Width / 1920.0f;
-	/// </summary>
-	protected virtual void UpdateScale( Rect screenSize )
-	{
-		Scale = screenSize.Height / 1080.0f;
+    /// <summary>
+    /// Work out scaling here. Default is to scale relative to the screen being
+    /// 1920 wide. ie - scale = screensize.Width / 1920.0f;
+    /// </summary>
+    protected virtual void UpdateScale(Rect screenSize)
+    {
+        Scale = screenSize.Height / 1080.0f;
 
-		if ( Game.IsRunningOnHandheld )
-		{
-			Scale = Scale * 1.333f;
-		}
+        if (Game.IsRunningOnHandheld)
+        {
+            Scale = Scale * 1.333f;
+        }
 
-		if ( IsVR && IsHighQualityVR )
-		{
-			Scale = 2.33f;
-		}
-	}
+        if (IsVR && IsHighQualityVR)
+        {
+            Scale = 2.33f;
+        }
+    }
 
-	internal void TickInputInternal()
-	{
-		ChildrenWantMouseInput = WantsMouseInput();
-	}
+    internal void TickInputInternal()
+    {
+        ChildrenWantMouseInput = WantsMouseInput();
+    }
 
-	internal void PreLayout( Rect screenSize )
-	{
-		UpdateBounds( screenSize );
-		UpdateScale( PanelBounds );
+    internal void PreLayout(Rect screenSize)
+    {
+        UpdateBounds(screenSize);
+        UpdateScale(PanelBounds);
 
-		Scale = MathX.Clamp( Scale, 0.1f, 10.0f );
+        Scale = MathX.Clamp(Scale, 0.1f, 10.0f);
 
-		PreLayout();
-	}
+        PreLayout();
+    }
 
-	private static System.Diagnostics.Stopwatch _preLayoutPhaseStopwatch = new System.Diagnostics.Stopwatch();
+    private static System.Diagnostics.Stopwatch _preLayoutPhaseStopwatch = new System.Diagnostics.Stopwatch();
 
-	internal void PreLayout()
-	{
-		var cascade = new LayoutCascade
-		{
-			Scale = Scale,
-			Root = this,
-		};
+    internal void PreLayout()
+    {
+        var cascade = new LayoutCascade
+        {
+            Scale = Scale,
+            Root = this,
+        };
 
-		Style.Left = 0.0f;
-		Style.Top = 0.0f;
-		Style.Width = PanelBounds.Width * (1 / Scale);
-		Style.Height = PanelBounds.Height * (1 / Scale);
+        Style.Left = 0.0f;
+        Style.Top = 0.0f;
+        Style.Width = PanelBounds.Width * (1 / Scale);
+        Style.Height = PanelBounds.Height * (1 / Scale);
 
-		var hash = HashCode.Combine( PanelBounds.Width, PanelBounds.Height, Scale );
-		if ( hash != layoutHash )
-		{
-			layoutHash = hash;
-			StyleSelectorsChanged( true, true );
-			SkipAllTransitions();
+        var hash = HashCode.Combine(PanelBounds.Width, PanelBounds.Height, Scale);
+        if (hash != layoutHash)
+        {
+            layoutHash = hash;
+            StyleSelectorsChanged(true, true);
+            SkipAllTransitions();
 
-			cascade.SelectorChanged = true;
-		}
+            cascade.SelectorChanged = true;
+        }
 
-		_preLayoutPhaseStopwatch.Restart();
-		BuildStyleRules();
-		if ( _preLayoutPhaseStopwatch.Elapsed.TotalMilliseconds > 50 )
+        _preLayoutPhaseStopwatch.Restart();
+        BuildStyleRules();
+        if (_preLayoutPhaseStopwatch.Elapsed.TotalMilliseconds > 50)
+        {
+            PushRootValues();
 
-		PushRootValues();
+            // Reset the time budget for this frame's PreLayout cascade
+            Panel.ResetPreLayoutTimeBudget();
 
-		// Reset the time budget for this frame's PreLayout cascade
-		Panel.ResetPreLayoutTimeBudget();
+            _preLayoutPhaseStopwatch.Restart();
+            PreLayout(cascade);
+        }
+    }
 
-		_preLayoutPhaseStopwatch.Restart();
-		PreLayout( cascade );
-		if ( _preLayoutPhaseStopwatch.Elapsed.TotalMilliseconds > 50 )
-	}
+    internal void CalculateLayout()
+    {
+        if (YogaNode == null)
+            return;
 
-	internal void CalculateLayout()
-	{
-		if ( YogaNode == null )
-			return;
+        using var perfScope = Performance.Scope("CalculateLayout");
+        PushRootValues();
+        YogaNode.CalculateLayout();
+    }
 
-		using var perfScope = Performance.Scope( "CalculateLayout" );
-		PushRootValues();
-		YogaNode.CalculateLayout();
-	}
+    internal void PostLayout()
+    {
+        PushRootValues();
+        FinalLayout(Vector2.Zero);
+    }
 
-	internal void PostLayout()
-	{
-		PushRootValues();
-		FinalLayout( Vector2.Zero );
-	}
+    internal void PushRootValues()
+    {
+        Length.RootSize = new Vector2(PanelBounds.Width, PanelBounds.Height);
+        Length.RootFontSize = ComputedStyle?.FontSize ?? Length.Pixels(13).Value;
+        Length.RootScale = ScaleToScreen;
+    }
 
-	internal void PushRootValues()
-	{
-		Length.RootSize = new Vector2( PanelBounds.Width, PanelBounds.Height );
-		Length.RootFontSize = ComputedStyle?.FontSize ?? Length.Pixels( 13 ).Value;
-		Length.RootScale = ScaleToScreen;
-	}
+    public override void OnLayout(ref Rect layoutRect)
+    {
+        layoutRect = PanelBounds;
+    }
 
-	public override void OnLayout( ref Rect layoutRect )
-	{
-		layoutRect = PanelBounds;
-	}
+    internal void Render(float opacity = 1.0f)
+    {
+        PanelCommandList.ExecuteOnRenderThread();
+    }
 
-	internal void Render( float opacity = 1.0f )
-	{
-		PanelCommandList.ExecuteOnRenderThread();
-	}
+    /// <summary>
+    /// Build descriptors for this panel and all children.
+    /// Called during the tick phase, before gathering.
+    /// </summary>
+    internal void BuildDescriptors(float opacity = 1.0f)
+    {
+        var renderer = GlobalContext.Current.UISystem.Renderer;
+        renderer.BuildDescriptors(this, opacity);
+    }
 
-	/// <summary>
-	/// Build descriptors for this panel and all children.
-	/// Called during the tick phase, before gathering.
-	/// </summary>
-	internal void BuildDescriptors( float opacity = 1.0f )
-	{
-		var renderer = GlobalContext.Current.UISystem.Renderer;
-		renderer.BuildDescriptors( this, opacity );
-	}
+    internal void BuildCommandList(float opacity = 1.0f)
+    {
+        var renderer = GlobalContext.Current.UISystem.Renderer;
+        renderer.BuildCommandList(this, opacity);
+    }
 
-	internal void BuildCommandList( float opacity = 1.0f )
-	{
-		var renderer = GlobalContext.Current.UISystem.Renderer;
-		renderer.BuildCommandList( this, opacity );
-	}
+    /// <summary>
+    /// Render this panel manually. This gives more flexibility to where UI is rendered, to texture for example.
+    /// <see cref="RenderedManually"/> must be set to true.
+    /// </summary>
+    public void RenderManual(float opacity = 1.0f)
+    {
+        Graphics.AssertRenderBlock();
 
-	/// <summary>
-	/// Render this panel manually. This gives more flexibility to where UI is rendered, to texture for example.
-	/// <see cref="RenderedManually"/> must be set to true.
-	/// </summary>
-	public void RenderManual( float opacity = 1.0f )
-	{
-		Graphics.AssertRenderBlock();
+        if (!RenderedManually && !IsWorldPanel)
+            throw new Exception($"{nameof(RenderedManually)} must be set to true to render this panel manually.");
 
-		if ( !RenderedManually && !IsWorldPanel )
-			throw new Exception( $"{nameof( RenderedManually )} must be set to true to render this panel manually." );
+        BuildCommandList(opacity);
+        Render(opacity);
+    }
 
-		BuildCommandList( opacity );
-		Render( opacity );
-	}
+    [Event("ui.skiptransitions")]
+    internal void SkipAllTransitions()
+    {
+        SkipTransitions();
+    }
 
-	[Event( "ui.skiptransitions" )]
-	internal void SkipAllTransitions()
-	{
-		SkipTransitions();
-	}
+    /// <summary>
+    /// A list of panels that are waiting to have their styles re-evaluated
+    /// </summary>
+    readonly HashSet<Panel> styleRuleUpdates = new();
 
-	/// <summary>
-	/// A list of panels that are waiting to have their styles re-evaluated
-	/// </summary>
-	readonly HashSet<Panel> styleRuleUpdates = new();
+    /// <summary>
+    /// Add this panel to a list to have their styles re-evaluated. This should be done any
+    /// time the panel changes in a way that could affect its style selector.. like if its child
+    /// index changed, or classes added or removed, or became hovered etc.
+    /// </summary>
+    internal void AddToBuildStyleRulesList(Panel panel)
+    {
+        styleRuleUpdates.Add(panel);
+    }
 
-	/// <summary>
-	/// Add this panel to a list to have their styles re-evaluated. This should be done any
-	/// time the panel changes in a way that could affect its style selector.. like if its child
-	/// index changed, or classes added or removed, or became hovered etc.
-	/// </summary>
-	internal void AddToBuildStyleRulesList( Panel panel )
-	{
-		styleRuleUpdates.Add( panel );
-	}
+    // Global frame budget tracking for BuildStyleRules across ALL RootPanels
+    private static long _lastFrameTime = 0;
+    private static int _panelsProcessedThisFrame = 0;
+    private const int MaxPanelsPerFrame = 512;
 
-	// Global frame budget tracking for BuildStyleRules across ALL RootPanels
-	private static long _lastFrameTime = 0;
-	private static int _panelsProcessedThisFrame = 0;
-	private const int MaxPanelsPerFrame = 512;
+    /// <summary>
+    /// Run through all panels that are pending a re-check on their style rules.
+    /// Only properly invalidate them if their rules actually change.
+    /// </summary>
+    internal void BuildStyleRules()
+    {
+        if (styleRuleUpdates.Count == 0)
+            return;
 
-	/// <summary>
-	/// Run through all panels that are pending a re-check on their style rules.
-	/// Only properly invalidate them if their rules actually change.
-	/// </summary>
-	internal void BuildStyleRules()
-	{
-		if ( styleRuleUpdates.Count == 0 )
-			return;
+        // Reset per-frame counter when we enter a new frame (use TickCount as frame indicator)
+        var currentTime = System.Environment.TickCount64 / 10; // ~10ms granularity
+        if (_lastFrameTime != currentTime)
+        {
+            _lastFrameTime = currentTime;
+            _panelsProcessedThisFrame = 0;
+        }
 
-		// Reset per-frame counter when we enter a new frame (use TickCount as frame indicator)
-		var currentTime = System.Environment.TickCount64 / 10; // ~10ms granularity
-		if ( _lastFrameTime != currentTime )
-		{
-			_lastFrameTime = currentTime;
-			_panelsProcessedThisFrame = 0;
-		}
+        // Check if we've already hit our frame budget
+        if (_panelsProcessedThisFrame >= MaxPanelsPerFrame)
+        {
+            // Skip processing this frame, panels will be processed next frame
+            return;
+        }
 
-		// Check if we've already hit our frame budget
-		if ( _panelsProcessedThisFrame >= MaxPanelsPerFrame )
-		{
-			// Skip processing this frame, panels will be processed next frame
-			return;
-		}
+        var timer = FastTimer.StartNew();
+        int count = styleRuleUpdates.Count;
 
-		var timer = FastTimer.StartNew();
-		int count = styleRuleUpdates.Count;
+        // Calculate how many panels we can still process this frame
+        int remainingBudget = MaxPanelsPerFrame - _panelsProcessedThisFrame;
+        int panelsToTake = Math.Min(count, remainingBudget);
 
-		// Calculate how many panels we can still process this frame
-		int remainingBudget = MaxPanelsPerFrame - _panelsProcessedThisFrame;
-		int panelsToTake = Math.Min( count, remainingBudget );
+        int locks = 0;
+        var l = new object();
 
-		int locks = 0;
-		var l = new object();
+        // Take only up to budget panels to process this frame
+        List<Panel> panelsToProcess;
+        if (panelsToTake < count)
+        {
+            panelsToProcess = styleRuleUpdates.Take(panelsToTake).ToList();
+            // Remove processed panels from the HashSet
+            foreach (var p in panelsToProcess)
+                styleRuleUpdates.Remove(p);
+        }
+        else
+        {
+            panelsToProcess = styleRuleUpdates.ToList();
+            styleRuleUpdates.Clear();
+        }
 
-		// Take only up to budget panels to process this frame
-		List<Panel> panelsToProcess;
-		if ( panelsToTake < count )
-		{
-			panelsToProcess = styleRuleUpdates.Take( panelsToTake ).ToList();
-			// Remove processed panels from the HashSet
-			foreach ( var p in panelsToProcess )
-				styleRuleUpdates.Remove( p );
-		}
-		else
-		{
-			panelsToProcess = styleRuleUpdates.ToList();
-			styleRuleUpdates.Clear();
-		}
+        _panelsProcessedThisFrame += panelsToProcess.Count;
 
-		_panelsProcessedThisFrame += panelsToProcess.Count;
-
-		//
-		// Anything in BuildRules should be thread safe
-		//
+        //
+        // Anything in BuildRules should be thread safe
+        //
 #if true
-		{
-			Parallel.ForEach( panelsToProcess, panel =>
-			{
-				if ( panel == null || !panel.IsValid )
-					return;
+        {
+            Parallel.ForEach(panelsToProcess, panel =>
+            {
+                if (panel == null || !panel.IsValid)
+                    return;
 
-				if ( panel.Style.BuildRulesInThread() )
-				{
-					lock ( l )
-					{
-						locks++;
-						panel.SetNeedsPreLayout();
-					}
-				}
+                if (panel.Style.BuildRulesInThread())
+                {
+                    lock (l)
+                    {
+                        locks++;
+                        panel.SetNeedsPreLayout();
+                    }
+                }
 
-				panel.MarkStylesRebuilt();
+                panel.MarkStylesRebuilt();
 
-			} );
+            });
 
-		}
+        }
 #else
 		{
 			foreach ( var panel in panelsToProcess )
@@ -381,9 +381,9 @@ public partial class RootPanel : Panel
 		}
 #endif
 
-		if ( timer.ElapsedMilliSeconds > 0.5 )
-		{
-			Log.Trace( $"BuildStyleRules {panelsToProcess.Count:n0}/{count:n0} ({locks}) took {timer.ElapsedMilliSeconds}ms" );
-		}
-	}
+        if (timer.ElapsedMilliSeconds > 0.5)
+        {
+            Log.Trace($"BuildStyleRules {panelsToProcess.Count:n0}/{count:n0} ({locks}) took {timer.ElapsedMilliSeconds}ms");
+        }
+    }
 }

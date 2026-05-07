@@ -39,5 +39,5 @@
 			<LogicalName>%(Filename)%(Extension)</LogicalName>
 		</EmbeddedResource>
     </ItemGroup>
-  
+
 </Project>
