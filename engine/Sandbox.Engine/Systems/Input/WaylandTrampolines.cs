@@ -54,7 +54,6 @@ internal static class WaylandTrampolines
     public static void TryRegisterOnce()
     {
         if (_registered) return;
-        _registered = true;
 
         try
         {
@@ -68,6 +67,7 @@ internal static class WaylandTrampolines
 
             sbox_wayland_register_trampolines(ptrMouseMotion, ptrMouseButton, ptrKey, ptrText, ptrMouseWheel, ptrMousePositionChange);
             Log.Info("[InputDiag] Wayland trampolines registered via DllImport");
+            _registered = true;
         }
         catch (DllNotFoundException)
         {
@@ -77,6 +77,7 @@ internal static class WaylandTrampolines
                 IntPtr registerPtr = NativeEngine.ExternalInvoker.ResolveSymbol("sbox_wayland_register_trampolines");
                 if (registerPtr != IntPtr.Zero)
                 {
+                    Log.Info($"[InputDiag] Resolved sbox_wayland_register_trampolines at {registerPtr}");
                     RegisterTrampolinesDelegate registerDelegate = Marshal.GetDelegateForFunctionPointer<RegisterTrampolinesDelegate>(registerPtr);
 
                     IntPtr ptrMouseMotion = Marshal.GetFunctionPointerForDelegate(_mouseMotion);
@@ -88,6 +89,7 @@ internal static class WaylandTrampolines
 
                     registerDelegate(ptrMouseMotion, ptrMouseButton, ptrKey, ptrText, ptrMouseWheel, ptrMousePositionChange);
                     Log.Info("[InputDiag] Wayland trampolines registered via ResolveSymbol");
+                    _registered = true;
                 }
                 else
                 {
