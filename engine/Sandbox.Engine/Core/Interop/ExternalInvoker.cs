@@ -16,8 +16,10 @@ namespace NativeEngine
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) || RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
-                // RTLD_DEFAULT = (void*)-2
-                var RTLD_DEFAULT = new IntPtr(-2);
+                // RTLD_DEFAULT: -2 on macOS/BSD, IntPtr.Zero on Linux/glibc
+                IntPtr RTLD_DEFAULT = RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+                    ? new IntPtr(-2)
+                    : IntPtr.Zero;
                 fn = dlsym(RTLD_DEFAULT, name);
                 if (fn == IntPtr.Zero)
                 {
@@ -53,7 +55,9 @@ namespace NativeEngine
             if (string.IsNullOrEmpty(name)) return IntPtr.Zero;
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) || RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
-                var RTLD_DEFAULT = new IntPtr(-2);
+                IntPtr RTLD_DEFAULT = RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+                    ? new IntPtr(-2)
+                    : IntPtr.Zero;
                 var p = dlsym(RTLD_DEFAULT, name);
                 if (p != IntPtr.Zero) return p;
                 try
