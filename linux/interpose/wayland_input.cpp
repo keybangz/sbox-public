@@ -54,6 +54,9 @@
 #include <wayland-client-protocol.h>
 #include <xkbcommon/xkbcommon.h>
 
+#include <mutex>
+#include <vector>
+
 // ============================================================================
 // Logging — write to /tmp/sbox_wayland_input.log so we don't depend on engine
 // log infra. Mirror critical lines to stderr too (the engine captures stderr).
@@ -247,7 +250,9 @@ typedef void (*pfn_SDL_SendMouseButton)(uint64_t ts, void* win, uint32_t mID, ui
 typedef void (*pfn_SDL_SendMouseWheel)(uint64_t ts, void* win, uint32_t mID, float x, float y, int direction);
 typedef bool (*pfn_SDL_SetKeyboardFocus)(void* win);
 typedef void (*pfn_SDL_SetMouseFocus)(void* win);
-typedef SDL_bool (*pfn_SDL_GetKeyboardState)(int* num_keys, SDL_Keycode* keys);
+// SDL_GetKeyboardState returns a pointer to an internal Uint8 array and fills
+// the key count. We only need the pointer for diagnostics if required.
+typedef const uint8_t* (*pfn_SDL_GetKeyboardState)(int* num_keys);
 typedef SDL_mouse_state (*pfn_SDL_GetMouseState)(void);
 
 static pfn_SDL_PushEvent             p_SDL_PushEvent             = nullptr;
@@ -295,6 +300,32 @@ static pfn_Engine_OnMouseWheel          p_Engine_OnMouseWheel          = nullptr
 static pfn_Engine_OnKey                 p_Engine_OnKey                 = nullptr;
 static pfn_Engine_OnText                p_Engine_OnText                = nullptr;
 static pfn_Engine_OnMousePositionChange p_Engine_OnMousePositionChange = nullptr;
+
+static std::atomic<bool> g_trampolines_registered{false};
+
+static std::mutex g_tramp_mutex;
+
+extern "C" __attribute__((visibility("default"))) void sbox_wayland_register_trampolines(
+    void* onMouseMotion,
+    void* onMouseButton,
+    void* onKey,
+    void* onText,
+    void* onMouseWheel,
+    void* onMousePositionChange
+)
+{
+    std::lock_guard<std::mutex> l(g_tramp_mutex);
+    p_Engine_OnMouseMotion = (pfn_Engine_OnMouseMotion)onMouseMotion;
+    p_Engine_OnMouseButton = (pfn_Engine_OnMouseButton)onMouseButton;
+    p_Engine_OnKey = (pfn_Engine_OnKey)onKey;
+    p_Engine_OnText = (pfn_Engine_OnText)onText;
+    p_Engine_OnMouseWheel = (pfn_Engine_OnMouseWheel)onMouseWheel;
+    p_Engine_OnMousePositionChange = (pfn_Engine_OnMousePositionChange)onMousePositionChange;
+    g_trampolines_registered = true;
+    logf("registered trampolines: OnMM=%p OnMB=%p OnKey=%p OnText=%p OnMW=%p OnMC=%p",
+         (void*)p_Engine_OnMouseMotion, (void*)p_Engine_OnMouseButton, (void*)p_Engine_OnKey,
+         (void*)p_Engine_OnText, (void*)p_Engine_OnMouseWheel, (void*)p_Engine_OnMousePositionChange);
+}
 
 // ============================================================================
 // evdev keycode → engine ButtonCode mapping
@@ -477,11 +508,19 @@ static bool try_resolve_sdl_symbols()
     p_SDL_GetKeyboardState = (pfn_SDL_GetKeyboardState) dlsym(h, "SDL_GetKeyboardState");
     p_SDL_GetMouseState    = (pfn_SDL_GetMouseState)    dlsym(h, "SDL_GetMouseState");
 
+    // Log resolved symbol pointers for diagnosis.
+    logf("resolved symbols: PushEvent=%p GetWindows=%p GetWindowProperties=%p GetPointerProperty=%p GetWindowID=%p",
+         p_SDL_PushEvent, p_SDL_GetWindows, p_SDL_GetWindowProperties, p_SDL_GetPointerProperty, p_SDL_GetWindowID);
+    logf("             SendKeyboardKey=%p SendMouseMotion=%p SendMouseButton=%p SendMouseWheel=%p",
+         p_SDL_SendKeyboardKey, p_SDL_SendMouseMotion, p_SDL_SendMouseButton, p_SDL_SendMouseWheel);
+    logf("             SetKeyboardFocus=%p SetMouseFocus=%p GetKeyboardState=%p GetMouseState=%p",
+         p_SDL_SetKeyboardFocus, p_SDL_SetMouseFocus, p_SDL_GetKeyboardState, p_SDL_GetMouseState);
+
+    // Consider symbol resolution successful if the push/get window primitives
+    // are present. Send* entrypoints and keyboard state helpers are optional
+    // (we'll fallback to PushEvent and trampolines), but log their presence.
     return p_SDL_PushEvent && p_SDL_GetWindows && p_SDL_GetWindowProperties &&
-           p_SDL_GetPointerProperty && p_SDL_GetWindowID &&
-           p_SDL_SendKeyboardKey && p_SDL_SendMouseMotion &&
-           p_SDL_SendMouseButton && p_SDL_SendMouseWheel &&
-           p_SDL_GetKeyboardState && p_SDL_GetMouseState;
+           p_SDL_GetPointerProperty && p_SDL_GetWindowID;
 }
 
 // Poll for libengine2.so to appear in the process and resolve its SDL symbols.
@@ -556,6 +595,100 @@ struct WaylandState {
 };
 
 static WaylandState g_w;
+
+// Record the thread that initialized the library (assumed to be the main
+// thread). Managed trampolines are not safe to call from arbitrary threads,
+// so we'll only invoke them if the caller is the main thread.
+static pthread_t g_main_thread = 0;
+
+// Event queue: worker thread enqueues, main thread drains via sbox_wayland_input_poll.
+enum EventType { EVT_MOUSE_MOTION=1, EVT_MOUSE_BUTTON=2, EVT_KEY=3, EVT_WINDOW_FOCUS=4, EVT_MOUSE_WHEEL=5 };
+struct Event {
+    EventType type;
+    // payload
+    float f1, f2, f3, f4;
+    int32_t i1, i2, i3;
+};
+
+static std::mutex g_event_mutex;
+static std::vector<Event> g_event_queue;
+
+static void enqueue_event(const Event &e)
+{
+    std::lock_guard<std::mutex> l(g_event_mutex);
+    g_event_queue.push_back(e);
+}
+
+// Drains the queue and processes events. Must be called from main thread.
+extern "C" void sbox_wayland_input_poll()
+{
+    // Log caller thread vs recorded main thread. We used to bail out here when
+    // called from a non-main thread to avoid calling managed trampolines from
+    // background threads. That prevented SDL event injection when the managed
+    // side invoked this from a different thread, so we now always drain the
+    // queue but only invoke C# trampolines when on the recorded main thread.
+    unsigned long caller = (unsigned long)pthread_self();
+    unsigned long mainth = (unsigned long)g_main_thread;
+    logf("sbox_wayland_input_poll called on thread %lu main_thread=%lu (will only call trampolines on main)", caller, mainth);
+
+    std::vector<Event> work;
+    {
+        std::lock_guard<std::mutex> l(g_event_mutex);
+        work.swap(g_event_queue);
+    }
+
+    for (const auto &ev : work) {
+        switch (ev.type) {
+        case EVT_WINDOW_FOCUS: {
+            // ev.i1 == 1 -> gained, 0 -> lost
+            if (ev.i1) {
+                if (p_SDL_SetKeyboardFocus) p_SDL_SetKeyboardFocus(g_w.engine_window);
+                if (p_SDL_PushEvent) {
+                    SDL_WindowEvent we{}; we.type = SDL_EVENT_WINDOW_FOCUS_GAINED; we.timestamp = now_ns(); we.windowID = g_w.engine_window_id; p_SDL_PushEvent(&we);
+                }
+            } else {
+                if (p_SDL_PushEvent) {
+                    SDL_WindowEvent we{}; we.type = SDL_EVENT_WINDOW_FOCUS_LOST; we.timestamp = now_ns(); we.windowID = g_w.engine_window_id; p_SDL_PushEvent(&we);
+                }
+            }
+        } break;
+        case EVT_MOUSE_MOTION: {
+            float dx = ev.f1, dy = ev.f2, nx = ev.f3, ny = ev.f4;
+            if (p_SDL_SendMouseMotion) {
+                p_SDL_SendMouseMotion(now_ns(), g_w.engine_window, kSDLDefaultMouseID, true, dx, dy);
+            } else if (p_SDL_PushEvent) {
+                SDL_MouseMotionEvent me{}; me.type = SDL_EVENT_MOUSE_MOTION; me.timestamp = now_ns(); me.windowID = g_w.engine_window_id; me.which = kSDLDefaultMouseID; me.x = nx; me.y = ny; me.xrel = dx; me.yrel = dy; p_SDL_PushEvent(&me);
+            }
+            if (p_Engine_OnMouseMotion) p_Engine_OnMouseMotion(dx, dy);
+            if (p_Engine_OnMousePositionChange) p_Engine_OnMousePositionChange(nx, ny, dx, dy);
+        } break;
+        case EVT_MOUSE_BUTTON: {
+            uint8_t sdl_btn = (uint8_t)ev.i1; bool down = ev.i2 != 0;
+            if (sdl_btn && p_SDL_SendMouseButton) {
+                p_SDL_SendMouseButton(now_ns(), g_w.engine_window, kSDLDefaultMouseID, sdl_btn, down);
+            } else if (p_SDL_PushEvent) {
+                SDL_MouseButtonEvent mbe{}; mbe.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP; mbe.timestamp = now_ns(); mbe.windowID = g_w.engine_window_id; mbe.which = kSDLDefaultMouseID; mbe.button = sdl_btn; mbe.down = down; mbe.clicks = 1; mbe.x = g_w.last_x; mbe.y = g_w.last_y; p_SDL_PushEvent(&mbe);
+            }
+            if (p_Engine_OnMouseButton) p_Engine_OnMouseButton((int64_t)ev.i3, down ? 1 : 0, 0);
+        } break;
+        case EVT_KEY: {
+            uint32_t key = (uint32_t)ev.i1; bool down = ev.i2 != 0; int sc = ev.i3;
+            if (p_SDL_SendKeyboardKey) {
+                p_SDL_SendKeyboardKey(now_ns(), kSDLDefaultKeyboardID, (int)key, sc, down);
+            } else if (p_SDL_PushEvent) {
+                SDL_KeyboardEvent kev{}; kev.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP; kev.timestamp = now_ns(); kev.windowID = g_w.engine_window_id; kev.which = kSDLDefaultKeyboardID; kev.scancode = sc; kev.raw = (uint16_t)key; kev.down = down; kev.repeat = false; p_SDL_PushEvent(&kev);
+            }
+            if (p_Engine_OnKey) p_Engine_OnKey((int64_t)key, (int64_t)key, down ? 1 : 0, 0, 0);
+        } break;
+        case EVT_MOUSE_WHEEL: {
+            float wx = ev.f1, wy = ev.f2;
+            if (p_SDL_SendMouseWheel) p_SDL_SendMouseWheel(now_ns(), g_w.engine_window, kSDLDefaultMouseID, wx, wy, 0);
+            else if (p_SDL_PushEvent) { SDL_MouseWheelEvent we{}; we.type = SDL_EVENT_MOUSE_WHEEL; we.timestamp = now_ns(); we.windowID = g_w.engine_window_id; we.which = kSDLDefaultMouseID; we.x = wx; we.y = wy; p_SDL_PushEvent(&we); }
+            if (p_Engine_OnMouseWheel) p_Engine_OnMouseWheel((int32_t)wx, (int32_t)wy, 0);
+        } break;
+        }
+    }
+}
 
 // ============================================================================
 // xkb keysym -> SDL keycode mapping (small subset; covers ASCII + arrows + mods)
@@ -681,7 +814,12 @@ static void kbd_enter(void*, wl_keyboard*, uint32_t /*serial*/, wl_surface* surf
     we.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
     we.timestamp = now_ns();
     we.windowID = g_w.engine_window_id;
-    p_SDL_PushEvent(&we);
+    if (p_SDL_PushEvent) {
+        p_SDL_PushEvent(&we);
+        logf("SDL_PushEvent(WINDOW_FOCUS_GAINED) pushed windowID=%u", we.windowID);
+    } else {
+        logf("SDL_PushEvent not available for wheel event");
+    }
 }
 
 static void kbd_leave(void*, wl_keyboard*, uint32_t /*serial*/, wl_surface* surface)
@@ -706,44 +844,9 @@ static void kbd_key(void*, wl_keyboard*, uint32_t /*serial*/, uint32_t /*time*/,
     bool down = (state == WL_KEYBOARD_KEY_STATE_PRESSED);
     uint64_t bc = evdev_to_button_code(key);
 
-    // Route through SDL's dispatch (updates keyboard state array)
+    // Enqueue for main-thread processing via sbox_wayland_input_poll.
     SDL_Scancode sc = evdev_to_sdl_scancode(key);
-    uint64_t ts = now_ns();
-    if (p_SDL_SendKeyboardKey) {
-        p_SDL_SendKeyboardKey(ts, 1, (int)key, (int)sc, down);
-    }
-
-    // Also call the C# trampoline directly (bypasses SDL event queue)
-    if (p_Engine_OnKey) {
-        logf("TRAMP OnKey: bc=%ld down=%d", bc, (int)down);
-        p_Engine_OnKey((int64_t)bc, (int64_t)bc, down ? 1 : 0, 0, 0);
-    }
-
-    // Synthesize TEXT_INPUT for printable keys on key-down
-    if (down && g_w.kbstate) {
-        char utf8[8] = {0};
-        int n = xkb_state_key_get_utf8(g_w.kbstate, key + 8, utf8, sizeof(utf8));
-        if (n > 0 && (uint8_t)utf8[0] >= 0x20 && utf8[0] != 0x7F) {
-            if (p_Engine_OnText) {
-                p_Engine_OnText((uint32_t)(uint8_t)utf8[0]);
-            }
-        }
-    }
-
-    // Update SDL state arrays so SDL_GetKeyboardState() returns correct state
-    if (p_SDL_GetKeyboardState) {
-        int num_keys = 1024;
-        SDL_Keycode* keys = (SDL_Keycode*)malloc(num_keys * sizeof(SDL_Keycode));
-        if (keys) {
-            // Mark this key as pressed/released in SDL's state array
-            for (int i = 0; i < num_keys; i++) {
-                keys[i] = 0;
-            }
-            keys[(int)sc] = down ? (SDL_Keycode)((int)key) : 0;
-            p_SDL_GetKeyboardState(&num_keys, keys);
-            free(keys);
-        }
-    }
+    Event e{}; e.type = EVT_KEY; e.i1 = (int32_t)key; e.i2 = down ? 1 : 0; e.i3 = (int32_t)sc; enqueue_event(e);
 }
 
 static void kbd_modifiers(void*, wl_keyboard*, uint32_t /*serial*/,
@@ -775,18 +878,11 @@ static void ptr_enter(void*, wl_pointer*, uint32_t /*serial*/, wl_surface* surfa
     logf("ptr_enter: surface=%p ours=%d", (void*)surface, ours);
     if (!ours) return;
 
-    // SDL3's SendMouseMotion validates that the target window has mouse
-    // focus. Without this the internal dispatch ignores our motion events.
+    // Queue the enter + focus update for main thread processing.
     p_SDL_SetMouseFocus(g_w.engine_window);
-
     g_w.last_x = wl_fixed_to_double(sx);
     g_w.last_y = wl_fixed_to_double(sy);
-
-    SDL_WindowEvent we{};
-    we.type = SDL_EVENT_WINDOW_MOUSE_ENTER;
-    we.timestamp = now_ns();
-    we.windowID = g_w.engine_window_id;
-    p_SDL_PushEvent(&we);
+    Event e{}; e.type = EVT_WINDOW_FOCUS; e.i1 = 1; enqueue_event(e);
 }
 
 static void ptr_leave(void*, wl_pointer*, uint32_t /*serial*/, wl_surface* surface)
@@ -795,12 +891,7 @@ static void ptr_leave(void*, wl_pointer*, uint32_t /*serial*/, wl_surface* surfa
     if (ours) g_w.ptr_focused.store(false);
     logf("ptr_leave: surface=%p ours=%d", (void*)surface, ours);
     if (!ours) return;
-
-    SDL_WindowEvent we{};
-    we.type = SDL_EVENT_WINDOW_MOUSE_LEAVE;
-    we.timestamp = now_ns();
-    we.windowID = g_w.engine_window_id;
-    p_SDL_PushEvent(&we);
+    Event e{}; e.type = EVT_WINDOW_FOCUS; e.i1 = 0; enqueue_event(e);
 }
 
 static void ptr_motion(void*, wl_pointer*, uint32_t /*time*/, wl_fixed_t sx, wl_fixed_t sy)
@@ -813,37 +904,8 @@ static void ptr_motion(void*, wl_pointer*, uint32_t /*time*/, wl_fixed_t sx, wl_
     g_w.last_x = nx; g_w.last_y = ny;
     if (dx == 0.0f && dy == 0.0f) return;
 
-    // Route through SDL's dispatch (updates mouse state array)
-    if (p_SDL_SendMouseMotion) {
-        p_SDL_SendMouseMotion(now_ns(), g_w.engine_window, 1, true, dx, dy);
-    }
-
-    // Also call the C# trampoline directly
-    if (p_Engine_OnMouseMotion) {
-        logf("TRAMP OnMouseMotion: dx=%.1f dy=%.1f", dx, dy);
-        p_Engine_OnMouseMotion(dx, dy);
-    }
-    if (p_Engine_OnMousePositionChange) {
-        p_Engine_OnMousePositionChange(nx, ny, dx, dy);
-    }
-
-    // Update SDL mouse state
-    SDL_mouse_state mouse_state = {0};
-    mouse_state.x = (int)nx;
-    mouse_state.y = (int)ny;
-    mouse_state.xrel = (int)(dx * 1000);
-    mouse_state.yrel = (int)(dy * 1000);
-    mouse_state.buttons = 0;
-    mouse_state.wheel_x = 0;
-    mouse_state.wheel_y = 0;
-    mouse_state.wheel_direction = 0;
-    mouse_state.last_left_click = 0;
-    mouse_state.last_right_click = 0;
-    mouse_state.last_middle_click = 0;
-    mouse_state.last_button = 0;
-    mouse_state.last_click_time = 0;
-    mouse_state.last_click_time_x = 0;
-    mouse_state.last_click_time_y = 0;
+    // Enqueue for main-thread processing via sbox_wayland_input_poll.
+    Event e{}; e.type = EVT_MOUSE_MOTION; e.f1 = dx; e.f2 = dy; e.f3 = nx; e.f4 = ny; enqueue_event(e);
 }
 
 static void ptr_button(void*, wl_pointer*, uint32_t /*serial*/, uint32_t /*time*/,
@@ -855,7 +917,6 @@ static void ptr_button(void*, wl_pointer*, uint32_t /*serial*/, uint32_t /*time*
     uint64_t bc = evdev_to_button_code(button);
     if (bc == 0) return;
 
-    // Route through SDL's dispatch (updates mouse button state array)
     uint8_t sdl_btn = 0;
     switch (button) {
         case 0x110: sdl_btn = 1; break; // SDL_BUTTON_LEFT
@@ -865,33 +926,10 @@ static void ptr_button(void*, wl_pointer*, uint32_t /*serial*/, uint32_t /*time*
         case 0x114: sdl_btn = 5; break; // SDL_BUTTON_X2
         default: break;
     }
-    if (sdl_btn && p_SDL_SendMouseButton) {
-        p_SDL_SendMouseButton(now_ns(), g_w.engine_window, 1, sdl_btn, down);
-    }
+    if (!sdl_btn) return;
 
-    // Also call the C# trampoline directly
-    if (p_Engine_OnMouseButton) {
-        logf("TRAMP OnMouseButton: bc=%ld down=%d", bc, (int)down);
-        p_Engine_OnMouseButton((int64_t)bc, down ? 1 : 0, 0);
-    }
-
-    // Update SDL mouse state
-    SDL_mouse_state mouse_state = {0};
-    mouse_state.x = (int)g_w.last_x;
-    mouse_state.y = (int)g_w.last_y;
-    mouse_state.xrel = 0;
-    mouse_state.yrel = 0;
-    mouse_state.buttons = down ? sdl_btn : 0;
-    mouse_state.wheel_x = 0;
-    mouse_state.wheel_y = 0;
-    mouse_state.wheel_direction = 0;
-    mouse_state.last_left_click = down ? (int)p_SDL_GetTicks() : 0;
-    mouse_state.last_right_click = down ? (int)p_SDL_GetTicks() : 0;
-    mouse_state.last_middle_click = down ? (int)p_SDL_GetTicks() : 0;
-    mouse_state.last_button = sdl_btn;
-    mouse_state.last_click_time = down ? (int)p_SDL_GetTicks() : 0;
-    mouse_state.last_click_time_x = (int)g_w.last_x;
-    mouse_state.last_click_time_y = (int)g_w.last_y;
+    // Enqueue for main-thread processing via sbox_wayland_input_poll.
+    Event e{}; e.type = EVT_MOUSE_BUTTON; e.i1 = sdl_btn; e.i2 = down ? 1 : 0; e.i3 = (int32_t)bc; enqueue_event(e);
 }
 
 static void ptr_axis(void*, wl_pointer*, uint32_t /*time*/, uint32_t axis, wl_fixed_t value)
@@ -900,37 +938,10 @@ static void ptr_axis(void*, wl_pointer*, uint32_t /*time*/, uint32_t axis, wl_fi
     float v = (float)wl_fixed_to_double(value);
     // Wayland: positive = down/right scroll; SDL3 wheel y: positive = away from user (up scroll).
     // Wayland axis 0 = vertical, 1 = horizontal.
-    SDL_MouseWheelEvent we{};
-    we.type = SDL_EVENT_MOUSE_WHEEL;
-    we.timestamp = now_ns();
-    we.windowID = g_w.engine_window_id;
-    we.which = 1;
-    if (axis == 0) we.y = -v / 10.0f; // dampen + invert
-    else           we.x =  v / 10.0f;
-    we.direction = 0;
-    we.mouse_x = g_w.last_x;
-    we.mouse_y = g_w.last_y;
-    we.integer_y = (axis == 0) ? (we.y > 0 ? 1 : (we.y < 0 ? -1 : 0)) : 0;
-    we.integer_x = (axis == 1) ? (we.x > 0 ? 1 : (we.x < 0 ? -1 : 0)) : 0;
-    p_SDL_PushEvent(&we);
-
-    // Update SDL mouse state
-    SDL_mouse_state mouse_state = {0};
-    mouse_state.x = (int)g_w.last_x;
-    mouse_state.y = (int)g_w.last_y;
-    mouse_state.xrel = 0;
-    mouse_state.yrel = 0;
-    mouse_state.buttons = 0;
-    mouse_state.wheel_x = (int)(we.x * 1000);
-    mouse_state.wheel_y = (int)(we.y * 1000);
-    mouse_state.wheel_direction = we.integer_y;
-    mouse_state.last_left_click = 0;
-    mouse_state.last_right_click = 0;
-    mouse_state.last_middle_click = 0;
-    mouse_state.last_button = 0;
-    mouse_state.last_click_time = 0;
-    mouse_state.last_click_time_x = 0;
-    mouse_state.last_click_time_y = 0;
+    // Enqueue for main-thread processing via sbox_wayland_input_poll.
+    float wx = (axis == 1) ? v / 10.0f : 0.0f;
+    float wy = (axis == 0) ? -v / 10.0f : 0.0f;
+    Event e{}; e.type = EVT_MOUSE_WHEEL; e.f1 = wx; e.f2 = wy; enqueue_event(e);
 }
 
 static void ptr_frame(void*, wl_pointer*) {}
@@ -1070,47 +1081,114 @@ static void* worker_thread(void*)
 
     logf("setup complete — entering event loop");
 
-    // Step 6: resolve C# [UnmanagedCallersOnly] trampolines.
-    // These live in the managed assembly, not libengine2.so, so we use
-    // RTLD_DEFAULT. The .NET runtime exports them as native symbols.
-    // The assembly may load AFTER our worker starts, so we retry.
-    bool trampolines_ready = false;
-    for (int retry = 0; retry < 120; ++retry) {
-        p_Engine_OnMouseMotion = (pfn_Engine_OnMouseMotion)
-            dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnMouseMotion");
-        p_Engine_OnMouseButton = (pfn_Engine_OnMouseButton)
-            dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnMouseButton");
-        p_Engine_OnKey         = (pfn_Engine_OnKey)
-            dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnKey");
-        p_Engine_OnText        = (pfn_Engine_OnText)
-            dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnText");
-        p_Engine_OnMouseWheel  = (pfn_Engine_OnMouseWheel)
-            dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnMouseWheel");
-        p_Engine_OnMousePositionChange = (pfn_Engine_OnMousePositionChange)
-            dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnMousePositionChange");
-        if (p_Engine_OnMouseMotion && p_Engine_OnKey && p_Engine_OnMouseButton) {
-            trampolines_ready = true;
-            logf("trampolines resolved after %d retries", retry);
-            break;
-        }
-        usleep(500000); // 500ms
+    // Ensure SDL's idea of which window has focus matches the engine window we
+    // borrowed. Some SDL internals validate window focus before updating
+    // internal state/dispatching; if the compositor hasn't generated enter
+    // events yet our wl_keyboard/wl_pointer handlers might not have called
+    // SDL_Set*Focus. Do that proactively to avoid dropped events.
+    if (p_SDL_SetKeyboardFocus) {
+        bool ok = p_SDL_SetKeyboardFocus(g_w.engine_window);
+        logf("p_SDL_SetKeyboardFocus -> %d", (int)ok);
     }
-    if (!trampolines_ready) {
-        logf("trampolines NOT resolved — engine callbacks unreachable "
-             "(OnMM=%p OnKey=%p OnMB=%p OnMW=%p OnMC=%p OnText=%p)",
-             (void*)p_Engine_OnMouseMotion, (void*)p_Engine_OnKey,
-             (void*)p_Engine_OnMouseButton, (void*)p_Engine_OnMouseWheel,
-             (void*)p_Engine_OnMousePositionChange, (void*)p_Engine_OnText);
+    if (p_SDL_SetMouseFocus) {
+        p_SDL_SetMouseFocus(g_w.engine_window);
+        logf("p_SDL_SetMouseFocus called");
+    }
+
+    // Step 6: start a background thread that continuously tries to resolve
+    // managed trampolines exported by the .NET runtime. The managed assembly
+    // may load well after our worker starts; make resolution asynchronous so
+    // we can pick them up whenever they appear.
+    auto tramp_resolver = [](void*) -> void* {
+        logf("trampoline resolver starting");
+        const char* syms[] = {
+            "SandboxEngine_InputRouter_OnMouseMotion",
+            "SandboxEngine_InputRouter_OnMouseButton",
+            "SandboxEngine_InputRouter_OnKey",
+            "SandboxEngine_InputRouter_OnText",
+            "SandboxEngine_InputRouter_OnMouseWheel",
+            "SandboxEngine_InputRouter_OnMousePositionChange",
+            nullptr
+        };
+        const int MAX_RESOLVER_ATTEMPTS = 120;
+        int resolver_attempts = 0;
+        while (true) {
+            resolver_attempts++;
+            if (resolver_attempts > MAX_RESOLVER_ATTEMPTS) {
+                logf("resolver max attempts (%d) reached, giving up", MAX_RESOLVER_ATTEMPTS);
+                break;
+            }
+            if (g_trampolines_registered.load()) {
+                logf("trampolines already registered, stopping resolver");
+                break;
+            }
+            void* mmm = dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnMouseMotion");
+            void* mmb = dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnMouseButton");
+            void* mk  = dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnKey");
+            void* mt  = dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnText");
+            void* mmw = dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnMouseWheel");
+            void* mpc = dlsym(RTLD_DEFAULT, "SandboxEngine_InputRouter_OnMousePositionChange");
+            if (mmm) p_Engine_OnMouseMotion = (pfn_Engine_OnMouseMotion)mmm;
+            if (mmb) p_Engine_OnMouseButton = (pfn_Engine_OnMouseButton)mmb;
+            if (mk)  p_Engine_OnKey         = (pfn_Engine_OnKey)mk;
+            if (mt)  p_Engine_OnText        = (pfn_Engine_OnText)mt;
+            if (mmw) p_Engine_OnMouseWheel  = (pfn_Engine_OnMouseWheel)mmw;
+            if (mpc) p_Engine_OnMousePositionChange = (pfn_Engine_OnMousePositionChange)mpc;
+
+            if (p_Engine_OnMouseMotion && p_Engine_OnKey && p_Engine_OnMouseButton) {
+                logf("trampolines resolved after %d attempts", resolver_attempts);
+                // Do NOT call managed trampolines from this background thread —
+                // calling into managed code from an arbitrary native thread can
+                // crash the runtime. Just record the pointers and stop resolving.
+                break;
+            }
+
+            if ((resolver_attempts & 31) == 0 || resolver_attempts > MAX_RESOLVER_ATTEMPTS) {
+                // Periodically log the dlsym results for diagnosis.
+                logf("trampoline attempt %d: OnMM=%s OnKey=%s OnMB=%s OnMW=%s OnMC=%s OnText=%s",
+                     resolver_attempts,
+                     p_Engine_OnMouseMotion ? "(set)" : "(nil)",
+                     p_Engine_OnKey ? "(set)" : "(nil)",
+                     p_Engine_OnMouseButton ? "(set)" : "(nil)",
+                     p_Engine_OnMouseWheel ? "(set)" : "(nil)",
+                     p_Engine_OnMousePositionChange ? "(set)" : "(nil)",
+                     p_Engine_OnText ? "(set)" : "(nil)");
+                for (int i = 0; syms[i]; ++i) {
+                    void* p = dlsym(RTLD_DEFAULT, syms[i]);
+                    logf("dlsym(%s) -> %s", syms[i], p ? "(set)" : "(nil)");
+                }
+            }
+            usleep(500000); // 500ms
+        }
+        return nullptr;
+    };
+
+    pthread_t tr_tid;
+    if (pthread_create(&tr_tid, nullptr, tramp_resolver, nullptr) != 0) {
+        logf("failed to create trampoline resolver thread: %s", strerror(errno));
     } else {
-        logf("trampolines VERIFIED — testing callbacks...");
-        // Test that callbacks are actually callable
-        p_Engine_OnMouseMotion(0, 0);
-        p_Engine_OnMouseButton(314, 1, 0);
-        p_Engine_OnKey(11, 11, 1, 0, 0);
-        p_Engine_OnText(65);
-        p_Engine_OnMouseWheel(0, 0, 0);
-        p_Engine_OnMousePositionChange(100, 100, 0, 0);
-        logf("trampolines OK — callbacks executed");
+        pthread_detach(tr_tid);
+        logf("trampoline resolver thread started");
+    }
+
+    // Spawn a lightweight heartbeat thread so we can confirm the worker stays
+    // alive after "setup complete" even if Wayland events are quiet. Logs
+    // every 5s and prints focus state to help diagnose missing resolver logs.
+    auto heartbeat = [](void*) -> void* {
+        int c = 0;
+        while (true) {
+            usleep(5000000); // 5s
+            logf("worker heartbeat #%d — kbd_focused=%d ptr_focused=%d",
+                 ++c, (int)g_w.kbd_focused.load(), (int)g_w.ptr_focused.load());
+        }
+        return nullptr;
+    };
+    pthread_t hb_tid;
+    if (pthread_create(&hb_tid, nullptr, heartbeat, nullptr) != 0) {
+        logf("failed to create heartbeat thread: %s", strerror(errno));
+    } else {
+        pthread_detach(hb_tid);
+        logf("heartbeat thread started");
     }
 
     // Step 7: dispatch loop. wl_display_dispatch_queue blocks until events.
@@ -1160,6 +1238,9 @@ void sbox_wayland_input_init()
     // var above at SDL_Init time, so a single setenv covers it.
 
     pthread_t tid;
+    // Record current thread as main thread then spawn worker. We use this to
+    // avoid calling managed trampolines from background threads.
+    g_main_thread = pthread_self();
     if (pthread_create(&tid, nullptr, worker_thread, nullptr) != 0) {
         logf("pthread_create failed: %s", strerror(errno));
         return;
