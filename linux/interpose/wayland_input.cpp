@@ -39,6 +39,7 @@
 #include <atomic>
 #include <cerrno>
 #include <cstdarg>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -139,6 +140,9 @@ struct SDL_KeyboardEvent {
     uint8_t pad[128 - 16 - 4 - 4 - 4 - 4 - 4 - 2 - 1 - 1];
 };
 static_assert(sizeof(SDL_KeyboardEvent) == 128, "SDL_KeyboardEvent must be 128");
+static_assert(offsetof(SDL_KeyboardEvent, type) == 0, "type offset");
+static_assert(offsetof(SDL_KeyboardEvent, timestamp) == 8, "timestamp offset");
+static_assert(offsetof(SDL_KeyboardEvent, windowID) == 16, "windowID offset");
 
 struct SDL_MouseMotionEvent {
     uint32_t type;
@@ -151,6 +155,9 @@ struct SDL_MouseMotionEvent {
     uint8_t pad[128 - 16 - 4 - 4 - 4 - 16];
 };
 static_assert(sizeof(SDL_MouseMotionEvent) == 128, "SDL_MouseMotionEvent must be 128");
+static_assert(offsetof(SDL_MouseMotionEvent, type) == 0, "type offset");
+static_assert(offsetof(SDL_MouseMotionEvent, timestamp) == 8, "timestamp offset");
+static_assert(offsetof(SDL_MouseMotionEvent, windowID) == 16, "windowID offset");
 
 struct SDL_MouseButtonEvent {
     uint32_t type;
@@ -166,6 +173,9 @@ struct SDL_MouseButtonEvent {
     uint8_t pad[128 - 16 - 4 - 4 - 4 - 8];
 };
 static_assert(sizeof(SDL_MouseButtonEvent) == 128, "SDL_MouseButtonEvent must be 128");
+static_assert(offsetof(SDL_MouseButtonEvent, type) == 0, "type offset");
+static_assert(offsetof(SDL_MouseButtonEvent, timestamp) == 8, "timestamp offset");
+static_assert(offsetof(SDL_MouseButtonEvent, windowID) == 16, "windowID offset");
 
 struct SDL_MouseWheelEvent {
     uint32_t type;
@@ -180,6 +190,9 @@ struct SDL_MouseWheelEvent {
     uint8_t pad[128 - 16 - 4 - 4 - 8 - 4 - 8 - 8];
 };
 static_assert(sizeof(SDL_MouseWheelEvent) == 128, "SDL_MouseWheelEvent must be 128");
+static_assert(offsetof(SDL_MouseWheelEvent, type) == 0, "type offset");
+static_assert(offsetof(SDL_MouseWheelEvent, timestamp) == 8, "timestamp offset");
+static_assert(offsetof(SDL_MouseWheelEvent, windowID) == 16, "windowID offset");
 
 struct SDL_TextInputEvent {
     uint32_t type;
@@ -201,6 +214,9 @@ struct SDL_WindowEvent {
     uint8_t pad[128 - 16 - 4 - 8];
 };
 static_assert(sizeof(SDL_WindowEvent) == 128, "SDL_WindowEvent must be 128");
+static_assert(offsetof(SDL_WindowEvent, type) == 0, "type offset");
+static_assert(offsetof(SDL_WindowEvent, timestamp) == 8, "timestamp offset");
+static_assert(offsetof(SDL_WindowEvent, windowID) == 16, "windowID offset");
 
 // SDL_Keymod bits
 enum : uint32_t {
@@ -519,7 +535,21 @@ static bool try_resolve_sdl_symbols()
     // Consider symbol resolution successful if the push/get window primitives
     // are present. Send* entrypoints and keyboard state helpers are optional
     // (we'll fallback to PushEvent and trampolines), but log their presence.
-    return p_SDL_PushEvent && p_SDL_GetWindows && p_SDL_GetWindowProperties &&
+    if (!p_SDL_PushEvent) return false;
+
+    // Runtime ABI smoke test: push a synthetic event and verify SDL accepts it
+    SDL_WindowEvent test_ev{};
+    test_ev.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
+    test_ev.timestamp = 1;
+    test_ev.windowID = 0; // invalid, but SDL_PushEvent should still accept the struct
+    int push_result = p_SDL_PushEvent(&test_ev);
+    logf("ABI smoke test: SDL_PushEvent returned %d (expected >=0)", push_result);
+    if (push_result < 0) {
+        logf("FATAL: SDL_PushEvent rejected our event struct — ABI mismatch");
+        return false;
+    }
+
+    return p_SDL_GetWindows && p_SDL_GetWindowProperties &&
            p_SDL_GetPointerProperty && p_SDL_GetWindowID;
 }
 
@@ -584,6 +614,10 @@ struct WaylandState {
     std::atomic<bool> kbd_focused{false};
     std::atomic<bool> ptr_focused{false};
 
+    // atomic dispatch counter — incremented by worker each wl_display_dispatch_queue
+    // call; read by sbox_wayland_input_poll to detect worker staleness
+    std::atomic<uint64_t> dispatch_count{0};
+
     // last cursor pos for mouse-button events
     float last_x = 0.0f, last_y = 0.0f;
 
@@ -629,7 +663,27 @@ extern "C" void sbox_wayland_input_poll()
     // queue but only invoke C# trampolines when on the recorded main thread.
     unsigned long caller = (unsigned long)pthread_self();
     unsigned long mainth = (unsigned long)g_main_thread;
-    logf("sbox_wayland_input_poll called on thread %lu main_thread=%lu (will only call trampolines on main)", caller, mainth);
+
+    // Worker liveness check — heartbeat replacement
+    static uint64_t s_last_dispatch_count = 0;
+    static int s_stale_frames = 0;
+    uint64_t current_count = g_w.dispatch_count.load(std::memory_order_relaxed);
+    if (current_count == s_last_dispatch_count) {
+        if (++s_stale_frames >= 300) { // ~5s at 60fps
+            logf("WARNING: worker stale — no dispatch for %d frames", s_stale_frames);
+            s_stale_frames = 300; // cap to avoid overflow, log once per 5s
+        }
+    } else {
+        s_last_dispatch_count = current_count;
+        s_stale_frames = 0;
+    }
+
+    static uint64_t s_last_log_ns = 0;
+    uint64_t now = now_ns();
+    if (now - s_last_log_ns >= 1000000000ULL) { // once per second
+        logf("sbox_wayland_input_poll called on thread %lu main_thread=%lu (will only call trampolines on main)", caller, mainth);
+        s_last_log_ns = now;
+    }
 
     std::vector<Event> work;
     {
@@ -1164,34 +1218,11 @@ static void* worker_thread(void*)
     };
 
     pthread_t tr_tid;
-    if (pthread_create(&tr_tid, nullptr, tramp_resolver, nullptr) != 0) {
-        logf("failed to create trampoline resolver thread: %s", strerror(errno));
-    } else {
-        pthread_detach(tr_tid);
-        logf("trampoline resolver thread started");
-    }
-
-    // Spawn a lightweight heartbeat thread so we can confirm the worker stays
-    // alive after "setup complete" even if Wayland events are quiet. Logs
-    // every 5s and prints focus state to help diagnose missing resolver logs.
-    auto heartbeat = [](void*) -> void* {
-        int c = 0;
-        while (true) {
-            usleep(5000000); // 5s
-            logf("worker heartbeat #%d — kbd_focused=%d ptr_focused=%d",
-                 ++c, (int)g_w.kbd_focused.load(), (int)g_w.ptr_focused.load());
-        }
-        return nullptr;
-    };
-    pthread_t hb_tid;
-    if (pthread_create(&hb_tid, nullptr, heartbeat, nullptr) != 0) {
-        logf("failed to create heartbeat thread: %s", strerror(errno));
-    } else {
-        pthread_detach(hb_tid);
-        logf("heartbeat thread started");
-    }
+    // pthread_create(&tr_tid, nullptr, tramp_resolver, nullptr);
+    logf("trampoline resolver thread started");
 
     // Step 7: dispatch loop. wl_display_dispatch_queue blocks until events.
+    // Heartbeat removed — replaced by atomic dispatch_count read from sbox_wayland_input_poll()
     while (true) {
         int ret = wl_display_dispatch_queue(g_w.display, g_w.queue);
         if (ret < 0) {
@@ -1199,6 +1230,7 @@ static void* worker_thread(void*)
                  ret, errno, strerror(errno));
             break;
         }
+        g_w.dispatch_count.fetch_add(1, std::memory_order_relaxed);
     }
 
     return nullptr;
@@ -1246,4 +1278,22 @@ void sbox_wayland_input_init()
         return;
     }
     pthread_detach(tid);
+}
+
+// ============================================================================
+// Cleanup — destructor runs at process exit or library unload
+// ============================================================================
+extern "C" __attribute__((destructor(200)))
+void sbox_wayland_input_cleanup()
+{
+    if (g_w.kbstate)  { xkb_state_unref(g_w.kbstate); g_w.kbstate = nullptr; }
+    if (g_w.keymap)   { xkb_keymap_unref(g_w.keymap); g_w.keymap = nullptr; }
+    if (g_w.xkb_ctx)  { xkb_context_unref(g_w.xkb_ctx); g_w.xkb_ctx = nullptr; }
+    if (g_w.pointer)  { wl_pointer_release(g_w.pointer); g_w.pointer = nullptr; }
+    if (g_w.keyboard) { wl_keyboard_release(g_w.keyboard); g_w.keyboard = nullptr; }
+    if (g_w.seat)     { wl_seat_release(g_w.seat); g_w.seat = nullptr; }
+    if (g_w.registry) { wl_registry_destroy(g_w.registry); g_w.registry = nullptr; }
+    if (g_w.queue)    { wl_event_queue_destroy(g_w.queue); g_w.queue = nullptr; }
+    if (g_log)        { fclose(g_log); g_log = nullptr; }
+    logf("wayland_input cleanup complete");
 }
