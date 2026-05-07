@@ -104,6 +104,7 @@ engine/TestResults/
 /game/bin/**/*.dll
 /game/bin/**/*.xml
 /game/bin/**/*.json
+/game/bin/managed/*.dll
 /game/bin/win64/logs
 /game/config/**/*.json
 /game/config/**/*.json.backup
