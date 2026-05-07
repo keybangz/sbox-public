@@ -50,6 +50,7 @@
 
 # Linux native client files
 !linux/**
+linux/interpose/*.so
 !*.c
 
 # Only allow .so files in the linux/ directory (wrapper libs)
