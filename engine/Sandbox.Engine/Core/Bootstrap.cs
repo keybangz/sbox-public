@@ -320,11 +320,6 @@ internal static class Bootstrap
 		Sandbox.Utility.Steam.InitializeClient();
 		ThreadSafe.MarkMainThread();
 
-#if WIN
-		// SetMinThreads is only available on Windows
-		ThreadPool.SetMinThreads( Environment.ProcessorCount, Environment.ProcessorCount );
-#endif
-
 		TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
 		AppDomain.CurrentDomain.UnhandledException += ( _, args ) => Log.Error( args.ExceptionObject as Exception, "AppDomain unhandled exception" );
 
