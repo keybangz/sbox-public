@@ -1,4 +1,5 @@
 ﻿using NativeEngine;
+using System.Runtime.InteropServices;
 using Sandbox.Internal;
 using Sandbox.UI;
 
@@ -92,6 +93,25 @@ internal static partial class InputRouter
 
 	public static void Frame()
 	{
+		// Register Wayland trampolines once before polling input
+		WaylandTrampolines.TryRegisterOnce();
+
+		// Poll native wayland input interpose if available. This drains any
+		// queued events the interpose worker captured and ensures they are
+		// processed on the main thread (safe for managed runtime).
+		try
+		{
+			Log.Info( "[InputDiag] Calling sbox_wayland_input_poll" );
+			var ptr = NativeEngine.ExternalInvoker.ResolveSymbol( "sbox_wayland_input_poll" );
+			Log.Info( $"[InputDiag] sbox_wayland_input_poll resolved ptr={ptr}" );
+			NativeEngine.ExternalInvoker.InvokeExternal( "sbox_wayland_input_poll" );
+			Log.Info( "[InputDiag] sbox_wayland_input_poll returned" );
+		}
+		catch ( System.Exception e )
+		{
+			Log.Warning( "[InputDiag] sbox_wayland_input_poll failed: " + e.Message );
+		}
+
 		var activeMouse = Contexts.Where( x => x.MouseState != InputContext.InputState.Ignore ).FirstOrDefault();
 		var activeKeyboard = Contexts.Where( x => x.KeyboardState != InputContext.InputState.Ignore ).FirstOrDefault();
 
