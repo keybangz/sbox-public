@@ -318,9 +318,10 @@ elif [ "$SBOX_GDB" = "1" ]; then
 
     # Build GDB arguments
     GDB_ARGS=(
-        # Don't stop on signals commonly used by .NET runtime
-        # SIG33-SIG36 are used for thread synchronization, garbage collection, etc.
-        -ex "handle SIGXCPU SIG33 SIG34 SIG35 SIG36 SIGPWR nostop noprint"
+        # .NET runtime uses real-time signals (SIG33-SIG36, SIGPWR) for GC thread
+        # suspension and other runtime operations. Must pass them through, not just
+        # suppress, so the runtime can handle them properly.
+        -ex "handle SIGXCPU SIG33 SIG34 SIG35 SIG36 SIGPWR nostop noprint pass"
         # Set follow-fork-mode to child to debug forked processes
         -ex "set follow-fork-mode child"
         # Disable pagination for long output
