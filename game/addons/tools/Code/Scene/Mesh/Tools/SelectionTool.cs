@@ -873,6 +873,8 @@ public abstract class SelectionTool<T>( MeshTool tool ) : SelectionTool where T 
 			var mesh = component.Mesh;
 			if ( mesh == null ) continue;
 
+			if ( component.GameObject.Tags.Has( "hidden" ) ) continue;
+
 			var worldBounds = component.GetWorldBounds();
 			var meshScreenBounds = GetScreenRectFromBounds( worldBounds );
 

@@ -267,6 +267,11 @@ internal partial class GameInstanceDll : Engine.IGameInstanceDll
 		if ( a?.CodeArchiveBytes is null )
 			return;
 
+		// Only send code archives if we're a developer host (editor) or a dedicated server
+		// started with a local project — clients can download remote packages from sbox.game.
+		if ( !Application.IsEditor && !(Application.IsDedicatedServer && Application.GamePackage is LocalPackage) )
+			return;
+
 		//
 		// If we're not a dedicated server OR this isn't a game assembly,
 		// just use the original archive bytes
@@ -743,6 +748,9 @@ internal partial class GameInstanceDll : Engine.IGameInstanceDll
 			{
 				Game.IsPlaying = true;
 
+				LoadingScreen.Title = flags.Contains( GameLoadingFlags.Host ) ? "Starting Game" : "Joining Game..";
+				await Task.Yield();
+
 				IMenuDll.Current?.OnGameEntered();
 			}
 		}
@@ -762,17 +770,11 @@ internal partial class GameInstanceDll : Engine.IGameInstanceDll
 
 	private void OnPackageInstalled( PackageManager.ActivePackage package, string context )
 	{
+		if ( context != "game" ) return;
 		Log.Trace( $"OnPackageInstalled: {package.Package.FullIdent} {context}" );
 
-		// only load if a game context (tools can install packages)
-		if ( context != "game" ) return;
-
-		// Load all the GameResources and fonts in the package
-		if ( package.FileSystem is not null )
-		{
-			ResourceLoader.LoadAllGameResource( package.FileSystem );
-			FontManager.Instance.LoadAll( package.FileSystem );
-		}
+		// Register assemblies from this package so types are available immediately.
+		AssemblyEnroller?.LoadPackage( package.Package.FullIdent, true );
 	}
 
 	/// <summary>
@@ -989,27 +991,10 @@ internal partial class GameInstanceDll : Engine.IGameInstanceDll
 	{
 		IGameInstanceDll.Current = new GameInstanceDll();
 
-		// PreJIT the methods in these dlls to avoid doing it during the game
-		{
-			var e = new Api.Events.EventRecord( "PreJIT.Game" );
-
-			using ( e.ScopeTimer( "Sandbox.GameInstance" ) )
-			{
-				Sandbox.ReflectionUtility.PreJIT( typeof( GameInstanceDll ).Assembly );
-			}
-
-			using ( e.ScopeTimer( "Sandbox.System" ) )
-			{
-				Sandbox.ReflectionUtility.PreJIT( typeof( Vector3 ).Assembly );
-			}
-
-			using ( e.ScopeTimer( "Sandbox.Engine" ) )
-			{
-				Sandbox.ReflectionUtility.PreJIT( typeof( Bootstrap ).Assembly );
-			}
-
-			e.Submit();
-		}
+		// PreJIT the methods in these dlls on background threads to avoid stalls during gameplay
+		_ = Sandbox.ReflectionUtility.PreJITAsync( typeof( GameInstanceDll ).Assembly );
+		_ = Sandbox.ReflectionUtility.PreJITAsync( typeof( Vector3 ).Assembly );
+		_ = Sandbox.ReflectionUtility.PreJITAsync( typeof( Bootstrap ).Assembly );
 	}
 
 	/// <summary>

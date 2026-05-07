@@ -69,7 +69,7 @@ class Program
 		try
 		{
 			using var client = new HttpClient();
-			await client.PostAsJsonAsync( "https://services.facepunch.com/sbox/event/crash/1/", payload );
+			await client.PostAsJsonAsync( "https://public.facepunch.com/sbox/event/crash/1/", payload );
 		}
 		catch ( Exception ex )
 		{
