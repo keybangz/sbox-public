@@ -267,6 +267,8 @@ internal static class ReflectionUtility
 						{
 							if ( method.IsAbstract ) continue;
 							if ( method.ContainsGenericParameters ) continue;
+							if ( method.GetCustomAttribute<System.Runtime.InteropServices.DllImportAttribute>() != null ) continue;
+							if ( method.GetCustomAttribute<System.Runtime.InteropServices.LibraryImportAttribute>() != null ) continue;
 
 							try
 							{
@@ -281,6 +283,8 @@ internal static class ReflectionUtility
 						foreach ( var ctor in t.GetConstructors( flags ) )
 						{
 							if ( ctor.ContainsGenericParameters ) continue;
+							if ( ctor.GetCustomAttribute<System.Runtime.InteropServices.DllImportAttribute>() != null ) continue;
+							if ( ctor.GetCustomAttribute<System.Runtime.InteropServices.LibraryImportAttribute>() != null ) continue;
 
 							try
 							{

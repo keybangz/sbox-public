@@ -52,22 +52,28 @@ internal class Program
 			description: "Skip building native code",
 			getDefaultValue: () => false );
 
+		var pullArtifactsOption = new Option<bool>(
+			"--pull-artifacts",
+			description: "Download pre-built public artifacts instead of building native code",
+			getDefaultValue: () => false );
+
 		var skipManagedOption = new Option<bool>(
 			"--skip-managed",
 			description: "Skip building managed code",
 			getDefaultValue: () => false );
-
+ 
 		buildCommand.AddOption( configOption );
 		buildCommand.AddOption( cleanOption );
 		buildCommand.AddOption( skipNativeOption );
 		buildCommand.AddOption( skipManagedOption );
-
-		buildCommand.SetHandler( ( BuildConfiguration config, bool clean, bool skipNative, bool skipManaged ) =>
+		buildCommand.AddOption( pullArtifactsOption );
+ 
+		buildCommand.SetHandler( ( BuildConfiguration config, bool clean, bool skipNative, bool skipManaged, bool pullArtifacts ) =>
 		{
-			var pipeline = Build.Create( config, clean, skipNative, skipManaged );
+			var pipeline = Build.Create( config, clean, skipNative, skipManaged, pullArtifacts );
 			ExitCode result = pipeline.Run();
 			Environment.ExitCode = (int)result;
-		}, configOption, cleanOption, skipNativeOption, skipManagedOption );
+		}, configOption, cleanOption, skipNativeOption, skipManagedOption, pullArtifactsOption );
 
 		rootCommand.Add( buildCommand );
 	}

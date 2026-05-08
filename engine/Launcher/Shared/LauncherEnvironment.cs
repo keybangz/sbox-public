@@ -42,15 +42,15 @@ public static class LauncherEnvironment
 		{
 			// go up two folders
 			GamePath = System.IO.Path.GetDirectoryName( GamePath );
-			GamePath = System.IO.Path.GetDirectoryName( GamePath );
+		GamePath = System.IO.Path.GetDirectoryName( GamePath );
 		}
-
+ 
+		// make the game dir our current dir
+		Environment.CurrentDirectory = GamePath;
+		
 		// this exe is in the game folder
 		ManagedDllPath = $"{GamePath}/bin/managed/";
 		var nativeDllPath = $"{GamePath}/bin/{PlatformName}/";
-
-		// make the game dir our current dir
-		Environment.CurrentDirectory = GamePath;
 
 		//
 		// Allows unit tests and csproj to find the engine path.

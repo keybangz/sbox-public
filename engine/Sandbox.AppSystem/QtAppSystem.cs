@@ -4,7 +4,8 @@ using Sandbox.Diagnostics;
 using Sandbox.Engine;
 using System;
 using System.Runtime.InteropServices;
-
+using Steamworks;
+ 
 namespace Sandbox;
 
 public class QtAppSystem
@@ -93,6 +94,10 @@ public class QtAppSystem
 	protected void LoadSteamDll()
 	{
 		var dllName = $"{Environment.CurrentDirectory}\\bin\\win64\\steam_api64.dll";
+		
+		if ( OperatingSystem.IsLinux() )
+			dllName = $"{Environment.CurrentDirectory}/bin/linuxsteamrt64/libsteam_api.so";
+		
 		if ( !NativeLibrary.TryLoad( dllName, out steamApiDll ) )
 		{
 			throw new System.Exception( "Couldn't load bin/win64/steam_api64.dll" );

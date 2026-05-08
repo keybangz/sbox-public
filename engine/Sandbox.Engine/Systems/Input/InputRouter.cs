@@ -92,7 +92,7 @@ internal static partial class InputRouter
 
 	public static void Frame()
 	{
-		PollLinuxMousePosition();
+		//PollLinuxMousePosition();
 
 		var activeMouse = Contexts.Where( x => x.MouseState != InputContext.InputState.Ignore ).FirstOrDefault();
 		var activeKeyboard = Contexts.Where( x => x.KeyboardState != InputContext.InputState.Ignore ).FirstOrDefault();

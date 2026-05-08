@@ -9,17 +9,23 @@ internal class Build
 	public static Pipeline Create( BuildConfiguration configuration = BuildConfiguration.Developer,
 								 bool clean = false,
 								 bool skipNative = false,
-								 bool skipManaged = false )
+								 bool skipManaged = false,
+								 bool pullArtifacts = false )
 	{
 		var builder = new PipelineBuilder( "Build" );
 		var isPublicSource = IsPublicSourceDistribution();
-		var shouldSkipNative = skipNative || isPublicSource;
 
-		if ( isPublicSource )
+		if ( pullArtifacts )
 		{
-			Log.Info( "Detected public source distribution; downloading public artifacts and skipping native build." );
+			Log.Info( "Downloading public artifacts..." );
 			builder.AddStep( new DownloadPublicArtifacts( "Download Public Artifacts" ) );
 		}
+
+		// Native build requires the full source tree (VPC, src/, etc.). In a public
+		// source distribution the native toolchain isn't available, so skip native
+		// build whenever we're not pulling pre-built artifacts. The --pull-artifacts
+		// flag makes artifact download opt-in; without it we just build managed code.
+		var shouldSkipNative = skipNative || isPublicSource;
 
 		// Always add interop gen
 		builder.AddStep( new Steps.InteropGen( "Interop Gen", isPublicSource ) );

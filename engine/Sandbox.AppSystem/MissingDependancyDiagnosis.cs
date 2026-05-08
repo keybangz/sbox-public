@@ -1,6 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 
-namespace Sandbox;
+// namespace Sandbox;
 
 /// <summary>
 /// Poke a bunch of native dlls that are required and try to work out if they exist, and can load.
@@ -12,6 +12,7 @@ static class MissingDependancyDiagnosis
 		// leafiest first, all the dlls we're going to need to load
 
 		// most likely to fail
+#if WIN
 		TestAssembly( "MSVCRT.dll" );
 		TestAssembly( "vcruntime140.dll" ); // Visual Studio 2015, 2017
 		TestAssembly( "vcruntime140_1.dll" ); // Visual Studio 2019
@@ -33,6 +34,7 @@ static class MissingDependancyDiagnosis
 
 		TestAssembly( "steam_api64.dll" );
 		TestAssembly( "tier0.dll" );
+#endif
 	}
 
 	private static void TestAssembly( string assemblyName )
