@@ -8,7 +8,7 @@ CXXFLAGS = -shared -fPIC -O2 -Wall -Wextra -std=c++17
 CFLAGS = -shared -fPIC -O2 -Wall -Wextra
 LDFLAGS = -ldl -lpthread
 
-TARGETS = libsbox_init.so
+TARGETS = libsbox_init.so libdxcompiler_wrapper.so
 
 all: $(TARGETS)
 
@@ -19,6 +19,10 @@ all: $(TARGETS)
 libsbox_init.so: sbox_init.cpp
 	# $(CXX) $(CXXFLAGS) -o $@ sbox_init.cpp wayland_input.cpp $(LDFLAGS) -lwayland-client -lxkbcommon
 	$(CXX) $(CXXFLAGS) -o $@ sbox_init.cpp
+	@echo "Built $@"
+
+libdxcompiler_wrapper.so: dxc_wrapper.c
+	$(CC) $(CFLAGS) -o $@ dxc_wrapper.c
 	@echo "Built $@"
 
 clean:
